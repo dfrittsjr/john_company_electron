@@ -61,11 +61,13 @@ The recommended order is:
 
 ### 1. Split Command Reducers By Phase
 
-Current file:
+Status: done.
+
+Current dispatcher:
 
 - `src/engine/commands.ts`
 
-Create phase modules before adding much more rule logic:
+Phase modules now exist:
 
 ```text
 src/engine/commands.ts
@@ -83,19 +85,18 @@ src/engine/phases/upkeep.ts
 src/engine/phases/final-scoring.ts
 ```
 
-Keep `applyCommand` as the dispatcher. Move legal-command generation and
-reducers into phase modules as each phase becomes real.
+Keep `applyCommand` as the dispatcher. Continue moving legal-command generation
+and reducers into the phase modules as each phase becomes real.
 
 ### 2. Add Shared Engine Test Fixtures And Invariants
 
-Current tests cover scaffold progression, but rule implementation needs common
-fixtures.
+Status: done for the starter scaffold; expand as new rule areas are implemented.
 
-Add:
+Added:
 
-- `src/tests/fixtures/`
+- `src/tests/fixtures/game.ts`
 - Game builder helpers for common hotseat states.
-- A helper to apply the first legal command.
+- Helpers to apply explicit commands and the first legal command.
 - Invariant checks after every command:
   - active actor exists, unless actor is `system` or `simultaneous`
   - pending legal commands are known command types
@@ -103,7 +104,9 @@ Add:
   - pending decision phase matches state phase
   - save/load preserves the exact pending decision
 
-Keep the existing full starter-turn tests until real phase equivalents pass.
+Keep expanding these fixtures as real phase rules add dice, consent prompts,
+hidden information, and Crown behavior. Keep the existing full starter-turn
+tests until real phase equivalents pass.
 
 ### 3. Complete Core Static Data Needed For Hotseat 1710
 

@@ -1,19 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { applyCommand, createNewGame } from "../../engine";
+import { applyCommand } from "../../engine";
+import {
+  advanceThroughStarterFamily,
+  advanceThroughStarterHiring,
+  applyCommandOrThrow,
+  applyFirstLegalCommand,
+  createHotseatGame,
+  expectGameInvariants,
+  expectSaveRoundTripPreservesPendingDecision,
+} from "../fixtures/game";
 
 describe("command application", () => {
   it("reports unknown command types explicitly", () => {
-    const state = createNewGame({
-      mode: "hotseat",
-      scenario: "1710",
+    const state = createHotseatGame({
       seed: "unknown-command",
       gameId: "game-unknown-command",
-      now: "2026-06-13T12:00:00.000Z",
-      players: [
-        { id: "player-red", name: "Red", color: "red" },
-        { id: "player-blue", name: "Blue", color: "blue" },
-        { id: "player-yellow", name: "Yellow", color: "yellow" },
-      ],
     });
     const result = applyCommand(state, {
       id: "command-1",
@@ -36,17 +37,9 @@ describe("command application", () => {
   });
 
   it("creates legal starter family actions after setup is confirmed", () => {
-    const state = createNewGame({
-      mode: "hotseat",
-      scenario: "1710",
+    const state = createHotseatGame({
       seed: "family-actions",
       gameId: "game-family-actions",
-      now: "2026-06-13T12:00:00.000Z",
-      players: [
-        { id: "player-red", name: "Red", color: "red" },
-        { id: "player-blue", name: "Blue", color: "blue" },
-        { id: "player-yellow", name: "Yellow", color: "yellow" },
-      ],
     });
     const result = applyCommand(state, {
       id: "command-setup",
@@ -71,17 +64,9 @@ describe("command application", () => {
   });
 
   it("records a starter family action and advances to the next human player", () => {
-    const state = createNewGame({
-      mode: "hotseat",
-      scenario: "1710",
+    const state = createHotseatGame({
       seed: "family-action-next-player",
       gameId: "game-family-action-next-player",
-      now: "2026-06-13T12:00:00.000Z",
-      players: [
-        { id: "player-red", name: "Red", color: "red" },
-        { id: "player-blue", name: "Blue", color: "blue" },
-        { id: "player-yellow", name: "Yellow", color: "yellow" },
-      ],
     });
     const setupResult = applyCommand(state, {
       id: "command-setup",
@@ -137,20 +122,10 @@ describe("command application", () => {
     let state = advanceThroughStarterFamily();
 
     for (const actorId of ["player-red", "player-blue", "player-yellow"]) {
-      const passCommand = state.pendingDecision.legalCommands[0];
-      const result = applyCommand(state, {
-        id: `command-hiring-${actorId}`,
-        gameId: state.gameId,
+      state = applyFirstLegalCommand(state, {
+        commandId: `command-hiring-${actorId}`,
         actorId,
-        decisionId: state.pendingDecision.id,
-        type: passCommand.type,
-        payload: passCommand.payload ?? {},
-        clientTimestamp: "2026-06-13T12:10:00.000Z",
       });
-
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      state = result.state;
     }
 
     expect(state.phase).toBe("companyOperation");
@@ -180,7 +155,10 @@ describe("command application", () => {
       expect(state.phase).toBe(phase);
       expect(state.pendingDecision.legalCommands[0]?.type).toBe(commandType);
 
-      state = applyFirstLegalCommand(state, `command-${commandType}`, "system");
+      state = applyFirstLegalCommand(state, {
+        commandId: `command-${commandType}`,
+        actorId: "system",
+      });
 
       expect(state.phase).toBe(nextPhase);
       expect(state.log.at(-1)?.sequence).toBe(state.log.length);
@@ -189,7 +167,10 @@ describe("command application", () => {
     expect(state.turn).toBe(2);
     expect(state.pendingDecision.step).toBe("londonSeason.confirm");
 
-    state = applyFirstLegalCommand(state, "command-london-season", "system");
+    state = applyFirstLegalCommand(state, {
+      commandId: "command-london-season",
+      actorId: "system",
+    });
 
     expect(state.phase).toBe("family");
     expect(state.pendingDecision.step).toBe("family.chooseAction");
@@ -198,10 +179,7 @@ describe("command application", () => {
   });
 
   it("enters and confirms starter final scoring when Upkeep completes the final turn", () => {
-    let state = {
-      ...advanceThroughStarterHiring(),
-      finalTurn: 1,
-    };
+    let state = { ...advanceThroughStarterHiring(), finalTurn: 1 };
 
     for (const commandId of [
       "command-company-operation",
@@ -210,12 +188,15 @@ describe("command application", () => {
       "command-events",
       "command-parliament",
     ]) {
-      state = applyFirstLegalCommand(state, commandId, "system");
+      state = applyFirstLegalCommand(state, { commandId, actorId: "system" });
     }
 
     expect(state.phase).toBe("upkeep");
 
-    state = applyFirstLegalCommand(state, "command-upkeep", "system");
+    state = applyFirstLegalCommand(state, {
+      commandId: "command-upkeep",
+      actorId: "system",
+    });
 
     expect(state.phase).toBe("finalScoring");
     expect(state.pendingDecision.step).toBe("finalScoring.confirm");
@@ -224,92 +205,67 @@ describe("command application", () => {
       "Starter Upkeep confirmed. The game is ready for final scoring.",
     );
 
-    state = applyFirstLegalCommand(state, "command-final-scoring", "system");
+    state = applyFirstLegalCommand(state, {
+      commandId: "command-final-scoring",
+      actorId: "system",
+    });
 
     expect(state.phase).toBe("finalScoring");
     expect(state.pendingDecision.step).toBe("finalScoring.complete");
     expect(state.log.at(-1)?.summary).toBe("Starter Final Scoring confirmed.");
   });
-});
 
-function advanceThroughStarterHiring() {
-  let state = advanceThroughStarterFamily();
-
-  for (const actorId of ["player-red", "player-blue", "player-yellow"]) {
-    state = applyFirstLegalCommand(state, `command-hiring-${actorId}`, actorId);
-  }
-
-  return state;
-}
-
-function applyFirstLegalCommand(
-  state: ReturnType<typeof createNewGame>,
-  commandId: string,
-  actorId: string,
-) {
-  const command = state.pendingDecision.legalCommands[0];
-  const result = applyCommand(state, {
-    id: commandId,
-    gameId: state.gameId,
-    actorId,
-    decisionId: state.pendingDecision.id,
-    type: command.type,
-    payload: command.payload ?? {},
-    clientTimestamp: "2026-06-13T12:10:00.000Z",
-  });
-
-  if (!result.ok) {
-    throw new Error(result.errors.map((error) => error.message).join(" "));
-  }
-
-  return result.state;
-}
-
-function advanceThroughStarterFamily() {
-  let state = createNewGame({
-    mode: "hotseat",
-    scenario: "1710",
-    seed: "advance-through-family",
-    gameId: "game-advance-through-family",
-    now: "2026-06-13T12:00:00.000Z",
-    players: [
-      { id: "player-red", name: "Red", color: "red" },
-      { id: "player-blue", name: "Blue", color: "blue" },
-      { id: "player-yellow", name: "Yellow", color: "yellow" },
-    ],
-  });
-  const setupResult = applyCommand(state, {
-    id: "command-setup",
-    gameId: state.gameId,
-    actorId: "player-red",
-    decisionId: state.pendingDecision.id,
-    type: "setup.confirmStart",
-    payload: {},
-    clientTimestamp: "2026-06-13T12:01:00.000Z",
-  });
-
-  if (!setupResult.ok) {
-    throw new Error("Expected setup command to succeed.");
-  }
-  state = setupResult.state;
-
-  for (const actorId of ["player-red", "player-blue", "player-yellow"]) {
-    const command = state.pendingDecision.legalCommands[0];
-    const result = applyCommand(state, {
-      id: `command-family-${actorId}`,
-      gameId: state.gameId,
-      actorId,
-      decisionId: state.pendingDecision.id,
-      type: command.type,
-      payload: command.payload ?? {},
-      clientTimestamp: "2026-06-13T12:02:00.000Z",
+  it("keeps command invariants and save round trips valid through the starter sequence", () => {
+    let state = createHotseatGame({
+      seed: "starter-invariants",
+      gameId: "game-starter-invariants",
+      finalTurn: 1,
     });
 
-    if (!result.ok) {
-      throw new Error(`Expected family command for ${actorId} to succeed.`);
-    }
-    state = result.state;
-  }
+    expectGameInvariants(state);
+    expectSaveRoundTripPreservesPendingDecision(state);
 
-  return state;
-}
+    const commandActors = [
+      "player-red",
+      "player-red",
+      "player-blue",
+      "player-yellow",
+      "player-red",
+      "player-blue",
+      "player-yellow",
+      "system",
+      "system",
+      "system",
+      "system",
+      "system",
+      "system",
+      "system",
+    ] as const;
+
+    commandActors.forEach((actorId, index) => {
+      state = applyFirstLegalCommand(state, {
+        commandId: `command-invariant-${index + 1}`,
+        actorId,
+      });
+      expectSaveRoundTripPreservesPendingDecision(state);
+    });
+
+    expect(state.pendingDecision.step).toBe("finalScoring.complete");
+  });
+
+  it("supports explicit command application from fixtures", () => {
+    const state = createHotseatGame({
+      seed: "explicit-command-fixture",
+      gameId: "game-explicit-command-fixture",
+    });
+    const nextState = applyCommandOrThrow(state, {
+      id: "command-explicit-setup",
+      actorId: "player-red",
+      type: "setup.confirmStart",
+      payload: {},
+      clientTimestamp: "2026-06-13T12:01:00.000Z",
+    });
+
+    expect(nextState.pendingDecision.step).toBe("family.chooseAction");
+  });
+});
