@@ -1,0 +1,53 @@
+{
+  "name": "john-company-desktop",
+  "version": "0.1.0",
+  "description": "An Electron-based desktop adaptation of John Company: Second Edition.",
+  "main": "main.cjs",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on tcp:5173 && cross-env JOCO_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
+    "start": "npm run dev",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "electron": "electron .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:data": "vitest run src/tests/data",
+    "test:rules": "vitest run src/tests/rules src/tests/engine",
+    "test:save": "vitest run src/tests/save",
+    "test:crown": "vitest run src/tests/crown",
+    "verify": "npm run typecheck && npm run test"
+  },
+  "keywords": [
+    "boardgame",
+    "john-company",
+    "electron"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.4.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zod": "^3.23.8",
+    "zustand": "^4.5.4"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.4.8",
+    "@testing-library/react": "^16.0.0",
+    "@types/node": "^22.5.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitest/coverage-v8": "^2.0.5",
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "electron": "^31.0.0",
+    "jsdom": "^24.1.1",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5",
+    "wait-on": "^7.2.0"
+  }
+}
