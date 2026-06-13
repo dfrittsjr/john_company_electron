@@ -101,6 +101,11 @@ button:disabled {
   margin-top: 28px;
 }
 
+.start-status {
+  margin-top: 16px;
+  color: #fff8ea;
+}
+
 .setup-screen {
   padding: 24px;
 }
@@ -211,6 +216,47 @@ input {
   border-radius: 50%;
 }
 
+.validation-panel {
+  grid-column: 1 / -1;
+}
+
+.validation-panel-valid {
+  border-color: #7d9a62;
+  background: #f4f8ee;
+}
+
+.validation-panel-invalid {
+  border-color: #b9483f;
+  background: #fff4f1;
+}
+
+.validation-summary {
+  margin: 0;
+  color: #3d352d;
+  line-height: 1.45;
+}
+
+.validation-issues {
+  margin-top: 12px;
+  border-top: 1px solid rgba(185, 72, 63, 0.32);
+  padding-top: 12px;
+  color: #6f1820;
+}
+
+.validation-issues ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
+.validation-issues li + li {
+  margin-top: 6px;
+}
+
+.validation-warnings {
+  border-top-color: rgba(184, 138, 29, 0.38);
+  color: #6a4b0e;
+}
+
 .game-screen {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -276,6 +322,12 @@ input {
 }
 
 .legal-command-list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.save-actions {
   display: grid;
   gap: 8px;
   margin: 12px 0;

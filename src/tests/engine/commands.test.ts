@@ -154,10 +154,116 @@ describe("command application", () => {
     }
 
     expect(state.phase).toBe("companyOperation");
-    expect(state.pendingDecision.step).toBe("companyOperation.notImplemented");
+    expect(state.pendingDecision.step).toBe("companyOperation.chooseStarterPass");
+    expect(state.pendingDecision.legalCommands[0]).toEqual(
+      expect.objectContaining({
+        type: "companyOperation.passOffice",
+        label: "Confirm Company Operation",
+      }),
+    );
     expect(state.log.at(-1)?.summary).toBe("Yellow passed starter Hiring.");
   });
+
+  it("advances through every remaining starter phase in a full turn", () => {
+    let state = advanceThroughStarterHiring();
+
+    const expectedSteps = [
+      ["companyOperation", "companyOperation.passOffice", "bonuses"],
+      ["bonuses", "bonuses.confirm", "revenue"],
+      ["revenue", "revenue.confirm", "eventsInIndia"],
+      ["eventsInIndia", "eventsInIndia.confirm", "parliament"],
+      ["parliament", "parliament.confirm", "upkeep"],
+      ["upkeep", "upkeep.confirm", "londonSeason"],
+    ] as const;
+
+    for (const [phase, commandType, nextPhase] of expectedSteps) {
+      expect(state.phase).toBe(phase);
+      expect(state.pendingDecision.legalCommands[0]?.type).toBe(commandType);
+
+      state = applyFirstLegalCommand(state, `command-${commandType}`, "system");
+
+      expect(state.phase).toBe(nextPhase);
+      expect(state.log.at(-1)?.sequence).toBe(state.log.length);
+    }
+
+    expect(state.turn).toBe(2);
+    expect(state.pendingDecision.step).toBe("londonSeason.confirm");
+
+    state = applyFirstLegalCommand(state, "command-london-season", "system");
+
+    expect(state.phase).toBe("family");
+    expect(state.pendingDecision.step).toBe("family.chooseAction");
+    expect(state.pendingDecision.actor).toBe("player-red");
+    expect(state.log.at(-1)?.summary).toBe("Starter London Season confirmed.");
+  });
+
+  it("enters and confirms starter final scoring when Upkeep completes the final turn", () => {
+    let state = {
+      ...advanceThroughStarterHiring(),
+      finalTurn: 1,
+    };
+
+    for (const commandId of [
+      "command-company-operation",
+      "command-bonuses",
+      "command-revenue",
+      "command-events",
+      "command-parliament",
+    ]) {
+      state = applyFirstLegalCommand(state, commandId, "system");
+    }
+
+    expect(state.phase).toBe("upkeep");
+
+    state = applyFirstLegalCommand(state, "command-upkeep", "system");
+
+    expect(state.phase).toBe("finalScoring");
+    expect(state.pendingDecision.step).toBe("finalScoring.confirm");
+    expect(state.pendingDecision.legalCommands[0]?.type).toBe("finalScoring.confirm");
+    expect(state.log.at(-1)?.summary).toBe(
+      "Starter Upkeep confirmed. The game is ready for final scoring.",
+    );
+
+    state = applyFirstLegalCommand(state, "command-final-scoring", "system");
+
+    expect(state.phase).toBe("finalScoring");
+    expect(state.pendingDecision.step).toBe("finalScoring.complete");
+    expect(state.log.at(-1)?.summary).toBe("Starter Final Scoring confirmed.");
+  });
 });
+
+function advanceThroughStarterHiring() {
+  let state = advanceThroughStarterFamily();
+
+  for (const actorId of ["player-red", "player-blue", "player-yellow"]) {
+    state = applyFirstLegalCommand(state, `command-hiring-${actorId}`, actorId);
+  }
+
+  return state;
+}
+
+function applyFirstLegalCommand(
+  state: ReturnType<typeof createNewGame>,
+  commandId: string,
+  actorId: string,
+) {
+  const command = state.pendingDecision.legalCommands[0];
+  const result = applyCommand(state, {
+    id: commandId,
+    gameId: state.gameId,
+    actorId,
+    decisionId: state.pendingDecision.id,
+    type: command.type,
+    payload: command.payload ?? {},
+    clientTimestamp: "2026-06-13T12:10:00.000Z",
+  });
+
+  if (!result.ok) {
+    throw new Error(result.errors.map((error) => error.message).join(" "));
+  }
+
+  return result.state;
+}
 
 function advanceThroughStarterFamily() {
   let state = createNewGame({

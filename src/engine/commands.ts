@@ -11,8 +11,16 @@ import type {
 
 const KNOWN_COMMAND_TYPES = new Set([
   "setup.confirmStart",
+  "londonSeason.confirm",
   "family.chooseAction",
   "hiring.pass",
+  "companyOperation.passOffice",
+  "bonuses.confirm",
+  "revenue.confirm",
+  "eventsInIndia.confirm",
+  "parliament.confirm",
+  "upkeep.confirm",
+  "finalScoring.confirm",
 ]);
 
 export function applyCommand(state: GameState, command: GameCommand): ApplyCommandResult {
@@ -44,10 +52,26 @@ export function applyCommand(state: GameState, command: GameCommand): ApplyComma
   switch (command.type) {
     case "setup.confirmStart":
       return confirmStart(state, command);
+    case "londonSeason.confirm":
+      return confirmLondonSeason(state, command);
     case "family.chooseAction":
       return chooseFamilyAction(state, command);
     case "hiring.pass":
       return passHiring(state, command);
+    case "companyOperation.passOffice":
+      return passCompanyOperation(state, command);
+    case "bonuses.confirm":
+      return confirmBonuses(state, command);
+    case "revenue.confirm":
+      return confirmRevenue(state, command);
+    case "eventsInIndia.confirm":
+      return confirmEventsInIndia(state, command);
+    case "parliament.confirm":
+      return confirmParliament(state, command);
+    case "upkeep.confirm":
+      return confirmUpkeep(state, command);
+    case "finalScoring.confirm":
+      return confirmFinalScoring(state, command);
     default:
       return {
         ok: false,
@@ -319,12 +343,19 @@ function passHiring(state: GameState, command: GameCommand): ApplyCommandResult 
     : {
         id: `decision-company-operation-start-turn-${state.turn}`,
         phase: "companyOperation",
-        step: "companyOperation.notImplemented",
+        step: "companyOperation.chooseStarterPass",
         actor: "system",
         visibility: "public",
         prompt:
-          "All human families have passed starter Hiring. Company Operation reducers are the next implementation step.",
-        legalCommands: [],
+          "All human families have passed starter Hiring. Confirm starter Company Operation.",
+        legalCommands: [
+          {
+            type: "companyOperation.passOffice",
+            label: "Confirm Company Operation",
+            description: "Starter scaffold: records that Company Operation was skipped.",
+            payload: {},
+          },
+        ],
         canSave: true,
       };
 
@@ -336,6 +367,267 @@ function passHiring(state: GameState, command: GameCommand): ApplyCommandResult 
       updatedAt: now,
       phase: pendingDecision.phase,
       pendingDecision,
+      log: [...state.log, logEntry],
+    },
+  };
+}
+
+function confirmLondonSeason(state: GameState, command: GameCommand): ApplyCommandResult {
+  if (state.phase !== "londonSeason" || state.pendingDecision.step !== "londonSeason.confirm") {
+    return wrongPhase("London Season confirmation can only be chosen during starter London Season.");
+  }
+
+  const now = command.clientTimestamp;
+  const nextActor = firstHumanActor(state);
+  if (!nextActor) {
+    return noHumanActor("Cannot advance London Season because there is no human player.");
+  }
+
+  const logEntry = createCommandLogEntry({
+    state,
+    command,
+    now,
+    type: "londonSeason.confirmed",
+    summary: "Starter London Season confirmed.",
+    details: {
+      note: "Starter scaffold records the phase; attrition, retirement, and display rules come later.",
+    },
+  });
+
+  return {
+    ok: true,
+    logEntry,
+    state: {
+      ...state,
+      updatedAt: now,
+      phase: "family",
+      pendingDecision: {
+        id: `decision-family-choose-action-turn-${state.turn}-${nextActor}`,
+        phase: "family",
+        step: "family.chooseAction",
+        actor: nextActor,
+        visibility: "private",
+        prompt: "Choose a family action.",
+        legalCommands: createStarterFamilyCommands(state, nextActor),
+        canSave: true,
+      },
+      log: [...state.log, logEntry],
+    },
+  };
+}
+
+function passCompanyOperation(state: GameState, command: GameCommand): ApplyCommandResult {
+  if (
+    state.phase !== "companyOperation" ||
+    state.pendingDecision.step !== "companyOperation.chooseStarterPass"
+  ) {
+    return wrongPhase("Company Operation pass can only be chosen during starter Company Operation.");
+  }
+
+  return confirmStarterPhase({
+    state,
+    command,
+    logType: "companyOperation.passed",
+    summary: "Starter Company Operation confirmed.",
+    detailsNote:
+      "Starter scaffold records the phase; office order and office actions come later.",
+    nextDecision: createSystemDecision({
+      id: `decision-bonuses-confirm-turn-${state.turn}`,
+      phase: "bonuses",
+      step: "bonuses.confirm",
+      prompt: "Confirm starter Bonuses.",
+      commandType: "bonuses.confirm",
+      label: "Confirm Bonuses",
+      description: "Starter scaffold: records that Bonuses were confirmed.",
+    }),
+  });
+}
+
+function confirmBonuses(state: GameState, command: GameCommand): ApplyCommandResult {
+  if (state.phase !== "bonuses" || state.pendingDecision.step !== "bonuses.confirm") {
+    return wrongPhase("Bonuses confirmation can only be chosen during starter Bonuses.");
+  }
+
+  return confirmStarterPhase({
+    state,
+    command,
+    logType: "bonuses.confirmed",
+    summary: "Starter Bonuses confirmed.",
+    detailsNote: "Starter scaffold records the phase; workshop and shipyard income comes later.",
+    nextDecision: createSystemDecision({
+      id: `decision-revenue-confirm-turn-${state.turn}`,
+      phase: "revenue",
+      step: "revenue.confirm",
+      prompt: "Confirm starter Revenue.",
+      commandType: "revenue.confirm",
+      label: "Confirm Revenue",
+      description: "Starter scaffold: records that Revenue was confirmed.",
+    }),
+  });
+}
+
+function confirmRevenue(state: GameState, command: GameCommand): ApplyCommandResult {
+  if (state.phase !== "revenue" || state.pendingDecision.step !== "revenue.confirm") {
+    return wrongPhase("Revenue confirmation can only be chosen during starter Revenue.");
+  }
+
+  return confirmStarterPhase({
+    state,
+    command,
+    logType: "revenue.confirmed",
+    summary: "Starter Revenue confirmed.",
+    detailsNote:
+      "Starter scaffold records the phase; expenses, dividends, and Company failure come later.",
+    nextDecision: createSystemDecision({
+      id: `decision-events-in-india-confirm-turn-${state.turn}`,
+      phase: "eventsInIndia",
+      step: "eventsInIndia.confirm",
+      prompt: "Confirm starter Events in India.",
+      commandType: "eventsInIndia.confirm",
+      label: "Confirm Events in India",
+      description: "Starter scaffold: records that Events in India were confirmed.",
+    }),
+  });
+}
+
+function confirmEventsInIndia(state: GameState, command: GameCommand): ApplyCommandResult {
+  if (
+    state.phase !== "eventsInIndia" ||
+    state.pendingDecision.step !== "eventsInIndia.confirm"
+  ) {
+    return wrongPhase("Events in India confirmation can only be chosen during starter Events.");
+  }
+
+  return confirmStarterPhase({
+    state,
+    command,
+    logType: "eventsInIndia.confirmed",
+    summary: "Starter Events in India confirmed.",
+    detailsNote:
+      "Starter scaffold records the phase; storm die, event tiles, and attacks come later.",
+    nextDecision: createSystemDecision({
+      id: `decision-parliament-confirm-turn-${state.turn}`,
+      phase: "parliament",
+      step: "parliament.confirm",
+      prompt: "Confirm starter Parliament Meets.",
+      commandType: "parliament.confirm",
+      label: "Confirm Parliament",
+      description: "Starter scaffold: records that Parliament was confirmed.",
+    }),
+  });
+}
+
+function confirmParliament(state: GameState, command: GameCommand): ApplyCommandResult {
+  if (state.phase !== "parliament" || state.pendingDecision.step !== "parliament.confirm") {
+    return wrongPhase("Parliament confirmation can only be chosen during starter Parliament.");
+  }
+
+  return confirmStarterPhase({
+    state,
+    command,
+    logType: "parliament.confirmed",
+    summary: "Starter Parliament confirmed.",
+    detailsNote:
+      "Starter scaffold records the phase; law selection, policy, and voting come later.",
+    nextDecision: createSystemDecision({
+      id: `decision-upkeep-confirm-turn-${state.turn}`,
+      phase: "upkeep",
+      step: "upkeep.confirm",
+      prompt: "Confirm starter Upkeep and Refresh.",
+      commandType: "upkeep.confirm",
+      label: "Confirm Upkeep",
+      description: "Starter scaffold: records that Upkeep was confirmed.",
+    }),
+  });
+}
+
+function confirmUpkeep(state: GameState, command: GameCommand): ApplyCommandResult {
+  if (state.phase !== "upkeep" || state.pendingDecision.step !== "upkeep.confirm") {
+    return wrongPhase("Upkeep confirmation can only be chosen during starter Upkeep.");
+  }
+
+  const now = command.clientTimestamp;
+  const shouldScore = state.turn >= state.finalTurn;
+  const nextTurn = shouldScore ? state.turn : state.turn + 1;
+  const nextDecision = shouldScore
+    ? createSystemDecision({
+        id: `decision-final-scoring-confirm-turn-${state.turn}`,
+        phase: "finalScoring",
+        step: "finalScoring.confirm",
+        prompt: "Confirm starter Final Scoring.",
+        commandType: "finalScoring.confirm",
+        label: "Confirm Final Scoring",
+        description: "Starter scaffold: records that Final Scoring was confirmed.",
+      })
+    : createSystemDecision({
+        id: `decision-london-season-confirm-turn-${nextTurn}`,
+        phase: "londonSeason",
+        step: "londonSeason.confirm",
+        prompt: "Confirm starter London Season.",
+        commandType: "londonSeason.confirm",
+        label: "Confirm London Season",
+        description: "Starter scaffold: records that London Season was confirmed.",
+      });
+  const logEntry = createCommandLogEntry({
+    state,
+    command,
+    now,
+    type: "upkeep.confirmed",
+    summary: shouldScore
+      ? "Starter Upkeep confirmed. The game is ready for final scoring."
+      : `Starter Upkeep confirmed. Advanced to turn ${nextTurn}.`,
+    details: {
+      note: "Starter scaffold records the phase; upkeep payments, refresh, and cleanup come later.",
+    },
+  });
+
+  return {
+    ok: true,
+    logEntry,
+    state: {
+      ...state,
+      updatedAt: now,
+      turn: nextTurn,
+      phase: nextDecision.phase,
+      pendingDecision: nextDecision,
+      log: [...state.log, logEntry],
+    },
+  };
+}
+
+function confirmFinalScoring(state: GameState, command: GameCommand): ApplyCommandResult {
+  if (state.phase !== "finalScoring" || state.pendingDecision.step !== "finalScoring.confirm") {
+    return wrongPhase("Final Scoring confirmation can only be chosen during starter Final Scoring.");
+  }
+
+  const now = command.clientTimestamp;
+  const logEntry = createCommandLogEntry({
+    state,
+    command,
+    now,
+    type: "finalScoring.confirmed",
+    summary: "Starter Final Scoring confirmed.",
+    details: {
+      note: "Starter scaffold records the phase; VP calculation and tie breakers come later.",
+    },
+  });
+
+  return {
+    ok: true,
+    logEntry,
+    state: {
+      ...state,
+      updatedAt: now,
+      pendingDecision: {
+        id: `decision-final-scoring-complete-turn-${state.turn}`,
+        phase: "finalScoring",
+        step: "finalScoring.complete",
+        actor: "system",
+        visibility: "public",
+        prompt: "Starter final scoring is complete.",
+        legalCommands: [],
+        canSave: true,
+      },
       log: [...state.log, logEntry],
     },
   };
@@ -373,6 +665,96 @@ function createStarterFamilyCommands(state: GameState, actorId: ActorId): LegalC
       payload: { action: "purchase-workshop" },
     },
   ];
+}
+
+function confirmStarterPhase(input: {
+  state: GameState;
+  command: GameCommand;
+  logType: string;
+  summary: string;
+  detailsNote: string;
+  nextDecision: PendingDecision;
+}): ApplyCommandResult {
+  const now = input.command.clientTimestamp;
+  const logEntry = createCommandLogEntry({
+    state: input.state,
+    command: input.command,
+    now,
+    type: input.logType,
+    summary: input.summary,
+    details: {
+      note: input.detailsNote,
+    },
+  });
+
+  return {
+    ok: true,
+    logEntry,
+    state: {
+      ...input.state,
+      updatedAt: now,
+      phase: input.nextDecision.phase,
+      pendingDecision: input.nextDecision,
+      log: [...input.state.log, logEntry],
+    },
+  };
+}
+
+function createSystemDecision(input: {
+  id: string;
+  phase: PendingDecision["phase"];
+  step: string;
+  prompt: string;
+  commandType: string;
+  label: string;
+  description: string;
+}): PendingDecision {
+  return {
+    id: input.id,
+    phase: input.phase,
+    step: input.step,
+    actor: "system",
+    visibility: "public",
+    prompt: input.prompt,
+    legalCommands: [
+      {
+        type: input.commandType,
+        label: input.label,
+        description: input.description,
+        payload: {},
+      },
+    ],
+    canSave: true,
+  };
+}
+
+function firstHumanActor(state: GameState): ActorId | undefined {
+  return state.seatingOrder.find((playerId) => !state.players[playerId].isCrown);
+}
+
+function noHumanActor(message: string): ApplyCommandResult {
+  return {
+    ok: false,
+    errors: [
+      {
+        code: "NO_HUMAN_ACTOR",
+        message,
+      },
+    ],
+  };
+}
+
+function wrongPhase(message: string): ApplyCommandResult {
+  return {
+    ok: false,
+    errors: [
+      {
+        code: "WRONG_PHASE",
+        message,
+        field: "phase",
+      },
+    ],
+  };
 }
 
 function createStarterHiringCommands(): LegalCommand[] {

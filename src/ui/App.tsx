@@ -7,10 +7,14 @@ import {
   type GameState,
   type LegalCommand,
 } from "../engine";
-
-type ScenarioId = "1710" | "1758" | "1813" | "long-1710";
-type GameMode = "soloCrown" | "twoPlayerCrown" | "hotseat";
-type CrownDifficulty = "easy" | "normal" | "hard" | "expert";
+import {
+  validateNewGameStaticData,
+  type CrownDifficulty,
+  type PlayMode,
+  type ScenarioId,
+  type ValidationIssue,
+} from "../data";
+import { deserializeGameState, serializeSave } from "../save";
 
 type PlayerSetup = {
   id: string;
@@ -63,16 +67,89 @@ function createPlayers(count: number): PlayerSetup[] {
   }));
 }
 
-function modeForPlayerCount(playerCount: number): GameMode {
+function modeForPlayerCount(playerCount: number): PlayMode {
   if (playerCount === 1) return "soloCrown";
   if (playerCount === 2) return "twoPlayerCrown";
   return "hotseat";
+}
+
+function formatMode(mode: PlayMode): string {
+  if (mode === "soloCrown") return "Solo Crown";
+  if (mode === "twoPlayerCrown") return "Two-player Crown";
+  return "Hotseat";
+}
+
+function summarizeValidationIssues(issues: ValidationIssue[]): string[] {
+  const crownAiPlaceholderIssues = issues.filter(
+    (issue) => issue.code === "new-game.crown.ai-card-field-missing",
+  );
+  const otherIssues = issues.filter(
+    (issue) => issue.code !== "new-game.crown.ai-card-field-missing",
+  );
+  const summaries = otherIssues.map((issue) => issue.message);
+
+  if (crownAiPlaceholderIssues.length > 0) {
+    const cardIds = [
+      ...new Set(
+        crownAiPlaceholderIssues
+          .map((issue) => issue.path.match(/crown\.aiCards\.([^.]+)/)?.[1])
+          .filter((cardId): cardId is string => Boolean(cardId)),
+      ),
+    ];
+    const fieldCount = new Set(
+      crownAiPlaceholderIssues.map((issue) =>
+        issue.path.replace(/^crown\.aiCards\.[^.]+\./, ""),
+      ),
+    ).size;
+
+    summaries.unshift(
+      `Crown modes are blocked by placeholder AI cards: ${cardIds.length} card${cardIds.length === 1 ? "" : "s"} (${cardIds.join(", ")}) are missing ${fieldCount} required Crown AI fields from the Crown Handbook.`,
+    );
+  }
+
+  return summaries;
+}
+
+function actorLabel(game: GameState): string {
+  if (game.pendingDecision.actor === "simultaneous") return "Simultaneous";
+  if (game.pendingDecision.actor === "system") return "System";
+
+  return game.players[game.pendingDecision.actor]?.name ?? game.pendingDecision.actor;
+}
+
+function buildSaveSummary(game: GameState): string {
+  const lines = [
+    "John Company 2E",
+    `Game: ${game.scenario}, Turn ${game.turn}, ${game.phase}`,
+    `Pending: ${actorLabel(game)} must resolve ${game.pendingDecision.step}`,
+    `Game ID: ${game.gameId}`,
+  ];
+
+  if (game.crown) {
+    const humanCubeSummary = Object.entries(game.crown.promiseCubes.byHumanPlayer)
+      .map(([playerId, cubes]) => `${game.players[playerId]?.name ?? playerId} ${cubes}`)
+      .join(" / ");
+    lines.push(
+      `Crown: ${game.crown.difficulty}, Climate ${game.crown.climate}, Promise cubes Crown ${game.crown.promiseCubes.crownSupply} / ${humanCubeSummary}`,
+    );
+
+    if (game.crown.playerButton) {
+      lines.push(
+        `Player Button: ${
+          game.players[game.crown.playerButton.holder]?.name ?? game.crown.playerButton.holder
+        }`,
+      );
+    }
+  }
+
+  return lines.join("\n");
 }
 
 export function App() {
   const [screen, setScreen] = useState<"start" | "setup" | "board">("start");
   const [game, setGame] = useState<GameState | null>(null);
   const [commandError, setCommandError] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [setup, setSetup] = useState<SetupState>({
     scenario: "1710",
     playerCount: 4,
@@ -83,6 +160,18 @@ export function App() {
 
   const mode = modeForPlayerCount(setup.playerCount);
   const crownEnabled = mode !== "hotseat";
+  const newGameValidation = validateNewGameStaticData({
+    scenarioId: setup.scenario,
+    mode,
+    humanPlayerCount: setup.playerCount,
+  });
+  const validationErrors = newGameValidation.issues.filter((issue) => issue.severity === "error");
+  const validationWarnings = newGameValidation.issues.filter(
+    (issue) => issue.severity === "warning",
+  );
+  const validationErrorSummaries = summarizeValidationIssues(validationErrors);
+  const validationWarningSummaries = summarizeValidationIssues(validationWarnings);
+  const startDisabled = !newGameValidation.valid;
 
   function updatePlayerCount(playerCount: number) {
     setSetup((current) => ({
@@ -100,6 +189,8 @@ export function App() {
   }
 
   function startGame() {
+    if (!newGameValidation.valid) return;
+
     const nextGame = createNewGame({
       mode,
       scenario: setup.scenario,
@@ -114,6 +205,7 @@ export function App() {
 
     setGame(nextGame);
     setCommandError(null);
+    setSaveStatus(null);
     setScreen("board");
   }
 
@@ -144,6 +236,79 @@ export function App() {
     }
   }
 
+  async function saveGame() {
+    if (!game) return;
+
+    if (!window.joco?.saveGame) {
+      setSaveStatus("Save dialogs are only available in the Electron app.");
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const content = serializeSave(game, {
+      saveId: `save-${Date.now()}`,
+      now,
+    });
+    const result = await window.joco.saveGame(
+      content,
+      `${game.scenario}-turn-${game.turn}-${game.phase}.joco`,
+    );
+
+    if (result.status === "success") {
+      setSaveStatus(`Saved ${result.filePath}`);
+    } else if (result.status === "cancel") {
+      setSaveStatus("Save canceled.");
+    } else {
+      setSaveStatus(result.message);
+    }
+  }
+
+  async function loadGame() {
+    if (!window.joco?.loadGame) {
+      setSaveStatus("Load dialogs are only available in the Electron app.");
+      return;
+    }
+
+    const result = await window.joco.loadGame();
+    if (result.status === "cancel") {
+      setSaveStatus("Load canceled.");
+      return;
+    }
+    if (result.status === "error") {
+      setSaveStatus(result.message);
+      return;
+    }
+
+    try {
+      const loadedGame = deserializeGameState(result.content);
+      setGame(loadedGame);
+      setCommandError(null);
+      setSaveStatus(`Loaded ${result.filePath}`);
+      setScreen("board");
+    } catch (error) {
+      setSaveStatus(error instanceof Error ? error.message : "Failed to load save file.");
+    }
+  }
+
+  async function copySaveSummary() {
+    if (!game) return;
+
+    const summary = buildSaveSummary(game);
+    if (!window.joco?.copyText) {
+      setSaveStatus(summary);
+      return;
+    }
+
+    const result = await window.joco.copyText(summary);
+    if (result.status === "success") {
+      setSaveStatus("Save summary copied.");
+    } else if (result.status === "cancel") {
+      setSaveStatus("Copy canceled.");
+    } else {
+      setSaveStatus(result.message);
+    }
+  }
+
   if (screen === "start") {
     return (
       <main className="start-screen">
@@ -158,13 +323,14 @@ export function App() {
             <button type="button" onClick={() => setScreen("setup")}>
               New Game
             </button>
-            <button type="button" disabled title="Save/load arrives with the save milestone">
+            <button type="button" onClick={loadGame}>
               Load Game
             </button>
             <button type="button" disabled title="Rules reference arrives after data entry">
               Rules Reference
             </button>
           </div>
+          {saveStatus ? <p className="status-note start-status">{saveStatus}</p> : null}
         </section>
       </main>
     );
@@ -181,7 +347,14 @@ export function App() {
             <p className="eyebrow">New game</p>
             <h1>Campaign Setup</h1>
           </div>
-          <button type="button" onClick={startGame}>
+          <button
+            type="button"
+            onClick={startGame}
+            disabled={startDisabled}
+            title={
+              startDisabled ? "Resolve static data validation issues before starting." : undefined
+            }
+          >
             Start
           </button>
         </header>
@@ -279,6 +452,45 @@ export function App() {
               ))}
             </div>
           </div>
+
+          <div
+            className={`panel validation-panel ${
+              newGameValidation.valid ? "validation-panel-valid" : "validation-panel-invalid"
+            }`}
+          >
+            <h2>Static Data</h2>
+            <p className="validation-summary">
+              {newGameValidation.valid
+                ? `${formatMode(mode)} ${setup.scenario} is ready to start with ${
+                    setup.playerCount
+                  } human player${setup.playerCount === 1 ? "" : "s"}.`
+                : `${formatMode(mode)} ${setup.scenario} cannot start with ${
+                    setup.playerCount
+                  } human player${
+                    setup.playerCount === 1 ? "" : "s"
+                  } until static data issues are resolved.`}
+            </p>
+            {validationErrorSummaries.length > 0 ? (
+              <div className="validation-issues" role="alert">
+                <strong>Blocking issues</strong>
+                <ul>
+                  {validationErrorSummaries.map((message) => (
+                    <li key={message}>{message}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {validationWarningSummaries.length > 0 ? (
+              <div className="validation-issues validation-warnings">
+                <strong>Warnings</strong>
+                <ul>
+                  {validationWarningSummaries.map((message) => (
+                    <li key={message}>{message}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
         </section>
       </main>
     );
@@ -288,12 +500,7 @@ export function App() {
     return null;
   }
 
-  const pendingActor =
-    game.pendingDecision.actor === "simultaneous"
-      ? "Simultaneous"
-      : game.pendingDecision.actor === "system"
-        ? "System"
-        : (game.players[game.pendingDecision.actor]?.name ?? game.pendingDecision.actor);
+  const pendingActor = actorLabel(game);
   const playerRows = game.seatingOrder.map((playerId) => game.players[playerId]);
 
   return (
@@ -365,9 +572,18 @@ export function App() {
             )}
           </div>
           {commandError ? <p className="error-note">{commandError}</p> : null}
-          <button type="button" disabled>
-            Save Game
-          </button>
+          <div className="save-actions">
+            <button type="button" onClick={saveGame}>
+              Save Game
+            </button>
+            <button type="button" onClick={loadGame}>
+              Load Game
+            </button>
+            <button type="button" onClick={copySaveSummary}>
+              Copy Save Summary
+            </button>
+          </div>
+          {saveStatus ? <p className="status-note">{saveStatus}</p> : null}
 
           {game.crown ? (
             <div className="crown-summary">
