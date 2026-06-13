@@ -38,6 +38,7 @@ export type CrownDecisionProfileId = string;
 export type DataSourceRef =
   | "John-Company-Rules.txt"
   | "board_image-1.png"
+  | "game_bits/Cards/John Company Cards (MiniEuro, Fronts).pdf"
   | "rulebook-scenario-1710"
   | "rulebook-scenario-1758"
   | "rulebook-scenario-1813"
@@ -158,6 +159,29 @@ export type FamilyActionDefinition = {
   notes: string[];
 };
 
+export type EnterpriseType = "shipyard" | "workshop" | "luxury";
+
+export type EnterpriseCardDefinition = {
+  id: string;
+  type: EnterpriseType;
+  label: string;
+  source: DataSourceRef;
+  cost: number;
+  parliamentVotes: number;
+  bonusIncome: number;
+  victoryPoints: number;
+  failureVictoryPoints: number;
+  windowTaxIcons: number;
+  shipTokenName?: string;
+  notes: string[];
+};
+
+export type EnterpriseDeckDefinition = {
+  type: EnterpriseType;
+  source: DataSourceRef;
+  cards: EnterpriseCardDefinition[];
+};
+
 export type StockExchangeSlotDefinition = {
   id: string;
   cost: number;
@@ -198,6 +222,105 @@ export type OfficeDefinition = {
   region?: RegionId;
   source: DataSourceRef;
   notes: string[];
+};
+
+export type BoardPosition = {
+  x: number;
+  y: number;
+};
+
+export type OrderDefinition = {
+  id: string;
+  region: RegionId;
+  value: number;
+  connectedOrderIds: string[];
+  isHomePortFor?: PresidencyId;
+  boardPosition: BoardPosition;
+  source: DataSourceRef;
+  notes: string[];
+};
+
+export type RegionDefinition = {
+  id: RegionId;
+  label: string;
+  presidency: PresidencyId;
+  adjacentRegionIds: RegionId[];
+  governorOfficeId: string;
+  boardPosition: BoardPosition;
+  orders: OrderDefinition[];
+  source: DataSourceRef;
+  notes: string[];
+};
+
+export type PresidencyDefinition = {
+  id: PresidencyId;
+  label: string;
+  army: PresidencyId;
+  homeRegion: RegionId;
+  seaZone: "west-indian" | "south-indian" | "east-indian";
+  presidentOfficeId: string;
+  governorOfficeIds: string[];
+  associatedRegionIds: RegionId[];
+  source: DataSourceRef;
+  notes: string[];
+};
+
+export type MapDefinition = {
+  source: DataSourceRef;
+  boardSize: {
+    width: number;
+    height: number;
+  };
+  presidencies: PresidencyDefinition[];
+  regions: RegionDefinition[];
+};
+
+export type SetupCardDeckId = "1710";
+
+export type SetupCardEffect =
+  | { type: "cash"; amount: number }
+  | { type: "office"; officeId: string }
+  | { type: "companyShare"; count: number }
+  | { type: "primeMinister" }
+  | { type: "randomBlackmail"; count: number }
+  | { type: "writer"; presidency: PresidencyId; count: number }
+  | { type: "commander"; army: PresidencyId }
+  | { type: "officersInTraining"; count: number }
+  | { type: "officer"; army: PresidencyId; count: number }
+  | {
+      type: "shipyard";
+      count: number;
+      ship:
+        | { status: "unfitted" }
+        | { status: "placed"; seaZone: "west-indian" | "south-indian" | "east-indian" };
+    }
+  | { type: "luxury"; count: number }
+  | { type: "workshop"; count: number }
+  | { type: "trophy"; count: number };
+
+export type SetupCardDefinition = {
+  id: string;
+  deckId: SetupCardDeckId;
+  scenario: ScenarioId;
+  extra: boolean;
+  source: DataSourceRef;
+  sheetPage: number;
+  sheetPosition: {
+    row: number;
+    column: number;
+  };
+  effects: SetupCardEffect[];
+  notes?: string[];
+};
+
+export type SetupCardDeckDefinition = {
+  id: SetupCardDeckId;
+  scenario: ScenarioId;
+  source: DataSourceRef;
+  baseCardsForThreeOrFourPlayers: number;
+  extraCardsForFivePlayers: number;
+  extraCardsForSixPlayers: number;
+  cards: SetupCardDefinition[];
 };
 
 export type CrownAiCardId = `crown-ai-${string}`;
@@ -269,7 +392,10 @@ export type StaticDataSet = {
   scenarios: ScenarioDefinition[];
   components: ComponentManifest;
   familyActions: FamilyActionDefinition[];
+  enterpriseDecks: EnterpriseDeckDefinition[];
   stockExchange: StockExchangeTrackDefinition;
   offices: OfficeDefinition[];
+  map: MapDefinition;
+  setupCardDecks: SetupCardDeckDefinition[];
   crown: CrownStaticData;
 };

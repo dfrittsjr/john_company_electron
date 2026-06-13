@@ -2,18 +2,24 @@ import { describe, expect, test } from "vitest";
 import {
   componentManifest,
   crownAiCards,
+  enterpriseDecks,
   familyActions,
+  mapData,
   offices,
   requiredCrownAiCardFieldPaths,
   requiredScenarioIds,
   scenarios,
+  setupCardDecks,
   stockExchangeTrack,
   validateComponentData,
   validateCrownData,
+  validateEnterpriseData,
   validateFamilyActionData,
+  validateMapData,
   validateNewGameStaticData,
   validateOfficeData,
   validateScenarioData,
+  validateSetupCardData,
   validateStockExchangeData,
 } from "../../data";
 import { createNewGame } from "../../engine";
@@ -119,6 +125,43 @@ describe("core hotseat data", () => {
     );
   });
 
+  test("encodes enterprise decks needed by Family purchase actions", () => {
+    const result = validateEnterpriseData();
+    const shipyardDeck = enterpriseDecks.find((deck) => deck.type === "shipyard");
+    const workshopDeck = enterpriseDecks.find((deck) => deck.type === "workshop");
+    const luxuryDeck = enterpriseDecks.find((deck) => deck.type === "luxury");
+
+    expect(result.valid).toBe(true);
+    expect(result.issues).toEqual([]);
+    expect(shipyardDeck?.cards).toHaveLength(22);
+    expect(workshopDeck?.cards).toHaveLength(20);
+    expect(luxuryDeck?.cards).toHaveLength(16);
+    expect(shipyardDeck?.cards[0]).toEqual(
+      expect.objectContaining({
+        label: "Atlas",
+        cost: 2,
+        parliamentVotes: 1,
+        bonusIncome: 1,
+        shipTokenName: "Atlas",
+      }),
+    );
+    expect(workshopDeck?.cards[0]).toEqual(
+      expect.objectContaining({
+        cost: 5,
+        parliamentVotes: 2,
+        bonusIncome: 1,
+        failureVictoryPoints: 1,
+      }),
+    );
+    expect(luxuryDeck?.cards[0]).toEqual(
+      expect.objectContaining({
+        cost: 4,
+        victoryPoints: 2,
+        windowTaxIcons: 1,
+      }),
+    );
+  });
+
   test("initializes new hotseat games with encoded family supply and stock exchange slots", () => {
     const state = createNewGame({
       mode: "hotseat",
@@ -175,6 +218,95 @@ describe("core hotseat data", () => {
       "mysore",
       "punjab",
     ]);
+  });
+
+  test("encodes Presidencies, regions, home ports, and adjacency", () => {
+    const result = validateMapData();
+    const homePorts = mapData.regions
+      .flatMap((region) => region.orders)
+      .filter((order) => order.isHomePortFor)
+      .map((order) => [order.isHomePortFor, order.id])
+      .sort();
+
+    expect(result.valid).toBe(true);
+    expect(result.issues).toEqual([]);
+    expect(mapData.presidencies.map((presidency) => presidency.id).sort()).toEqual([
+      "bengal",
+      "bombay",
+      "madras",
+    ]);
+    expect(mapData.regions.map((region) => region.id).sort()).toEqual([
+      "bengal",
+      "bombay",
+      "delhi",
+      "hyderabad",
+      "madras",
+      "maratha",
+      "mysore",
+      "punjab",
+    ]);
+    expect(homePorts).toEqual([
+      ["bengal", "bengal-home-6"],
+      ["bombay", "bombay-home-3"],
+      ["madras", "madras-home-5"],
+    ]);
+    expect(mapData.regions.find((region) => region.id === "hyderabad")?.adjacentRegionIds.sort()).toEqual([
+      "bombay",
+      "madras",
+      "maratha",
+      "mysore",
+    ]);
+  });
+
+  test("encodes the starter order graph with board positions", () => {
+    const orders = mapData.regions.flatMap((region) => region.orders);
+
+    expect(orders).toHaveLength(17);
+    expect(orders.every((order) => order.connectedOrderIds.length > 0)).toBe(true);
+    expect(
+      orders.every(
+        (order) =>
+          order.boardPosition.x >= 0 &&
+          order.boardPosition.x <= mapData.boardSize.width &&
+          order.boardPosition.y >= 0 &&
+          order.boardPosition.y <= mapData.boardSize.height,
+      ),
+    ).toBe(true);
+  });
+
+  test("encodes the 1710 setup card deck and extra-card distribution", () => {
+    const result = validateSetupCardData();
+    const deck1710 = setupCardDecks.find((deck) => deck.id === "1710");
+
+    expect(result.valid).toBe(true);
+    expect(result.issues).toEqual([]);
+    expect(deck1710).toBeDefined();
+    expect(deck1710?.baseCardsForThreeOrFourPlayers).toBe(12);
+    expect(deck1710?.extraCardsForFivePlayers).toBe(3);
+    expect(deck1710?.extraCardsForSixPlayers).toBe(6);
+    expect(deck1710?.cards.filter((card) => !card.extra)).toHaveLength(12);
+    expect(deck1710?.cards.filter((card) => card.extra)).toHaveLength(6);
+  });
+
+  test("encodes representative 1710 setup card effects", () => {
+    const deck1710 = setupCardDecks.find((deck) => deck.id === "1710");
+
+    expect(deck1710?.cards.find((card) => card.id === "1710-01-chairman-share")?.effects).toEqual([
+      { type: "office", officeId: "chairman" },
+      { type: "companyShare", count: 1 },
+      { type: "cash", amount: 1 },
+    ]);
+    expect(
+      deck1710?.cards.find((card) => card.id === "1710-08-commander-bombay-writer")?.effects,
+    ).toEqual([
+      { type: "commander", army: "bombay" },
+      { type: "writer", presidency: "bombay", count: 1 },
+      { type: "cash", amount: 4 },
+    ]);
+    expect(
+      deck1710?.cards.find((card) => card.id === "1710-extra-02-two-unfitted-shipyards")
+        ?.effects,
+    ).toEqual([{ type: "shipyard", count: 2, ship: { status: "unfitted" } }]);
   });
 });
 

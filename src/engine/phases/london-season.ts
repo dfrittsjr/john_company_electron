@@ -1,7 +1,7 @@
 import type { ApplyCommandResult, GameCommand, GameState } from "../types";
+import { createFamilyActionCommands } from "./family";
 import {
   createCommandLogEntry,
-  createStarterFamilyCommands,
   firstHumanActor,
   noHumanActor,
   wrongPhase,
@@ -46,7 +46,7 @@ export function confirmLondonSeason(
         actor: nextActor,
         visibility: "private",
         prompt: "Choose a family action.",
-        legalCommands: createStarterFamilyCommands(state, nextActor),
+        legalCommands: createFamilyActionCommands(state, nextActor),
         canSave: true,
       },
       log: [...state.log, logEntry],

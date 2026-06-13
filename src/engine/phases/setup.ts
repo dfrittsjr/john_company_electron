@@ -1,5 +1,6 @@
 import type { ApplyCommandResult, GameCommand, GameState, PendingDecision } from "../types";
-import { createCommandLogEntry, createStarterFamilyCommands } from "./shared";
+import { createFamilyActionCommands } from "./family";
+import { createCommandLogEntry } from "./shared";
 
 export function confirmStart(state: GameState, command: GameCommand): ApplyCommandResult {
   const now = command.clientTimestamp;
@@ -24,7 +25,7 @@ export function confirmStart(state: GameState, command: GameCommand): ApplyComma
     actor: nextActor,
     visibility: "private",
     prompt: "Choose a family action.",
-    legalCommands: createStarterFamilyCommands(state, nextActor),
+    legalCommands: createFamilyActionCommands(state, nextActor),
     canSave: true,
   };
   const logEntry = createCommandLogEntry({

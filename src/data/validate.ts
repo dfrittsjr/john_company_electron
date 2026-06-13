@@ -6,19 +6,28 @@ import {
   crownSetupDistributions,
 } from "./crown";
 import { componentManifest } from "./components";
+import { enterpriseDecks } from "./enterprises";
 import { familyActions } from "./family-actions";
+import { mapData } from "./map";
 import { offices } from "./offices";
 import { scenarios } from "./scenarios";
+import { setupCardDecks } from "./setup-cards";
 import { stockExchangeTrack } from "./stock-exchange";
 import type {
   ComponentManifest,
   CrownStaticData,
+  EnterpriseDeckDefinition,
+  EnterpriseType,
   FamilyActionDefinition,
   FamilyActionId,
+  MapDefinition,
   OfficeDefinition,
   PlayMode,
+  PresidencyId,
+  RegionId,
   ScenarioDefinition,
   ScenarioId,
+  SetupCardDeckDefinition,
   StaticDataSet,
   StockExchangeTrackDefinition,
   ValidationIssue,
@@ -61,8 +70,11 @@ export const staticData: StaticDataSet = {
   scenarios,
   components: componentManifest,
   familyActions,
+  enterpriseDecks,
   stockExchange: stockExchangeTrack,
   offices,
+  map: mapData,
+  setupCardDecks,
   crown: {
     aiCards: crownAiCards,
     setupDistributions: crownSetupDistributions,
@@ -485,6 +497,444 @@ export const validateOfficeData = (
   return resultFromIssues(issues);
 };
 
+export const validateMapData = (map: MapDefinition = staticData.map): ValidationResult => {
+  const issues: ValidationIssue[] = [];
+  const requiredPresidencyIds: PresidencyId[] = ["bombay", "madras", "bengal"];
+  const requiredRegionIds: RegionId[] = [
+    "bengal",
+    "delhi",
+    "bombay",
+    "punjab",
+    "maratha",
+    "madras",
+    "mysore",
+    "hyderabad",
+  ];
+  const presidencyById = new Map(map.presidencies.map((presidency) => [presidency.id, presidency]));
+  const regionById = new Map(map.regions.map((region) => [region.id, region]));
+  const orders = map.regions.flatMap((region) => region.orders);
+  const orderById = new Map(orders.map((row) => [row.id, row]));
+
+  for (const id of requiredPresidencyIds) {
+    if (!presidencyById.has(id)) {
+      issues.push({
+        severity: "error",
+        code: "map.presidency-missing",
+        path: `map.presidencies.${id}`,
+        message: `Presidency '${id}' is missing.`,
+        source: map.source,
+      });
+    }
+  }
+
+  for (const id of duplicateIds(map.presidencies)) {
+    issues.push({
+      severity: "error",
+      code: "map.presidency-duplicate-id",
+      path: `map.presidencies.${id}`,
+      message: `Presidency '${id}' is defined more than once.`,
+      source: map.source,
+    });
+  }
+
+  for (const id of requiredRegionIds) {
+    if (!regionById.has(id)) {
+      issues.push({
+        severity: "error",
+        code: "map.region-missing",
+        path: `map.regions.${id}`,
+        message: `Region '${id}' is missing.`,
+        source: map.source,
+      });
+    }
+  }
+
+  for (const id of duplicateIds(map.regions)) {
+    issues.push({
+      severity: "error",
+      code: "map.region-duplicate-id",
+      path: `map.regions.${id}`,
+      message: `Region '${id}' is defined more than once.`,
+      source: map.source,
+    });
+  }
+
+  for (const id of duplicateIds(orders)) {
+    issues.push({
+      severity: "error",
+      code: "map.order-duplicate-id",
+      path: `map.orders.${id}`,
+      message: `Order '${id}' is defined more than once.`,
+      source: map.source,
+    });
+  }
+
+  for (const presidency of map.presidencies) {
+    if (!regionById.has(presidency.homeRegion)) {
+      issues.push({
+        severity: "error",
+        code: "map.presidency-home-region-missing",
+        path: `map.presidencies.${presidency.id}.homeRegion`,
+        message: `Presidency '${presidency.id}' references missing home region '${presidency.homeRegion}'.`,
+        source: presidency.source,
+      });
+    }
+
+    for (const regionId of presidency.associatedRegionIds) {
+      if (!regionById.has(regionId)) {
+        issues.push({
+          severity: "error",
+          code: "map.presidency-region-missing",
+          path: `map.presidencies.${presidency.id}.associatedRegionIds`,
+          message: `Presidency '${presidency.id}' references missing region '${regionId}'.`,
+          source: presidency.source,
+        });
+      }
+    }
+  }
+
+  for (const region of map.regions) {
+    if (!presidencyById.has(region.presidency)) {
+      issues.push({
+        severity: "error",
+        code: "map.region-presidency-missing",
+        path: `map.regions.${region.id}.presidency`,
+        message: `Region '${region.id}' references missing Presidency '${region.presidency}'.`,
+        source: region.source,
+      });
+    }
+
+    if (region.orders.length === 0) {
+      issues.push({
+        severity: "error",
+        code: "map.region-orders-missing",
+        path: `map.regions.${region.id}.orders`,
+        message: `Region '${region.id}' must include at least one order.`,
+        source: region.source,
+      });
+    }
+
+    for (const adjacentRegionId of region.adjacentRegionIds) {
+      const adjacent = regionById.get(adjacentRegionId);
+      if (!adjacent) {
+        issues.push({
+          severity: "error",
+          code: "map.region-adjacent-missing",
+          path: `map.regions.${region.id}.adjacentRegionIds`,
+          message: `Region '${region.id}' references missing adjacent region '${adjacentRegionId}'.`,
+          source: region.source,
+        });
+      } else if (!adjacent.adjacentRegionIds.includes(region.id)) {
+        issues.push({
+          severity: "error",
+          code: "map.region-adjacency-asymmetric",
+          path: `map.regions.${region.id}.adjacentRegionIds`,
+          message: `Region adjacency '${region.id}' -> '${adjacentRegionId}' is not symmetric.`,
+          source: region.source,
+        });
+      }
+    }
+
+    if (
+      region.boardPosition.x < 0 ||
+      region.boardPosition.x > map.boardSize.width ||
+      region.boardPosition.y < 0 ||
+      region.boardPosition.y > map.boardSize.height
+    ) {
+      issues.push({
+        severity: "error",
+        code: "map.region-position-out-of-bounds",
+        path: `map.regions.${region.id}.boardPosition`,
+        message: `Region '${region.id}' board position is outside the board image.`,
+        source: region.source,
+      });
+    }
+
+    for (const order of region.orders) {
+      if (order.region !== region.id) {
+        issues.push({
+          severity: "error",
+          code: "map.order-region-mismatch",
+          path: `map.orders.${order.id}.region`,
+          message: `Order '${order.id}' does not match its containing region '${region.id}'.`,
+          source: order.source,
+        });
+      }
+
+      if (order.value <= 0) {
+        issues.push({
+          severity: "error",
+          code: "map.order-invalid-value",
+          path: `map.orders.${order.id}.value`,
+          message: `Order '${order.id}' must have a positive value.`,
+          source: order.source,
+        });
+      }
+
+      if (
+        order.boardPosition.x < 0 ||
+        order.boardPosition.x > map.boardSize.width ||
+        order.boardPosition.y < 0 ||
+        order.boardPosition.y > map.boardSize.height
+      ) {
+        issues.push({
+          severity: "error",
+          code: "map.order-position-out-of-bounds",
+          path: `map.orders.${order.id}.boardPosition`,
+          message: `Order '${order.id}' board position is outside the board image.`,
+          source: order.source,
+        });
+      }
+    }
+  }
+
+  for (const order of orders) {
+    for (const connectedOrderId of order.connectedOrderIds) {
+      const connected = orderById.get(connectedOrderId);
+      if (!connected) {
+        issues.push({
+          severity: "error",
+          code: "map.order-connection-missing",
+          path: `map.orders.${order.id}.connectedOrderIds`,
+          message: `Order '${order.id}' references missing connected order '${connectedOrderId}'.`,
+          source: order.source,
+        });
+      } else if (!connected.connectedOrderIds.includes(order.id)) {
+        issues.push({
+          severity: "error",
+          code: "map.order-connection-asymmetric",
+          path: `map.orders.${order.id}.connectedOrderIds`,
+          message: `Order connection '${order.id}' -> '${connectedOrderId}' is not symmetric.`,
+          source: order.source,
+        });
+      }
+    }
+  }
+
+  for (const id of requiredPresidencyIds) {
+    const homePortCount = orders.filter((order) => order.isHomePortFor === id).length;
+    if (homePortCount !== 1) {
+      issues.push({
+        severity: "error",
+        code: "map.presidency-home-port-count",
+        path: `map.orders.homePort.${id}`,
+        message: `Presidency '${id}' must have exactly one home port order; found ${homePortCount}.`,
+        source: map.source,
+      });
+    }
+  }
+
+  return resultFromIssues(issues);
+};
+
+export const validateEnterpriseData = (
+  decks: EnterpriseDeckDefinition[] = staticData.enterpriseDecks,
+  components: ComponentManifest = staticData.components,
+): ValidationResult => {
+  const issues: ValidationIssue[] = [];
+  const expectedCounts: Record<EnterpriseType, number> = {
+    shipyard: components.enterprises.shipyards,
+    workshop: components.enterprises.workshops,
+    luxury: components.enterprises.luxuries,
+  };
+  const expectedCosts: Record<EnterpriseType, number> = {
+    shipyard: 2,
+    workshop: 5,
+    luxury: 4,
+  };
+  const deckByType = new Map(decks.map((deck) => [deck.type, deck]));
+  const cards = decks.flatMap((deck) => deck.cards);
+
+  for (const type of ["shipyard", "workshop", "luxury"] as const) {
+    const deck = deckByType.get(type);
+    if (!deck) {
+      issues.push({
+        severity: "error",
+        code: "enterprise.deck-missing",
+        path: `enterpriseDecks.${type}`,
+        message: `Enterprise deck '${type}' is missing.`,
+        source: "John-Company-Rules.txt",
+      });
+      continue;
+    }
+
+    if (deck.cards.length !== expectedCounts[type]) {
+      issues.push({
+        severity: "error",
+        code: "enterprise.deck-count",
+        path: `enterpriseDecks.${type}.cards`,
+        message: `Enterprise deck '${type}' must contain ${expectedCounts[type]} cards; found ${deck.cards.length}.`,
+        source: deck.source,
+      });
+    }
+  }
+
+  for (const id of duplicateIds(cards)) {
+    issues.push({
+      severity: "error",
+      code: "enterprise.duplicate-card-id",
+      path: `enterpriseDecks.cards.${id}`,
+      message: `Enterprise card '${id}' is defined more than once.`,
+      source: "John-Company-Rules.txt",
+    });
+  }
+
+  for (const deck of decks) {
+    for (const card of deck.cards) {
+      if (card.type !== deck.type) {
+        issues.push({
+          severity: "error",
+          code: "enterprise.deck-card-type-mismatch",
+          path: `enterpriseDecks.${deck.type}.cards.${card.id}.type`,
+          message: `Enterprise card '${card.id}' does not match its deck type '${deck.type}'.`,
+          source: card.source,
+        });
+      }
+
+      if (card.cost !== expectedCosts[card.type]) {
+        issues.push({
+          severity: "error",
+          code: "enterprise.card-cost",
+          path: `enterpriseDecks.${deck.type}.cards.${card.id}.cost`,
+          message: `Enterprise card '${card.id}' has cost ${card.cost}; expected ${expectedCosts[card.type]}.`,
+          source: card.source,
+        });
+      }
+
+      if (!hasValue(card.label)) {
+        issues.push({
+          severity: "error",
+          code: "enterprise.card-label-missing",
+          path: `enterpriseDecks.${deck.type}.cards.${card.id}.label`,
+          message: `Enterprise card '${card.id}' is missing a label.`,
+          source: card.source,
+        });
+      }
+
+      if (card.type === "shipyard" && !hasValue(card.shipTokenName)) {
+        issues.push({
+          severity: "error",
+          code: "enterprise.shipyard-token-missing",
+          path: `enterpriseDecks.shipyard.cards.${card.id}.shipTokenName`,
+          message: `Shipyard '${card.id}' must identify its matching ship token.`,
+          source: card.source,
+        });
+      }
+    }
+  }
+
+  return resultFromIssues(issues);
+};
+
+export const validateSetupCardData = (
+  decks: SetupCardDeckDefinition[] = staticData.setupCardDecks,
+): ValidationResult => {
+  const issues: ValidationIssue[] = [];
+  const deck1710 = decks.find((deck) => deck.id === "1710");
+
+  if (!deck1710) {
+    issues.push({
+      severity: "error",
+      code: "setup-card.deck-missing",
+      path: "setupCardDecks.1710",
+      message: "1710 setup card deck is missing.",
+      source: "game_bits/Cards/John Company Cards (MiniEuro, Fronts).pdf",
+    });
+
+    return resultFromIssues(issues);
+  }
+
+  const baseCards = deck1710.cards.filter((card) => !card.extra);
+  const extraCards = deck1710.cards.filter((card) => card.extra);
+  if (baseCards.length !== deck1710.baseCardsForThreeOrFourPlayers) {
+    issues.push({
+      severity: "error",
+      code: "setup-card.base-count",
+      path: "setupCardDecks.1710.cards",
+      message: `1710 setup deck must have ${deck1710.baseCardsForThreeOrFourPlayers} base cards; found ${baseCards.length}.`,
+      source: deck1710.source,
+    });
+  }
+
+  if (extraCards.length !== deck1710.extraCardsForSixPlayers) {
+    issues.push({
+      severity: "error",
+      code: "setup-card.extra-count",
+      path: "setupCardDecks.1710.cards",
+      message: `1710 setup deck must have ${deck1710.extraCardsForSixPlayers} extra cards; found ${extraCards.length}.`,
+      source: deck1710.source,
+    });
+  }
+
+  if (deck1710.extraCardsForFivePlayers !== 3 || deck1710.extraCardsForSixPlayers !== 6) {
+    issues.push({
+      severity: "error",
+      code: "setup-card.extra-distribution",
+      path: "setupCardDecks.1710",
+      message: "1710 setup deck must add 3 extra cards for 5 players and 6 extra cards for 6 players.",
+      source: "John-Company-Rules.txt",
+    });
+  }
+
+  const seenIds = new Set<string>();
+  for (const card of deck1710.cards) {
+    if (seenIds.has(card.id)) {
+      issues.push({
+        severity: "error",
+        code: "setup-card.duplicate-id",
+        path: `setupCardDecks.1710.cards.${card.id}`,
+        message: `Setup card '${card.id}' is defined more than once.`,
+        source: card.source,
+      });
+    }
+    seenIds.add(card.id);
+
+    if (card.deckId !== deck1710.id || card.scenario !== deck1710.scenario) {
+      issues.push({
+        severity: "error",
+        code: "setup-card.deck-mismatch",
+        path: `setupCardDecks.1710.cards.${card.id}`,
+        message: `Setup card '${card.id}' does not match its containing deck.`,
+        source: card.source,
+      });
+    }
+
+    if (card.effects.length === 0) {
+      issues.push({
+        severity: "error",
+        code: "setup-card.effects-missing",
+        path: `setupCardDecks.1710.cards.${card.id}.effects`,
+        message: `Setup card '${card.id}' has no encoded effects.`,
+        source: card.source,
+      });
+    }
+
+    for (const effect of card.effects) {
+      if ("count" in effect && effect.count <= 0) {
+        issues.push({
+          severity: "error",
+          code: "setup-card.invalid-count",
+          path: `setupCardDecks.1710.cards.${card.id}.effects`,
+          message: `Setup card '${card.id}' has a non-positive effect count.`,
+          source: card.source,
+        });
+      }
+
+      if (effect.type === "cash" && effect.amount <= 0) {
+        issues.push({
+          severity: "error",
+          code: "setup-card.invalid-cash",
+          path: `setupCardDecks.1710.cards.${card.id}.effects.cash`,
+          message: `Setup card '${card.id}' has a non-positive cash amount.`,
+          source: card.source,
+        });
+      }
+    }
+  }
+
+  return resultFromIssues(issues);
+};
+
 export const validateCrownData = (
   crownData: CrownStaticData = staticData.crown,
 ): ValidationResult => {
@@ -592,8 +1042,11 @@ export const validateNewGameStaticData = ({
   for (const validation of [
     validateComponentData(data.components),
     validateFamilyActionData(data.familyActions),
+    validateEnterpriseData(data.enterpriseDecks, data.components),
     validateStockExchangeData(data.stockExchange),
     validateOfficeData(data.offices),
+    validateMapData(data.map),
+    validateSetupCardData(data.setupCardDecks),
   ]) {
     for (const issue of validation.issues) {
       if (issue.severity === "error") {

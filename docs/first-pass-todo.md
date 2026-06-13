@@ -118,55 +118,87 @@ data in the order needed by gameplay.
 First priority:
 
 1. Done: component counts in `src/data/components.ts`.
-2. TODO: `1710` scenario setup card data.
+2. Done: `1710` setup card data in `src/data/setup-cards.ts`.
 3. Done: Family action definitions and costs in `src/data/family-actions.ts`.
 4. Done: Stock Exchange slots and Company share creation rules in
    `src/data/stock-exchange.ts`.
 5. Done: office order and office definitions in `src/data/offices.ts`.
-6. TODO: Presidency/army/region IDs needed by Family and Hiring.
-7. TODO: board regions, order graph, and adjacency.
-8. TODO: enterprise placeholder decks only when real purchase effects need them.
+6. Done: Presidency, army, home-region, sea-zone, and associated-region IDs in
+   `src/data/map.ts`.
+7. Done: starter board regions, order graph, home ports, and adjacency in
+   `src/data/map.ts`.
+8. Done: enterprise decks in `src/data/enterprises.ts`.
+
+Map data notes:
+
+- Region/order coordinates are starter transcriptions from `board_image-1.png`.
+- The order graph has stable IDs and symmetric connections for rules work, but
+  exact overlay positions can still be refined during UI board interaction work.
+- The map data is now validated before new-game setup.
+
+Enterprise data notes:
+
+- Shipyards are encoded as 22 named cards with matching ship token names.
+- Workshops and luxuries are encoded as numbered functional decks because their
+  rule effects are uniform.
+- The enterprise decks are now validated against the component manifest.
 
 Current setup wiring:
 
 - New games initialize family supply from the component manifest.
 - New games initialize the Stock Exchange track from static data.
 - New game validation now checks component counts, Family action data, Stock
-  Exchange data, and office data before allowing setup.
+  Exchange data, office data, map data, enterprise data, and setup-card data
+  before allowing setup.
+
+Setup card notes:
+
+- The `1710` deck is encoded as 12 base cards plus 6 extra cards.
+- For 5-player setup, add 3 extra cards.
+- For 6-player setup, add all 6 extra cards.
+- The current engine does not yet deal, draft, or apply setup-card effects.
 
 Do not mark advanced scenarios complete until their setup cards, scenario tracks,
 map setup, laws, and Deregulation state are encoded.
 
 ### 4. Replace Starter Family Actions With Real Effects
 
+Status: in progress.
+
 Current behavior:
 
-- `family.chooseAction` records the selected action and moves to the next
-  player.
+- `family.chooseAction` validates the selected action against the current
+  decision's legal payloads, applies immediate Family action effects, and moves
+  to the next player.
+- Legal commands are filtered by cash, available family members, empty Stock
+  Exchange slots, and enterprise deck availability.
+- `Enlist Writer` places a family member in the chosen Presidency Writers box.
+- `Enlist Officer` places a family member in Officers-in-Training.
+- `Seek Share` places a family member on the cheapest affordable empty Stock
+  Exchange slot and spends the printed cost.
+- End-of-Family share creation converts rightmost Stock Exchange pieces into
+  Company shares while Company Debt remains, reduces Debt, and slides remaining
+  Stock Exchange pieces rightward.
+- `Purchase Workshop`, `Purchase Shipyard`, and `Purchase Luxury` spend cash and
+  take the next enterprise card. Shipyards create their matching ship token;
+  luxuries award 2 VP and one window icon.
+- `No Action` is only generated when no other legal Family action is available.
 
 Implement:
 
-- Legal action filtering by cash, pieces, and scenario state.
-- `Enlist Writer`: choose Presidency and place writer.
-- `Enlist Officer`: add officer in training.
-- `Seek Share`: place a family member in the cheapest legal stock exchange slot.
-- `Purchase Workshop`: spend cash and draw/place a workshop enterprise once
-  enterprise data exists.
-- `Purchase Shipyard`.
-- `Purchase Luxury`.
 - Opportunity marker double-action rule.
 - Extra family action from the most recent applicable law once laws exist.
-- No-action only when the player truly cannot act.
 - Out-of-family-pieces rule once prizes exist.
-- Share creation from Company Debt after all players act.
+- Save/load coverage during each distinct Family decision type.
 
 Tests:
 
-- Legal and illegal action availability.
-- Cash and piece source/destination.
-- Opportunity marker behavior.
-- Share creation from debt.
-- Save/load during each Family decision type.
+- Done: legal and illegal action availability.
+- Done: cash and piece source/destination.
+- Done: writer, officer, share, shipyard, workshop, and luxury effects.
+- Done: share creation from debt.
+- TODO: opportunity marker behavior.
+- TODO: save/load during each Family decision type.
 
 ### 5. Replace Starter Hiring Pass With Office Hiring
 
