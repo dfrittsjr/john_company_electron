@@ -36,6 +36,8 @@ export type CrownClimateId =
 export type CrownDecisionProfileId = string;
 
 export type DataSourceRef =
+  | "John-Company-Rules.txt"
+  | "board_image-1.png"
   | "rulebook-scenario-1710"
   | "rulebook-scenario-1758"
   | "rulebook-scenario-1813"
@@ -99,6 +101,103 @@ export type ScenarioDefinition = {
   completeness: ScenarioCompleteness;
   source: DataSourceRef;
   setup: ScenarioSetup;
+};
+
+export type ComponentManifest = {
+  families: {
+    count: number;
+    familyMembersPerFamily: number;
+    victoryPointMarkersPerFamily: number;
+    promiseCardsPerFamily: number;
+    opportunityMarkersPerFamily: number;
+    firmCubesPerFamily: number;
+    firmStrategyCardsPerFamily: number;
+  };
+  money: {
+    bankUnlimited: boolean;
+    denominations: Array<{
+      value: number;
+      count: number;
+    }>;
+  };
+  enterprises: {
+    shipyards: number;
+    workshops: number;
+    luxuries: number;
+  };
+  offices: {
+    officeCards: number;
+  };
+  crown: {
+    aiCards: number;
+    promiseCubes: number;
+  };
+  source: DataSourceRef;
+};
+
+export type FamilyActionDefinition = {
+  id: FamilyActionId;
+  label: string;
+  source: DataSourceRef;
+  cost:
+    | {
+        type: "none";
+      }
+    | {
+        type: "fixed";
+        amount: number;
+      }
+    | {
+        type: "stockExchangeSlot";
+      };
+  placesFamilyMember: boolean;
+  enterpriseType?: "shipyard" | "workshop" | "luxury";
+  victoryPoints?: number;
+  parliamentVotes?: number;
+  bonusIncome?: number;
+  notes: string[];
+};
+
+export type StockExchangeSlotDefinition = {
+  id: string;
+  cost: number;
+  rightwardOrder: number;
+  boardPosition: {
+    x: number;
+    y: number;
+  };
+  source: DataSourceRef;
+};
+
+export type StockExchangeTrackDefinition = {
+  id: string;
+  source: DataSourceRef;
+  slots: StockExchangeSlotDefinition[];
+  shareCreation: {
+    debtReductionPerCreatedShare: number;
+    createdFrom: "rightmost";
+    slideRemainingPieces: "rightwardPreservingOrder";
+    source: DataSourceRef;
+  };
+};
+
+export type OfficeCategory =
+  | "chairman"
+  | "company"
+  | "presidency"
+  | "governor"
+  | "china"
+  | "governorGeneral";
+
+export type OfficeDefinition = {
+  id: string;
+  label: string;
+  category: OfficeCategory;
+  operationOrder?: number;
+  presidency?: PresidencyId;
+  region?: RegionId;
+  source: DataSourceRef;
+  notes: string[];
 };
 
 export type CrownAiCardId = `crown-ai-${string}`;
@@ -168,5 +267,9 @@ export type CrownStaticData = {
 
 export type StaticDataSet = {
   scenarios: ScenarioDefinition[];
+  components: ComponentManifest;
+  familyActions: FamilyActionDefinition[];
+  stockExchange: StockExchangeTrackDefinition;
+  offices: OfficeDefinition[];
   crown: CrownStaticData;
 };

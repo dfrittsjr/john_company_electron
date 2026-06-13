@@ -110,19 +110,29 @@ tests until real phase equivalents pass.
 
 ### 3. Complete Core Static Data Needed For Hotseat 1710
 
+Status: in progress.
+
 Use `docs/data-entry-checklist.md` as the canonical data checklist, but enter
 data in the order needed by gameplay.
 
 First priority:
 
-1. Component counts.
-2. `1710` scenario setup card data.
-3. Family action definitions and costs.
-4. Stock exchange slots and Company share data.
-5. Office order and office definitions.
-6. Presidency/army/region IDs needed by Family and Hiring.
-7. Board regions, order graph, and adjacency.
-8. Enterprise placeholder decks only when real purchase effects need them.
+1. Done: component counts in `src/data/components.ts`.
+2. TODO: `1710` scenario setup card data.
+3. Done: Family action definitions and costs in `src/data/family-actions.ts`.
+4. Done: Stock Exchange slots and Company share creation rules in
+   `src/data/stock-exchange.ts`.
+5. Done: office order and office definitions in `src/data/offices.ts`.
+6. TODO: Presidency/army/region IDs needed by Family and Hiring.
+7. TODO: board regions, order graph, and adjacency.
+8. TODO: enterprise placeholder decks only when real purchase effects need them.
+
+Current setup wiring:
+
+- New games initialize family supply from the component manifest.
+- New games initialize the Stock Exchange track from static data.
+- New game validation now checks component counts, Family action data, Stock
+  Exchange data, and office data before allowing setup.
 
 Do not mark advanced scenarios complete until their setup cards, scenario tracks,
 map setup, laws, and Deregulation state are encoded.

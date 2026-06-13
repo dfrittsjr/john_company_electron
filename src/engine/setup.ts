@@ -1,3 +1,4 @@
+import { componentManifest, stockExchangeTrack } from "../data";
 import { createRngState, shuffle } from "./rng";
 import {
   GAME_SCHEMA_VERSION,
@@ -59,7 +60,7 @@ export function createNewGame(options: NewGameOptions): GameState {
       name: player.name,
       color: player.color,
       isCrown: false,
-      familySupply: 18,
+      familySupply: componentManifest.families.familyMembersPerFamily,
     }),
   );
 
@@ -322,7 +323,13 @@ function createInitialCompanyState(): CompanyState {
     vacantOffices: [],
     unusedOffices: [],
     court: [],
-    stockExchange: [],
+    stockExchange: stockExchangeTrack.slots
+      .slice()
+      .sort((a, b) => a.rightwardOrder - b.rightwardOrder)
+      .map((slot) => ({
+        id: slot.id,
+        cost: slot.cost,
+      })),
     ships: [],
     extraShips: [],
     armies: {

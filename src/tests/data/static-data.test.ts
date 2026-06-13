@@ -1,13 +1,22 @@
 import { describe, expect, test } from "vitest";
 import {
+  componentManifest,
   crownAiCards,
+  familyActions,
+  offices,
   requiredCrownAiCardFieldPaths,
   requiredScenarioIds,
   scenarios,
+  stockExchangeTrack,
+  validateComponentData,
   validateCrownData,
+  validateFamilyActionData,
   validateNewGameStaticData,
+  validateOfficeData,
   validateScenarioData,
+  validateStockExchangeData,
 } from "../../data";
+import { createNewGame } from "../../engine";
 
 describe("scenario starter data", () => {
   test("contains all required scenario ids", () => {
@@ -41,6 +50,131 @@ describe("scenario starter data", () => {
         }),
       ]),
     );
+  });
+});
+
+describe("core hotseat data", () => {
+  test("encodes physical component counts needed by starter rules", () => {
+    const result = validateComponentData();
+
+    expect(result.valid).toBe(true);
+    expect(result.issues).toEqual([]);
+    expect(componentManifest.families).toEqual(
+      expect.objectContaining({
+        count: 6,
+        familyMembersPerFamily: 18,
+        promiseCardsPerFamily: 5,
+      }),
+    );
+    expect(componentManifest.enterprises).toEqual({
+      shipyards: 22,
+      workshops: 20,
+      luxuries: 16,
+    });
+  });
+
+  test("encodes Family action costs and starter effects", () => {
+    const result = validateFamilyActionData();
+
+    expect(result.valid).toBe(true);
+    expect(result.issues).toEqual([]);
+    expect(familyActions.map((action) => action.id).sort()).toEqual([
+      "enlist-officer",
+      "enlist-writer",
+      "purchase-luxury",
+      "purchase-shipyard",
+      "purchase-workshop",
+      "seek-share",
+    ]);
+    expect(familyActions.find((action) => action.id === "purchase-luxury")?.cost).toEqual({
+      type: "fixed",
+      amount: 4,
+    });
+    expect(familyActions.find((action) => action.id === "purchase-shipyard")?.cost).toEqual({
+      type: "fixed",
+      amount: 2,
+    });
+    expect(familyActions.find((action) => action.id === "purchase-workshop")?.cost).toEqual({
+      type: "fixed",
+      amount: 5,
+    });
+    expect(familyActions.find((action) => action.id === "seek-share")?.cost).toEqual({
+      type: "stockExchangeSlot",
+    });
+  });
+
+  test("encodes Stock Exchange prices and rightward order", () => {
+    const result = validateStockExchangeData();
+
+    expect(result.valid).toBe(true);
+    expect(result.issues).toEqual([]);
+    expect(stockExchangeTrack.slots.map((slot) => slot.cost)).toEqual([2, 3, 3, 4, 5]);
+    expect(stockExchangeTrack.slots.map((slot) => slot.rightwardOrder)).toEqual([1, 2, 3, 4, 5]);
+    expect(stockExchangeTrack.shareCreation).toEqual(
+      expect.objectContaining({
+        debtReductionPerCreatedShare: 1,
+        createdFrom: "rightmost",
+        slideRemainingPieces: "rightwardPreservingOrder",
+      }),
+    );
+  });
+
+  test("initializes new hotseat games with encoded family supply and stock exchange slots", () => {
+    const state = createNewGame({
+      mode: "hotseat",
+      scenario: "1710",
+      seed: "core-data-setup",
+      gameId: "game-core-data-setup",
+      now: "2026-06-13T12:00:00.000Z",
+      players: [
+        { id: "player-red", name: "Red", color: "red" },
+        { id: "player-blue", name: "Blue", color: "blue" },
+        { id: "player-yellow", name: "Yellow", color: "yellow" },
+      ],
+    });
+
+    expect(state.players["player-red"].familyMembers.supply).toBe(
+      componentManifest.families.familyMembersPerFamily,
+    );
+    expect(state.company.stockExchange).toEqual(
+      stockExchangeTrack.slots.map((slot) => ({
+        id: slot.id,
+        cost: slot.cost,
+      })),
+    );
+  });
+
+  test("encodes office cards and red-ribbon Company Operation order", () => {
+    const result = validateOfficeData();
+
+    expect(result.valid).toBe(true);
+    expect(result.issues).toEqual([]);
+    expect(offices).toHaveLength(17);
+    expect(
+      offices
+        .filter((office) => office.operationOrder !== undefined)
+        .sort((a, b) => (a.operationOrder ?? 0) - (b.operationOrder ?? 0))
+        .map((office) => office.id),
+    ).toEqual([
+      "chairman",
+      "director-of-trade",
+      "manager-of-shipping",
+      "military-affairs",
+      "president-bombay",
+      "president-madras",
+      "president-bengal",
+      "superintendent-of-trade-in-china",
+    ]);
+    expect(offices.filter((office) => office.category === "governor").map((office) => office.region).sort()).toEqual([
+      "bengal",
+      "bombay",
+      "delhi",
+      "hyderabad",
+      "madras",
+      "maratha",
+      "mysore",
+      "punjab",
+    ]);
   });
 });
 
