@@ -1,20 +1,40 @@
-# First Pass Implementation TODO
+# Project TODO
 
-This document tracks the remaining work for the current first-pass implementation. It is narrower than `docs/implementation-plan.md`: use it when continuing from the existing scaffold in `src/`.
+This document tracks the next implementation work from the current scaffold in
+`src/`. It is the practical continuation list for this repo. For the full
+architecture and long-range scope, use `docs/implementation-plan.md`,
+`docs/rules-and-state-model.md`, `docs/gui-design.md`, and
+`docs/crown-ai-design.md`.
 
-Current state:
+## Current State
 
 - Vite + React + TypeScript + Electron shell exists.
 - Board image renders.
-- `GameState`, `PendingDecision`, command validation, RNG, save envelope, and starter data validation exist.
-- Setup can create a starter game.
-- `setup.confirmStart` advances to Family.
-- `family.chooseAction` has starter buttons and advances through human players.
-- `hiring.pass` has starter buttons and advances through human players.
-- Current next stop is `companyOperation.notImplemented`.
-- Crown data is intentionally placeholder-level and Crown modes should remain blocked by validation until Crown AI cards/profiles are encoded.
+- `GameState`, `PendingDecision`, command validation, RNG, save envelope, and
+  starter data validation exist.
+- Setup can create a starter hotseat game.
+- Setup validation is shown in the new game UI, and Crown modes are correctly
+  blocked while Crown AI cards are placeholders.
+- Basic Electron save/load dialogs exist for `.joco` saves.
+- `Copy Save Summary` exists.
+- Starter commands now advance a hotseat `1710` game through:
+  - setup
+  - Family
+  - Hiring
+  - Company Operation
+  - Bonuses
+  - Revenue
+  - Events in India
+  - Parliament
+  - Upkeep
+  - London Season
+  - Final Scoring
+- The current engine is still mostly a phase skeleton. Many commands record
+  that a phase happened but do not apply the real rules yet.
+- Crown data is intentionally placeholder-level and Crown modes must remain
+  blocked by validation until Crown AI cards/profiles/favors are encoded.
 
-Always run before handing off:
+Always run before handing off code changes:
 
 ```bash
 npm run typecheck
@@ -22,32 +42,22 @@ npm test
 npm run build
 ```
 
+For documentation-only changes, these checks are optional.
+
 ## Immediate Goal
 
-Make one hotseat `1710` starter game advance through every phase to final scoring without manual state editing. It does not need full rules yet, but every pending decision must have at least one legal command, a reducer, a log entry, and a test.
+Turn the current starter skeleton into a rules-enforced hotseat game for the
+`1710` scenario before expanding to Crown, Deregulation, and advanced scenarios.
 
-## Current Scaffold Stops
+The recommended order is:
 
-Known pending-decision boundaries that still need starter commands:
+1. Make the engine easier to extend.
+2. Encode the data needed by the next rule area.
+3. Replace one starter phase with real legal commands and reducers.
+4. Add tests and save/load coverage for that phase.
+5. Continue to the next phase.
 
-- `companyOperation.notImplemented`
-- Future likely stops after adding Company Operation:
-  - `bonuses.notImplemented`
-  - `revenue.notImplemented`
-  - `eventsInIndia.notImplemented`
-  - `parliament.notImplemented`
-  - `upkeep.notImplemented`
-  - `finalScoring.notImplemented`
-
-Each stop should be replaced with:
-
-- A real `step` name.
-- One or more `legalCommands`.
-- A reducer branch in `src/engine/commands.ts` or a phase-specific reducer module.
-- A log entry.
-- Tests in `src/tests/engine/commands.test.ts` or a new phase test file.
-
-## Recommended Order
+## Ordered Backlog
 
 ### 1. Split Command Reducers By Phase
 
@@ -55,12 +65,14 @@ Current file:
 
 - `src/engine/commands.ts`
 
-Recommended next structure:
+Create phase modules before adding much more rule logic:
 
 ```text
 src/engine/commands.ts
 src/engine/phases/setup.ts
+src/engine/phases/london-season.ts
 src/engine/phases/family.ts
+src/engine/phases/firms.ts
 src/engine/phases/hiring.ts
 src/engine/phases/company-operation.ts
 src/engine/phases/bonuses.ts
@@ -71,196 +83,352 @@ src/engine/phases/upkeep.ts
 src/engine/phases/final-scoring.ts
 ```
 
-Keep `applyCommand` as the dispatcher and move phase logic out as files grow.
+Keep `applyCommand` as the dispatcher. Move legal-command generation and
+reducers into phase modules as each phase becomes real.
 
-### 2. Add Starter Phase Progression Through A Full Turn
+### 2. Add Shared Engine Test Fixtures And Invariants
 
-Add minimal pass/confirm commands for each phase:
-
-- `companyOperation.passOffice`
-- `bonuses.confirm`
-- `revenue.confirm`
-- `eventsInIndia.confirm`
-- `parliament.confirm`
-- `upkeep.confirm`
-- `turn.advance` or `finalScoring.start`
-
-Starter behavior:
-
-- Do not fake full rules.
-- Log that the starter scaffold skipped or confirmed the phase.
-- Advance to the next phase.
-- Preserve `turn`, `phase`, `pendingDecision`, and `log` correctly.
-- At Upkeep, advance turn or enter final scoring based on `finalTurn`.
-
-Tests to add:
-
-- One test for each phase command.
-- One scripted test that starts a 3-player `1710` game and advances through one full turn.
-- One scripted test that advances to final scoring using a short fixture or modified final turn.
-
-### 3. Add Real Save/Load UI
-
-Engine/save code exists, but UI buttons are disabled.
-
-Implement:
-
-- Electron preload methods for save/load dialogs.
-- Main-process handlers for writing and reading `.joco`.
-- Renderer buttons:
-  - `Save Game`
-  - `Save As`
-  - `Load Game`
-  - `Copy Save Summary`
-- Friendly error display for invalid/corrupt saves.
-
-Files likely touched:
-
-- `main.cjs`
-- `src/electron/preload.cjs`
-- `src/ui/App.tsx`
-- `src/save/*`
-
-Tests:
-
-- Save envelope roundtrip already exists; add UI or adapter tests when Electron IPC wrappers exist.
-
-### 4. Add Scenario Setup Validation To New Game UI
-
-Data validators exist in `src/data/validate.ts` but setup UI currently does not use them.
-
-Implement:
-
-- Before creating a game, call `validateNewGameStaticData`.
-- Hotseat starter scenarios may proceed with starter data.
-- Crown modes must show validation errors until Crown data is complete.
-- Show missing data categories in the setup panel.
-
-Important:
-
-- Do not silently allow Crown modes with placeholder AI cards.
-- Do not invent Crown AI behavior.
-
-### 5. Replace Starter Family Actions With Minimal Real Effects
-
-Current:
-
-- Family action choices only record the selected action.
-
-Add first real effects in this order:
-
-- `Enlist Writer`: choose Presidency and place writer.
-- `Enlist Officer`: add officer in training.
-- `Seek Share`: place family member in the cheapest legal stock exchange slot.
-- `Purchase Workshop`: spend cash and add placeholder workshop enterprise only after enterprise data exists.
-- `Purchase Shipyard`
-- `Purchase Luxury`
-
-Required supporting data:
-
-- Family action definitions.
-- Starting cash from setup.
-- Stock exchange slot data.
-- Enterprise deck starter data.
-
-Tests:
-
-- Legal/illegal action availability based on cash and pieces.
-- Component source and destination.
-- Opportunity marker update.
-- Out-of-family-pieces behavior later, once prizes exist.
-
-### 6. Replace Starter Hiring Pass With Minimal Office Hiring
-
-Current:
-
-- `hiring.pass` records each player passing.
+Current tests cover scaffold progression, but rule implementation needs common
+fixtures.
 
 Add:
 
-- Office data and office order.
-- Candidate pool generation.
-- Vacant office decision.
-- Hire command.
-- Skip/pass only when no eligible candidate or no office data exists.
+- `src/tests/fixtures/`
+- Game builder helpers for common hotseat states.
+- A helper to apply the first legal command.
+- Invariant checks after every command:
+  - active actor exists, unless actor is `system` or `simultaneous`
+  - pending legal commands are known command types
+  - log sequence is contiguous
+  - pending decision phase matches state phase
+  - save/load preserves the exact pending decision
 
-First supported hiring flow:
+Keep the existing full starter-turn tests until real phase equivalents pass.
 
-- Chairman election by Company shares.
-- One office vacancy with eligible writer/officer.
-- Fatigue transfer placeholder.
+### 3. Complete Core Static Data Needed For Hotseat 1710
+
+Use `docs/data-entry-checklist.md` as the canonical data checklist, but enter
+data in the order needed by gameplay.
+
+First priority:
+
+1. Component counts.
+2. `1710` scenario setup card data.
+3. Family action definitions and costs.
+4. Stock exchange slots and Company share data.
+5. Office order and office definitions.
+6. Presidency/army/region IDs needed by Family and Hiring.
+7. Board regions, order graph, and adjacency.
+8. Enterprise placeholder decks only when real purchase effects need them.
+
+Do not mark advanced scenarios complete until their setup cards, scenario tracks,
+map setup, laws, and Deregulation state are encoded.
+
+### 4. Replace Starter Family Actions With Real Effects
+
+Current behavior:
+
+- `family.chooseAction` records the selected action and moves to the next
+  player.
+
+Implement:
+
+- Legal action filtering by cash, pieces, and scenario state.
+- `Enlist Writer`: choose Presidency and place writer.
+- `Enlist Officer`: add officer in training.
+- `Seek Share`: place a family member in the cheapest legal stock exchange slot.
+- `Purchase Workshop`: spend cash and draw/place a workshop enterprise once
+  enterprise data exists.
+- `Purchase Shipyard`.
+- `Purchase Luxury`.
+- Opportunity marker double-action rule.
+- Extra family action from the most recent applicable law once laws exist.
+- No-action only when the player truly cannot act.
+- Out-of-family-pieces rule once prizes exist.
+- Share creation from Company Debt after all players act.
 
 Tests:
 
-- Candidate pool includes legal candidates.
-- Illegal candidates rejected.
+- Legal and illegal action availability.
+- Cash and piece source/destination.
+- Opportunity marker behavior.
+- Share creation from debt.
+- Save/load during each Family decision type.
+
+### 5. Replace Starter Hiring Pass With Office Hiring
+
+Current behavior:
+
+- `hiring.pass` records each player passing.
+
+Implement:
+
+- Office vacancy order.
+- Hirer determination from office data.
+- Candidate pool generation.
+- Chairman election by Company-share majority.
+- Hire command.
+- Skip only if no hirer or no eligible candidate exists.
+- Nepotism consent prompt.
+- Promotion and fatigue transfer.
+
+Tests:
+
+- Chairman election.
+- Candidate pool includes legal candidates and rejects illegal ones.
+- Nepotism consent accepted and denied.
 - Hiring advances through office order.
-- Chairman election support works once shares exist.
+- Save/load during a hire and a consent prompt.
+
+### 6. Implement London Season
+
+Current behavior:
+
+- Starter London Season is a system confirmation.
+
+Implement:
+
+- Skip on first turn where rules require it.
+- Office attrition.
+- Retirement rolls, including Chairman stress modifier.
+- Pensioner retirement to prize boxes by paying costs and gaining VP.
+- London Season Display order based on retirement spending.
+- Prestige/blackmail card selection and discard.
+- Display refill.
+- Return remaining pensioners to family supplies.
+
+Tests:
+
+- Attrition and retirement roll behavior.
+- Prize payment and VP award.
+- Card display selection.
+- Save/load after rolls and before card selection.
 
 ### 7. Add Minimal Company Operation Office Loop
 
-Replace `companyOperation.notImplemented`.
+Current behavior:
 
-First starter version:
+- One system command confirms Company Operation.
 
-- Iterate through offices in red-ribbon order.
-- If no office data/holder, skip with log.
-- If human officeholder, show one starter command:
-  - `companyOperation.passOffice`
-- After all offices, advance to Bonuses.
+Implement first:
 
-Then add real office reducers in this order:
+- Red-ribbon office order.
+- Skip vacant/uncreated offices with log entries.
+- Human officeholder pending decision.
+- `companyOperation.passOffice` only as a temporary fallback per office.
+- End of office loop advances to Bonuses.
 
-- Chairman debt/allocation.
-- Director of Trade open order/China placeholder.
-- Manager of Shipping fit/place ship placeholder.
-- Military Affairs transfer/assign placeholder.
-- President trade placeholder.
-- Commander deploy placeholder.
-- Governor administer placeholder.
+Then replace office pass behavior in this order:
+
+1. Chairman debt and allocation.
+2. Director of Trade special envoy, open order/China, transfers.
+3. Manager of Shipping leases, fitting, Company ships, placement.
+4. Military Affairs transfers, officers-in-training, commanders.
+5. Presidency operation order.
+6. President trade.
+7. Commander local alliances and deploy.
+8. Governor administer.
+9. Superintendent of Trade in China.
+10. Governor General.
 
 Tests:
 
 - Office loop skips vacant offices.
 - Human officeholder receives pending decision.
-- Pass advances to next office.
-- End of office loop advances to Bonuses.
+- Each office reducer validates funds, pieces, dice, and consent.
+- Save/load during each office action.
 
-### 8. Add Board Overlay Data
+### 8. Implement Bonuses
 
-Current UI shows three rough overlay labels only.
+Current behavior:
+
+- Starter Bonuses is a system confirmation.
 
 Implement:
 
-- Board coordinate data under `src/data/board.ts` or JSON.
+- `GBP 1` for each workshop.
+- `GBP 1` for each shipyard with a fitted ship.
+- Correct income ownership and log entries.
+
+Tests:
+
+- Workshop income.
+- Fitted and unfitted shipyard income.
+- Save/load at phase start.
+
+### 9. Implement Revenue
+
+Current behavior:
+
+- Starter Revenue is a system confirmation.
+
+Implement:
+
+- Company expenses for Debt, armies, and ships.
+- Emergency loans.
+- Public embarrassment.
+- Expectations check.
+- Chairman dividend decision.
+- Standing increase from dividends over Expectations.
+- Company failure trigger.
+
+Tests:
+
+- Expenses and emergency loans.
+- Public embarrassment and Standing movement.
+- Dividends and share payouts.
+- Company failure.
+- Save/load after expenses and before dividends.
+
+### 10. Implement Events In India
+
+Current behavior:
+
+- Starter Events in India is a system confirmation.
+
+Implement:
+
+- Storm die.
+- Storm checks for player and firm ships.
+- Event tile draw count.
+- Turmoil.
+- Windfall.
+- Shuffle.
+- Leader.
+- Peace.
+- Crisis.
+- Foreign Invasion.
+- Cascades.
+- Elephant March.
+- Attacks against Company.
+- Region loss and escalating Standing penalties.
+
+Tests:
+
+- Deterministic storm/event draws from RNG.
+- Crisis strength and defense.
+- Region loss cleanup.
+- Elephant placement/facing.
+- Save/load after random results and before follow-up choices.
+
+### 11. Implement Parliament Meets
+
+Current behavior:
+
+- Starter Parliament is a system confirmation.
+
+Implement:
+
+- Prime Minister law draw up to three, stopping on dilemmas.
+- Law selection.
+- Policy dial movement to matching icon.
+- Starting support.
+- Voting rounds until PM stops or a round has no votes.
+- Enterprise/card/cash vote spending.
+- Opposition and Opposition Leader.
+- Law pass/fail effects.
+- Prime Minister transfer on failed law where rules require it.
+- Special Deregulation vote when eligible.
+
+Tests:
+
+- Law draw and dilemma stop.
+- Policy movement.
+- Vote spending and pass/fail.
+- Opposition Leader.
+- Deregulation vote.
+- Save/load during voting rounds.
+
+### 12. Implement Upkeep And Refresh
+
+Current behavior:
+
+- Starter Upkeep advances turn or enters starter Final Scoring.
+
+Implement:
+
+- Prize upkeep payments.
+- Prize removal and VP loss if unpaid.
+- Writer return from filled orders.
+- Filled order token and divider cleanup.
+- Extra ship return.
+- Army refresh.
+- Local alliance exhaustion.
+- Turn advance and final-scoring trigger.
+
+Tests:
+
+- Paid and unpaid prize upkeep.
+- Writer and order cleanup.
+- Army refresh.
+- Final-turn transition.
+- Save/load before and after cleanup.
+
+### 13. Implement Final Scoring
+
+Current behavior:
+
+- Starter Final Scoring logs completion without calculating VP.
+
+Implement:
+
+- Firm scoring if deregulated.
+- Power Award.
+- Court/share scoring when Company survived.
+- Court/share penalties and workshop scoring when Company failed.
+- Final retirement if Company survived.
+- Company failure card handling if Company failed.
+- Tie breakers: window icons, then Prime Minister order.
+- Final scoring summary UI.
+
+Tests:
+
+- Company survival scoring fixture.
+- Company failure scoring fixture.
+- Tie breakers.
+- Final scoring summary contents.
+
+### 14. Add Board Overlay Data And Inspect UI
+
+Current UI shows three rough overlay labels.
+
+Implement:
+
+- Board coordinate data under `src/data/board.ts` or structured JSON.
 - Regions.
 - Orders.
 - Offices.
 - Company tracks.
 - Presidencies.
+- Deck/discard/display areas.
 - Click handlers that select an entity and show an inspect panel.
+- Pan, zoom, and layer toggles.
 
-First pass can use rough coordinates, but every coordinate must be inside the `4902 x 2481` image bounds and validated by tests.
+Every coordinate must be inside the `4902 x 2481` board image bounds and
+validated by tests.
 
-### 9. Add Hotseat Privacy Curtain
+Actions must also remain available from panels/lists, not only board clicks.
+
+### 15. Add Hotseat Privacy Curtain
 
 Current UI exposes all state continuously.
 
 Implement:
 
 - Between private pending decisions, show pass-device curtain.
-- Hide private cards/secret info.
+- Hide private cards and secret info.
 - Require active player reveal click.
+- Preserve public summary while hidden.
 
 Tests:
 
 - Private decision starts hidden.
 - Correct player reveal displays command panel.
-- Non-active private info not rendered.
+- Non-active private info is not rendered.
 
-### 10. Add Negotiation Scaffold
+### 16. Add Negotiation And Consent Scaffold
 
-Implement before deep phase rules because many future rules need consent/transfers.
+Implement before deep consent-heavy rules are completed.
 
 Starter support:
 
@@ -270,37 +438,58 @@ Starter support:
 - Record negotiation note.
 - Atomic command application.
 
-Later:
+Later support:
 
 - Enterprises.
 - Firm shares.
 - Facedown blackmail.
-- Consent prompts.
+- Consent prompts for nepotism, investments, dissolutions, mergers, ship fitting,
+  local alliances, hostile takeovers, and Crown favors.
 
-### 11. Improve Tests And Fixtures
+### 17. Complete Save And Async Features
 
-Current tests:
+Current state:
 
-- Data validation.
-- RNG.
-- Command scaffolds.
-- Save roundtrip.
+- Save Game, Load Game, and Copy Save Summary exist.
 
 Add:
 
-- `src/tests/fixtures/`
-- Builder helpers for common games.
-- One full starter-turn scripted test.
-- Save/load during each current pending decision type.
-- Invariant checks after every command:
-  - active actor exists.
-  - pending legal commands are known command types.
-  - log sequence is contiguous.
-  - Crown promise cubes total 12 in Crown games.
+- `Save As` branch behavior.
+- Parent save ID tracking in UI.
+- Async branch warnings when loading older/forked saves for the same `gameId`.
+- `Export Log` as markdown or text.
+- Friendly corrupt-save and incompatible-version errors.
+- Save/load coverage during every pending decision type.
 
-### 12. Add Linting
+### 18. Add Rules Reference
 
-`package.json` has no ESLint script yet, while docs require it.
+Current state:
+
+- Rules Reference button is disabled.
+
+Implement:
+
+- Search over `John-Company-Rules.txt`.
+- Curated section index:
+  - Setup
+  - Negotiation
+  - Sequence of Play
+  - London Season
+  - Family
+  - Hiring
+  - Company Operation
+  - Revenue
+  - Events in India
+  - Parliament
+  - Upkeep
+  - Deregulation
+  - Final Scoring
+  - Crown Handbook
+- Contextual rule links from action panels.
+
+### 19. Add Linting And Verification Scripts
+
+`package.json` has `verify`, but no lint command.
 
 Add:
 
@@ -308,33 +497,70 @@ Add:
 - `npm run lint`.
 - Include lint in `npm run verify`.
 
-Keep this scoped; do not add formatting churn across docs/PDF assets.
+Keep this scoped; do not format unrelated docs/PDF assets.
 
-## Data Entry TODO
+## Deregulation And Firms
 
-Use `docs/data-entry-checklist.md` as the canonical list. First-pass priority:
+Implement after non-deregulated `1710` hotseat play is stable.
 
-1. Component counts.
-2. Scenario starting tracks and setup cards.
-3. Office order and office definitions.
-4. Family actions.
-5. Board regions and adjacency.
-6. Stock exchange slots.
-7. Enterprise placeholder decks.
-8. Crown AI cards only after card data can be transcribed accurately.
+Rules needed:
+
+- Deregulation trigger and scenario start state.
+- Firm formation.
+- Firm investment with Company shares/workshops.
+- Firm shares and ownership.
+- Ship acquisition and fitting.
+- Hostile takeovers.
+- Mergers.
+- Secret firm strategy selection.
+- Firm trading and initiative.
+- Firm expenses, dividends, dissolution, emergency investment, and emergency
+  merger.
+- Firm final scoring.
+
+Tests:
+
+- Firm creation and investment.
+- Secret strategy save/load.
+- Trade initiative.
+- Duplicate order half value.
+- Expenses/dividends/dissolution.
+- Firm final scoring.
 
 ## Crown TODO
 
-Crown mode currently initializes some state in `createNewGame`, but `src/data/validate.ts` correctly blocks Crown modes because AI cards are placeholders.
+Crown mode currently initializes some state in `createNewGame`, but
+`src/data/validate.ts` correctly blocks Crown modes because AI cards are
+placeholders.
 
 Do not remove that block until:
 
 - All 10 Crown AI cards are encoded.
+- Crown family board data is encoded.
 - Crown climate/profile tables are encoded.
 - Crown favor definitions are encoded.
 - Crown voting plan is encoded.
+- Crown setup distributions are complete.
+- Crown difficulty adjustments are complete.
+- Crown solo final scoring adjustment table is encoded.
 - Crown setup tests pass for solo and two-player.
 - At least one Crown automated phase test passes for each major phase.
+
+Rules needed:
+
+- Crown setup, promise cubes, AI deck reveal, climate, and Player Button.
+- Crown AI card tie breakers.
+- Promise-cube closed economy.
+- Legal and mandatory Crown favors.
+- Crown Family action priority.
+- Crown Hiring behavior and Chairman support/bribes.
+- Crown office automation for every Company Operation office.
+- Crown Revenue behavior, Royal Privilege, and Royal Protection.
+- Crown Crisis defense choices.
+- Crown Parliament voting plan, treasury vote bands, climate shift, and policy
+  movement.
+- Crown Upkeep.
+- Crown final retirement and solo scoring adjustments.
 
 ## UI TODO
 
@@ -342,25 +568,29 @@ Current UI is intentionally simple.
 
 Next improvements:
 
-- Show validation errors on setup.
-- Disable Start when selected mode is not supported by current data.
+- Keep setup validation visible and specific.
 - Make pending command buttons visually distinct by type.
+- Show disabled-action reasons.
 - Add selected entity inspect panel for board clicks.
 - Add log details expansion.
-- Add save/load controls.
+- Add Save As and Export Log controls.
+- Add pass-device privacy curtain.
+- Add negotiation modal.
+- Add rules reference.
 - Keep all actions available from panels/lists, not only board clicks.
 
 ## Handoff Notes
 
-When adding a phase:
+When adding a phase or replacing starter behavior:
 
-1. Add command type to dispatcher.
-2. Add legal command generator.
-3. Add reducer.
-4. Add phase transition.
-5. Add log entry.
-6. Add tests for success and illegal command rejection.
-7. Run `npm run typecheck`, `npm test`, and `npm run build`.
+1. Add or update static data first.
+2. Add command type to the dispatcher.
+3. Add legal command generator.
+4. Add reducer.
+5. Add phase transition.
+6. Add log entry.
+7. Add tests for success, illegal command rejection, and save/load.
+8. Run `npm run typecheck`, `npm test`, and `npm run build`.
 
 When replacing starter behavior with real rules:
 
@@ -368,3 +598,4 @@ When replacing starter behavior with real rules:
 - Update log summaries to describe actual rule effects.
 - Avoid placeholder cash/piece movement.
 - Do not bypass validation to make the UI proceed.
+- Do not implement Crown AI by guessing.
