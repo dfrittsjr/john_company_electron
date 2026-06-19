@@ -150,6 +150,7 @@ export function createCommandLogEntry(input: {
   type: string;
   summary: string;
   details?: unknown;
+  rngRolls?: GameLogEntry["rngRolls"];
 }): GameLogEntry {
   return {
     id: `log-${input.state.log.length + 1}`,
@@ -162,5 +163,6 @@ export function createCommandLogEntry(input: {
     summary: input.summary,
     details: input.details,
     commandId: input.command.id,
+    rngRolls: input.rngRolls,
   };
 }

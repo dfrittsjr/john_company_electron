@@ -156,7 +156,20 @@ Setup card notes:
 - The `1710` deck is encoded as 12 base cards plus 6 extra cards.
 - For 5-player setup, add 3 extra cards.
 - For 6-player setup, add all 6 extra cards.
-- The current engine does not yet deal, draft, or apply setup-card effects.
+- Done for current slice: random hotseat `1710` setup-card dealing and
+  application on `setup.confirmStart`.
+- Done: Setup UI now defaults to and starts implemented random setup; draft is
+  shown as unavailable until draft dealing/selection is implemented.
+- Done: 3-4 player setup deals the 12 base cards, 5-player setup adds 3 random
+  extra cards, and 6-player setup adds all 6 extra cards.
+- Done: setup-card effects currently update starting cash, offices, Company
+  shares, Prime Minister, writers, commanders, officers in training, shipyards,
+  placed ships, luxuries, workshops, trophies, and placeholder blackmail cards.
+- Draft setup, Crown setup-card distribution, and advanced-scenario setup remain
+  TODO.
+- Current assumption: until the blackmail deck is encoded, setup
+  `randomBlackmail` effects create facedown placeholder cards in player and
+  hidden private-card state.
 
 Do not mark advanced scenarios complete until their setup cards, scenario tracks,
 map setup, laws, and Deregulation state are encoded.
@@ -182,8 +195,6 @@ Current behavior:
 - `Purchase Workshop`, `Purchase Shipyard`, and `Purchase Luxury` spend cash and
   take the next enterprise card. Shipyards create their matching ship token;
   luxuries award 2 VP and one window icon.
-<<<<<<< HEAD
-=======
 - If a player's opportunity marker is already on their chosen main action at
   the start of their Family decision, the engine offers a private
   `family.chooseRepeatAction` decision. The repeat legal commands are
@@ -192,23 +203,15 @@ Current behavior:
   `family.finishAction`.
 - The opportunity marker is moved only after the player's main/repeat decision
   is finished. `No Action` does not repeat and places the marker in supply.
->>>>>>> 92102859 (adding updates from first ralph loop. no clue what happened)
 - `No Action` is only generated when no other legal Family action is available.
 
 Implement:
 
-<<<<<<< HEAD
-- Opportunity marker double-action rule.
-- Extra family action from the most recent applicable law once laws exist.
-- Out-of-family-pieces rule once prizes exist.
-- Save/load coverage during each distinct Family decision type.
-=======
 - Done: Opportunity marker double-action rule for main Family actions.
 - Extra family action from the most recent applicable law once laws exist.
 - Out-of-family-pieces rule once prizes exist.
 - Save/load coverage during future Family decision types as laws, prizes, and
   consent prompts are added.
->>>>>>> 92102859 (adding updates from first ralph loop. no clue what happened)
 
 Tests:
 
@@ -216,15 +219,10 @@ Tests:
 - Done: cash and piece source/destination.
 - Done: writer, officer, share, shipyard, workshop, and luxury effects.
 - Done: share creation from debt.
-<<<<<<< HEAD
-- TODO: opportunity marker behavior.
-- TODO: save/load during each Family decision type.
-=======
 - Done: opportunity marker behavior, including repeat, decline, No Action, and
   last-player Stock Exchange share resolution.
 - Done: save/load coverage for normal and repeated Family action
   decisions.
->>>>>>> 92102859 (adding updates from first ralph loop. no clue what happened)
 
 ### 5. Replace Starter Hiring Pass With Office Hiring
 
@@ -246,6 +244,19 @@ Current behavior:
 - `Director of Trade` can be filled by promoting a non-Chairman, non-Governor
   officeholder. The previous office becomes a new queued vacancy and its fatigue
   moves to Director of Trade.
+- `Military Affairs` can be filled by the Chairman from military pieces in
+  priority order: Commanders, then officers, then officers in training.
+  The hired piece is removed from its army or training box and placed in the
+  office.
+- Presidents can be filled by the Director of Trade from matching Presidency
+  writers or Governors associated with that Presidency. Matching writers are
+  removed from their Presidency box; promoted Governors vacate their previous
+  office and move fatigue to the President office.
+- `Governor General`, when in play as a vacancy, can be filled by the Chairman
+  using the same promotion-then-writer fallback as Director of Trade.
+- Governors can be filled by their associated President from writers on orders
+  in the Governor's region, falling back to officers in the associated
+  Presidency army.
 
 Implement:
 
@@ -262,57 +273,89 @@ Implement:
   non-Chairman, non-Governor officeholder can be promoted. Current assumption:
   use the same no-nepotism behavior as other Chairman-hired offices until an
   explicit consent prompt exists.
-- TODO: Hirer determination from office data for the remaining non-Chairman
-  offices.
-- TODO: Candidate pool generation for the remaining non-Chairman offices.
+- Done for Chairman-hired operating offices currently supported by state:
+  Hirer determination from office data.
+- Done for Chairman-hired writer offices and `Military Affairs`: Candidate pool
+  generation from office data.
+- Done: President hirer and candidate pool generation. Presidents are hired by
+  the Director of Trade from writers in that Presidency or Governors associated
+  with that Presidency.
+- Done: Governor hirer and candidate pool generation. Current assumption:
+  Governors are hired by the associated President from writers on orders in the
+  Governor's region, falling back to officers in that region's associated
+  Presidency army until region-level officer location exists.
+- Done: Governor General hiring. When in play as a vacancy, Governor General is
+  hired by the Chairman like Director of Trade.
 - Done for deterministic majority: Chairman election by Company-share majority.
   First slice assumes
   a player who already controls a pure majority of Company shares can be elected
   directly; negotiated share support and former-Chairman fallback remain TODO.
-- TODO: contested Chairman election support, negotiated support, and
-  former-Chairman fallback when no candidate reaches majority.
-- TODO: Empty Court Chairman handling.
-- Done for Chairman and Chairman-hired writer offices; TODO for
-  other offices: Hire command.
+- Done for current slice: contested Chairman election support. The engine exposes
+  all human Company shareholders as public system candidates when no player has
+  a pure majority. Assumption: this records table-negotiated support in one
+  deterministic command until formal share-support commitments are encoded.
+- Done: Empty Court Chairman handling. The engine exposes an explicit public skip
+  for an empty Court/no-share state rather than silently falling through.
+- TODO: formal negotiated support commitments and former-Chairman fallback when
+  no candidate reaches majority.
+- Done for Chairman, Chairman-hired writer offices, Director of Trade, Military
+  Affairs, Presidents, Governor General, and Governors: Hire command.
 - Done for current slice: Skip only if no hirer or no eligible candidate exists.
-- TODO: Nepotism consent prompt. Current non-Chairman hiring excludes
-  self-hires rather than treating them as consented, including Director of Trade
-  promotions from another officeholder owned by the Chairman player.
+- Done for current slice: Nepotism consent prompt. The engine pauses on a public
+  table-consent decision when a hirer selects their own family member for an
+  office marked as requiring nepotism consent. Assumption: accepted consent
+  completes the selected hire; denied consent leaves that vacancy unfilled for
+  the turn until fuller negotiation/consent collection exists.
 - Done for Director of Trade: Promotion and fatigue transfer.
 
 Tests:
 
 - Done for deterministic majority: Chairman election.
-- Done for Chairman-hired writer offices; TODO for other offices: Candidate
-  pool includes legal candidates and rejects illegal ones.
+- Done for Chairman-hired writer offices, Military Affairs, Presidents,
+  Governor General, and Governors: Candidate pool includes legal candidates and
+  rejects illegal ones.
 - Done for Director of Trade writer fallback: legal fallback candidate and
   current self-hire exclusion.
-- Nepotism consent accepted and denied.
+- Done: Nepotism consent accepted and denied, including save/load coverage for
+  the consent pending decision.
 - Done for current queue: Hiring advances through office order.
-- Done for Chairman election and Chairman-hired writer office pending
-  decisions; TODO for later consent prompts: Save/load during a hire and a
-  consent prompt.
+- Done for Chairman election, Chairman-hired writer office, Director of Trade,
+  Military Affairs, and nepotism consent pending decisions. TODO for later
+  multi-actor consent prompts: save/load during each fuller consent collection
+  step.
 
 ### 6. Implement London Season
 
 Current behavior:
 
-- Starter London Season is a system confirmation.
+- London Season is a system confirmation.
+- On turn 1, London Season logs an explicit skip and advances to Family.
 
 Implement:
 
-- Skip on first turn where rules require it.
-- Office attrition.
-- Retirement rolls, including Chairman stress modifier.
+- Done: Skip on first turn where rules require it.
+- Done for current slice: Office attrition and retirement rolls. The engine increments
+  each occupied office's fatigue, then rolls a seeded d6 and retires the
+  officeholder on `roll + fatigue + Chairman stress >= 5`. Assumption:
+  retired officeholders move to pensioners, vacate their office, and keep
+  Chairman-share/company-share cleanup simple until a fuller Chairman retirement
+  rule is encoded.
+- Done: Retirement rolls, including Chairman stress modifier.
 - Pensioner retirement to prize boxes by paying costs and gaining VP.
 - London Season Display order based on retirement spending.
 - Prestige/blackmail card selection and discard.
 - Display refill.
 - Return remaining pensioners to family supplies.
 
+Data dependency:
+
+- Prize boxes, prestige cards, blackmail cards, and London Season Display slots
+  are not yet encoded. Implement these from `docs/data-entry-checklist.md`
+  before replacing the remaining London Season card/prize skeleton.
+
 Tests:
 
-- Attrition and retirement roll behavior.
+- Done for current slice: Attrition and retirement roll behavior.
 - Prize payment and VP award.
 - Card display selection.
 - Save/load after rolls and before card selection.
@@ -322,6 +365,9 @@ Tests:
 Current behavior:
 
 - One system command confirms Company Operation.
+- Chairman now has a real Company Operation command instead of the temporary
+  pass fallback. The Chairman may take Company Debt and allocate available
+  Company Balance to created non-Chairman office treasuries.
 
 Implement first:
 
@@ -336,10 +382,14 @@ Current assumptions:
 
 - Until Upkeep refresh is implemented, skipped vacant/uncreated offices are
   marked `actedThisTurn` to track Company Operation loop progress.
+- Each debt taken by the Chairman adds `GBP 5` to Company Balance, matching the
+  current emergency-loan unit used by Revenue until a more detailed debt rule is
+  encoded.
+- Chairman allocation can fund created non-Chairman office treasuries.
 
 Then replace office pass behavior in this order:
 
-1. Chairman debt and allocation.
+1. Done for current slice: Chairman debt and allocation.
 2. Director of Trade special envoy, open order/China, transfers.
 3. Manager of Shipping leases, fitting, Company ships, placement.
 4. Military Affairs transfers, officers-in-training, commanders.
@@ -386,35 +436,52 @@ Tests:
 
 Current behavior:
 
-- Starter Revenue is a system confirmation.
+- Revenue resolves Company expenses and emergency loans, then pauses for a
+  Chairman dividend decision before advancing to Events in India.
 
 Implement:
 
-- Company expenses for Debt, armies, and ships.
-- Emergency loans.
-- Public embarrassment.
-- Expectations check.
-- Chairman dividend decision.
-- Standing increase from dividends over Expectations.
-- Company failure trigger.
+- Done: Company expenses for Debt, armies, and ships.
+- Done: Emergency loans.
+- Done for current slice: Public embarrassment, Expectations check, Chairman
+  dividend decision, Standing increase from dividends over Expectations, and
+  Company failure trigger.
+
+Current assumptions:
+
+- Until detailed Revenue rules are implemented, each Debt, army piece
+  (regiment or officer, ready or exhausted), and ship in a Presidency sea zone
+  costs `GBP 1`.
+- Emergency loans add `GBP 5` to Company Balance and increase Company Debt by
+  `1` per loan, taking as many loans as needed to pay current expenses.
+- Public embarrassment currently lowers Standing by one step per emergency loan
+  taken during Revenue.
+- Expectations currently lower Standing by one step when Company Balance after
+  expenses and emergency loans is below `company.expectations`.
+- Dividend decisions pay a whole-GBP amount per current Company share in the
+  Court and Chairman slot, limited by Company Balance. Total dividends greater
+  than `company.expectations` raise Standing by one step.
+- Company failure is triggered when Standing falls below `0`.
 
 Tests:
 
-- Expenses and emergency loans.
-- Public embarrassment and Standing movement.
-- Dividends and share payouts.
-- Company failure.
-- Save/load after expenses and before dividends.
+- Done: Expenses and emergency loans.
+- Done for current slice: Public embarrassment and Standing movement.
+- Done for current slice: Dividends and share payouts.
+- Done for current slice: Company failure.
+- Done: Save/load after expenses and before dividends.
 
 ### 10. Implement Events In India
 
 Current behavior:
 
-- Starter Events in India is a system confirmation.
+- Events in India rolls a seeded temporary storm die, records the result in the
+  pending decision, and requires a follow-up system command before Parliament.
 
 Implement:
 
-- Storm die.
+- Done for current slice: Seeded temporary storm die roll and saveable
+  post-roll checkpoint.
 - Storm checks for player and firm ships.
 - Event tile draw count.
 - Turmoil.
@@ -431,7 +498,7 @@ Implement:
 
 Tests:
 
-- Deterministic storm/event draws from RNG.
+- Done for current slice: Deterministic storm die roll from RNG.
 - Crisis strength and defense.
 - Region loss cleanup.
 - Elephant placement/facing.
@@ -469,24 +536,38 @@ Tests:
 
 Current behavior:
 
-- Starter Upkeep advances turn or enters starter Final Scoring.
+- Upkeep advances turn or enters starter Final Scoring.
+- Upkeep returns writers from orders, clears order writers, and clears
+  `filledThisTurnBy` markers.
 
 Implement:
 
 - Prize upkeep payments.
 - Prize removal and VP loss if unpaid.
-- Writer return from filled orders.
-- Filled order token and divider cleanup.
+- Done: Writer return from filled orders.
+- Done for current order state: Filled order token cleanup.
+- TODO: Divider cleanup once divider state is encoded.
 - Extra ship return.
-- Army refresh.
+- Done: Army refresh.
 - Local alliance exhaustion.
 - Turn advance and final-scoring trigger.
+
+Current assumptions:
+
+- Until order divider state is encoded separately, filled-order cleanup resets
+  each order's `filledThisTurnBy` list and removes any order writer.
+- Writer return currently uses the Presidency recorded on `order.writer`; revisit
+  if later trade-path state needs `region.associatedPresidency` instead.
+- Army refresh currently updates `company.armies[*]`, which is the structure
+  used by Revenue expense counting. Before Military Affairs and Deploy use
+  `players[*].familyMembers.officers`, decide whether that player-facing officer
+  stack is canonical state or a dashboard projection that must be kept in sync.
 
 Tests:
 
 - Paid and unpaid prize upkeep.
-- Writer and order cleanup.
-- Army refresh.
+- Done for current order state: Writer and order cleanup.
+- Done: Army refresh.
 - Final-turn transition.
 - Save/load before and after cleanup.
 

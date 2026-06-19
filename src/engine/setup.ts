@@ -28,6 +28,7 @@ export type NewGameOptions = {
   scenario: ScenarioId;
   players: NewPlayerInput[];
   crownDifficulty?: CrownState["difficulty"];
+  setupDistribution?: "starter" | "random";
   seed?: string;
   gameId?: string;
   now?: string;
@@ -98,7 +99,11 @@ export function createNewGame(options: NewGameOptions): GameState {
     hidden.crownDeck = crown.aiDeck;
   }
 
-  const pendingDecision = createInitialPendingDecision(options.mode, seatingOrder);
+  const pendingDecision = createInitialPendingDecision(
+    options.mode,
+    seatingOrder,
+    options.setupDistribution ?? "random",
+  );
   const state: GameState = {
     schemaVersion: GAME_SCHEMA_VERSION,
     gameId,
@@ -165,7 +170,11 @@ function validateNewGameOptions(options: NewGameOptions): void {
   }
 }
 
-function createInitialPendingDecision(mode: GameMode, seatingOrder: PlayerId[]): PendingDecision {
+function createInitialPendingDecision(
+  mode: GameMode,
+  seatingOrder: PlayerId[],
+  setupDistribution: "starter" | "random",
+): PendingDecision {
   const firstHuman = seatingOrder.find((playerId) => playerId !== CROWN_PLAYER_ID);
 
   if (!firstHuman) {
@@ -186,6 +195,7 @@ function createInitialPendingDecision(mode: GameMode, seatingOrder: PlayerId[]):
       {
         type: "setup.confirmStart",
         label: "Begin setup",
+        payload: { setupDistribution },
       },
     ],
     canSave: true,

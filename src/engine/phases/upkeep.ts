@@ -1,4 +1,12 @@
-import type { ApplyCommandResult, GameCommand, GameState } from "../types";
+import type {
+  ApplyCommandResult,
+  GameCommand,
+  GameState,
+  IndiaState,
+  PlayerId,
+  PlayerState,
+  PresidencyId,
+} from "../types";
 import { createCommandLogEntry, createSystemDecision, wrongPhase } from "./shared";
 
 export function confirmUpkeep(state: GameState, command: GameCommand): ApplyCommandResult {
@@ -7,6 +15,9 @@ export function confirmUpkeep(state: GameState, command: GameCommand): ApplyComm
   }
 
   const now = command.clientTimestamp;
+  const cleanup = cleanFilledOrders(state);
+  const refresh = refreshArmies(cleanup.state);
+  const stateAfterUpkeep = refresh.state;
   const shouldScore = state.turn >= state.finalTurn;
   const nextTurn = shouldScore ? state.turn : state.turn + 1;
   const nextDecision = shouldScore
@@ -29,15 +40,17 @@ export function confirmUpkeep(state: GameState, command: GameCommand): ApplyComm
         description: "Starter scaffold: records that London Season was confirmed.",
       });
   const logEntry = createCommandLogEntry({
-    state,
+    state: stateAfterUpkeep,
     command,
     now,
-    type: "upkeep.confirmed",
+    type: "upkeep.resolved",
     summary: shouldScore
-      ? "Starter Upkeep confirmed. The game is ready for final scoring."
-      : `Starter Upkeep confirmed. Advanced to turn ${nextTurn}.`,
+      ? "Upkeep resolved. The game is ready for final scoring."
+      : `Upkeep resolved. Advanced to turn ${nextTurn}.`,
     details: {
-      note: "Starter scaffold records the phase; upkeep payments, refresh, and cleanup come later.",
+      ...cleanup.details,
+      ...refresh.details,
+      note: "Prize upkeep, extra ships, and local alliances are still TODO.",
     },
   });
 
@@ -45,12 +58,179 @@ export function confirmUpkeep(state: GameState, command: GameCommand): ApplyComm
     ok: true,
     logEntry,
     state: {
-      ...state,
+      ...stateAfterUpkeep,
       updatedAt: now,
       turn: nextTurn,
       phase: nextDecision.phase,
       pendingDecision: nextDecision,
-      log: [...state.log, logEntry],
+      log: [...stateAfterUpkeep.log, logEntry],
+    },
+  };
+}
+
+function refreshArmies(state: GameState): {
+  state: GameState;
+  details: {
+    refreshedArmies: Array<{
+      armyId: string;
+      regimentsReadied: number;
+      officersReadiedByPlayer: Record<PlayerId, number>;
+    }>;
+  };
+} {
+  const refreshedArmies: Array<{
+    armyId: string;
+    regimentsReadied: number;
+    officersReadiedByPlayer: Record<PlayerId, number>;
+  }> = [];
+  const armies: GameState["company"]["armies"] = { ...state.company.armies };
+  for (const [armyId, army] of Object.entries(state.company.armies)) {
+    const officersReadiedByPlayer: Record<PlayerId, number> = {};
+    const officers: typeof army.officers = {};
+    for (const [playerId, stack] of Object.entries(army.officers)) {
+      if (stack.exhausted > 0) {
+        officersReadiedByPlayer[playerId] = stack.exhausted;
+      }
+
+      officers[playerId] = {
+        ready: stack.ready + stack.exhausted,
+        exhausted: 0,
+      };
+    }
+    const regimentsReadied = army.regiments.exhausted;
+
+    if (regimentsReadied > 0 || Object.keys(officersReadiedByPlayer).length > 0) {
+      refreshedArmies.push({
+        armyId,
+        regimentsReadied,
+        officersReadiedByPlayer,
+      });
+    }
+
+    armies[army.id] = {
+      ...army,
+      officers,
+      regiments: {
+        ready: army.regiments.ready + army.regiments.exhausted,
+        exhausted: 0,
+      },
+    };
+  }
+
+  return {
+    state: {
+      ...state,
+      company: {
+        ...state.company,
+        armies,
+      },
+    },
+    details: {
+      refreshedArmies,
+    },
+  };
+}
+
+function cleanFilledOrders(state: GameState): {
+  state: GameState;
+  details: {
+    returnedWriters: Array<{ playerId: PlayerId; presidency: PresidencyId; orderId: string }>;
+    cleanedOrderIds: string[];
+  };
+} {
+  let players = state.players;
+  let india: IndiaState = state.india;
+  const returnedWriters: Array<{ playerId: PlayerId; presidency: PresidencyId; orderId: string }> = [];
+  const cleanedOrderIds: string[] = [];
+
+  const regions = Object.fromEntries(
+    Object.entries(state.india.regions).map(([regionId, region]) => {
+      let regionChanged = false;
+      const orders = region.orders.map((order) => {
+        const shouldCleanFilledMarkers = order.filledThisTurnBy.length > 0;
+        if (shouldCleanFilledMarkers) {
+          cleanedOrderIds.push(order.id);
+          regionChanged = true;
+        }
+
+        if (!order.writer) {
+          return shouldCleanFilledMarkers ? { ...order, filledThisTurnBy: [] } : order;
+        }
+
+        regionChanged = true;
+        const writer = order.writer;
+        const player = players[writer.playerId];
+        if (player) {
+          players = {
+            ...players,
+            [writer.playerId]: returnWriterToPlayer(player, writer.presidency),
+          };
+        }
+
+        const presidency = india.presidencies[writer.presidency];
+        india = {
+          ...india,
+          presidencies: {
+            ...india.presidencies,
+            [writer.presidency]: {
+              ...presidency,
+              writers: {
+                ...presidency.writers,
+                [writer.playerId]: (presidency.writers[writer.playerId] ?? 0) + 1,
+              },
+            },
+          },
+        };
+        returnedWriters.push({
+          playerId: writer.playerId,
+          presidency: writer.presidency,
+          orderId: order.id,
+        });
+
+        return {
+          ...order,
+          writer: undefined,
+          filledThisTurnBy: [],
+        };
+      });
+
+      return [
+        regionId,
+        !regionChanged
+          ? region
+          : {
+              ...region,
+              orders,
+            },
+      ];
+    }),
+  );
+
+  return {
+    state: {
+      ...state,
+      players,
+      india: {
+        ...india,
+        regions,
+      },
+    },
+    details: {
+      returnedWriters,
+      cleanedOrderIds,
+    },
+  };
+}
+
+function returnWriterToPlayer(player: PlayerState, presidency: keyof PlayerState["familyMembers"]["writers"]): PlayerState {
+  return {
+    ...player,
+    familyMembers: {
+      ...player.familyMembers,
+      writers: {
+        ...player.familyMembers.writers,
+        [presidency]: player.familyMembers.writers[presidency] + 1,
+      },
     },
   };
 }

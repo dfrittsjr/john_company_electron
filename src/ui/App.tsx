@@ -154,7 +154,7 @@ export function App() {
     scenario: "1710",
     playerCount: 4,
     crownDifficulty: "normal",
-    setupDistribution: "draft",
+    setupDistribution: "random",
     players: createPlayers(4),
   });
 
@@ -200,6 +200,7 @@ export function App() {
         color: player.color,
       })),
       crownDifficulty: setup.crownDifficulty,
+      setupDistribution: "random",
       seed: `${setup.scenario}:${mode}:${setup.players.map((player) => player.name).join("|")}`,
     });
 
@@ -434,9 +435,15 @@ export function App() {
                   }))
                 }
               >
-                <option value="draft">Draft</option>
+                <option value="draft" disabled>
+                  Draft (coming later)
+                </option>
                 <option value="random">Random</option>
               </select>
+              <p className="status-note">
+                Random setup is implemented for hotseat 1710. Draft setup remains on the rules
+                backlog.
+              </p>
             </label>
 
             <div className="player-list">

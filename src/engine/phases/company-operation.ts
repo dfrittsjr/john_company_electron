@@ -6,6 +6,98 @@ type CompanyOperationPassPayload = {
   officeId: OfficeId;
 };
 
+type ChairmanOperationPayload = {
+  officeId: "chairman";
+  debtTaken: number;
+  allocations: Record<OfficeId, number>;
+};
+
+const DEBT_PROCEEDS = 5;
+
+export function resolveChairmanOperation(
+  state: GameState,
+  command: GameCommand,
+): ApplyCommandResult {
+  if (state.phase !== "companyOperation" || state.pendingDecision.step !== "companyOperation.resolveChairman") {
+    return wrongPhase("Chairman operation can only be resolved during the Chairman Company Operation decision.");
+  }
+
+  const payload = parseChairmanPayload(command.payload);
+  const validationError = payload ? validateChairmanPayload(state, payload) : "Chairman operation payload is invalid.";
+  if (!payload || validationError) {
+    return {
+      ok: false,
+      errors: [
+        {
+          code: "ILLEGAL_COMPANY_OPERATION_CHOICE",
+          message: validationError || "Chairman operation payload is invalid.",
+          field: "payload",
+        },
+      ],
+    };
+  }
+
+  const startingBalance = state.company.balance;
+  const debtProceeds = payload.debtTaken * DEBT_PROCEEDS;
+  const allocatedTotal = Object.values(payload.allocations).reduce((total, amount) => total + amount, 0);
+  const officesAfterAllocation = Object.entries(payload.allocations).reduce(
+    (officesById, [officeId, amount]) => ({
+      ...officesById,
+      [officeId]: {
+        ...officesById[officeId],
+        treasury: officesById[officeId].treasury + amount,
+      },
+    }),
+    state.company.offices,
+  );
+  const stateAfterChairman = markOfficeActed(
+    {
+      ...state,
+      company: {
+        ...state.company,
+        balance: startingBalance + debtProceeds - allocatedTotal,
+        debt: state.company.debt + payload.debtTaken,
+        offices: officesAfterAllocation,
+      },
+    },
+    "chairman",
+  );
+  const now = command.clientTimestamp;
+  const logEntry = createCommandLogEntry({
+    state: stateAfterChairman,
+    command,
+    now,
+    type: "companyOperation.chairmanResolved",
+    summary: `${state.players[command.actorId]?.name ?? command.actorId} resolved Chairman debt and allocation.`,
+    details: {
+      debtTaken: payload.debtTaken,
+      debtProceeds,
+      startingBalance,
+      allocatedTotal,
+      endingBalance: stateAfterChairman.company.balance,
+      allocations: payload.allocations,
+      assumption:
+        "Each debt taken during the Chairman operation adds GBP 5 to Company Balance; allocation may fund created non-Chairman office treasuries.",
+    },
+  });
+  const stateWithLog: GameState = {
+    ...stateAfterChairman,
+    updatedAt: now,
+    log: [...stateAfterChairman.log, logEntry],
+  };
+  const pendingDecision = createNextCompanyOperationDecision(stateWithLog);
+
+  return {
+    ok: true,
+    logEntry,
+    state: {
+      ...stateWithLog,
+      phase: pendingDecision.phase,
+      pendingDecision,
+    },
+  };
+}
+
 export function passCompanyOperation(
   state: GameState,
   command: GameCommand,
@@ -112,6 +204,30 @@ export function createNextCompanyOperationDecision(state: GameState): PendingDec
 
   const office = state.company.offices[officeId];
   if (office?.created && !office.vacant && office.holder) {
+    if (officeId === "chairman") {
+      return {
+        id: `decision-company-operation-chairman-turn-${state.turn}`,
+        phase: "companyOperation",
+        step: "companyOperation.resolveChairman",
+        actor: office.holder,
+        visibility: "private",
+        prompt: "Resolve Chairman debt and Company Balance allocation.",
+        legalCommands: [
+          {
+            type: "companyOperation.resolveChairman",
+            label: "Resolve Chairman",
+            description: "Take Company debt, then allocate available Company Balance to office treasuries.",
+            payload: {
+              officeId: "chairman",
+              debtTaken: 0,
+              allocations: {},
+            } satisfies ChairmanOperationPayload,
+          },
+        ],
+        canSave: true,
+      };
+    }
+
     return {
       id: `decision-company-operation-${officeId}-turn-${state.turn}`,
       phase: "companyOperation",
@@ -213,6 +329,64 @@ function parsePassPayload(payload: unknown): CompanyOperationPassPayload | undef
   if (typeof raw.officeId !== "string") return undefined;
 
   return { officeId: raw.officeId };
+}
+
+function parseChairmanPayload(payload: unknown): ChairmanOperationPayload | undefined {
+  if (!payload || typeof payload !== "object") return undefined;
+  const raw = payload as {
+    officeId?: unknown;
+    debtTaken?: unknown;
+    allocations?: unknown;
+  };
+  if (raw.officeId !== "chairman") return undefined;
+  if (typeof raw.debtTaken !== "number" || !Number.isInteger(raw.debtTaken) || raw.debtTaken < 0) {
+    return undefined;
+  }
+  const debtTaken = raw.debtTaken;
+  if (!raw.allocations || typeof raw.allocations !== "object" || Array.isArray(raw.allocations)) {
+    return undefined;
+  }
+
+  const allocations: Record<OfficeId, number> = {};
+  for (const [officeId, amount] of Object.entries(raw.allocations)) {
+    if (!Number.isInteger(amount) || amount < 0) return undefined;
+    if (amount > 0) allocations[officeId] = amount;
+  }
+
+  return {
+    officeId: "chairman",
+    debtTaken,
+    allocations,
+  };
+}
+
+function validateChairmanPayload(
+  state: GameState,
+  payload: ChairmanOperationPayload,
+): string | undefined {
+  if (!state.pendingDecision.legalCommands.some((command) => command.type === "companyOperation.resolveChairman")) {
+    return "Chairman operation is not legal for this decision.";
+  }
+
+  const availableBalance =
+    state.company.balance + payload.debtTaken * DEBT_PROCEEDS;
+  const allocatedTotal = Object.values(payload.allocations).reduce((total, amount) => total + amount, 0);
+  if (allocatedTotal > availableBalance) {
+    return "Chairman allocation cannot exceed Company Balance after debt proceeds.";
+  }
+
+  for (const officeId of Object.keys(payload.allocations)) {
+    if (officeId === "chairman") {
+      return "Chairman cannot allocate Company Balance to the Chairman office.";
+    }
+
+    const office = state.company.offices[officeId];
+    if (!office?.created) {
+      return `Chairman allocation target "${officeId}" is not a created office.`;
+    }
+  }
+
+  return undefined;
 }
 
 function isLegalPayload(state: GameState, payload: CompanyOperationPassPayload): boolean {

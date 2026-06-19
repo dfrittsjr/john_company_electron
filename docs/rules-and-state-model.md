@@ -292,6 +292,23 @@ Implement scenario setup as data-driven effects:
 
 The source card data is not fully encoded in `John-Company-Rules.txt`; it must be manually entered from the provided physical/PDF material before setup automation is complete.
 
+Current hotseat `1710` setup implementation assumptions:
+
+- Random setup is implemented for hotseat `1710`: 3-4 players use the 12 base
+  setup cards, 5 players add 3 random extra cards, and 6 players add all 6 extra
+  cards. Cards are shuffled with the saved seeded RNG and dealt round-robin in
+  seating order.
+- Setup-card effects apply directly to engine state for cash, offices, Company
+  shares, Prime Minister, writers, commanders, officers in training, enterprises,
+  placed ships, trophies, and luxury VP/window icons.
+- Setup-card Presidency IDs are normalized from data-layer lowercase IDs to the
+  engine's title-case Presidency IDs.
+- Until the blackmail deck is encoded, setup `randomBlackmail` effects create
+  facedown placeholder blackmail cards in both player state and hidden private
+  card state.
+- Draft setup, Crown setup-card distribution, and advanced-scenario setup-card
+  application remain TODO.
+
 For Crown modes, also implement Crown setup as data-driven effects:
 
 - Crown family board, 36 family members from two unused colors, and primary-color-first placement.
@@ -302,10 +319,13 @@ For Crown modes, also implement Crown setup as data-driven effects:
 
 ### London Season
 
-Skip on the first turn. Then resolve:
+On the first turn, London Season is skipped and advances to Family. On later
+turns, resolve:
 
 - Attrition for each office card held by each player.
 - Retirement of officeholders on `5+`, with Chairman `+1` stress modifier.
+  Current implementation increments occupied office fatigue, rolls a seeded d6,
+  and retires on `roll + fatigue + Chairman stress >= 5`.
 - Pensioners may retire to prize boxes by paying cost and gaining VP.
 - Track cash spent on retirements to determine London Season Display order.
 - Each eligible player takes or discards one prestige/blackmail card.
@@ -347,21 +367,39 @@ Resolve vacant offices in ascending office-card order:
 - Determine hirer and candidate pool from office data.
   Current implementation supports Chairman-hired writer offices for
   `Manager of Shipping` and `Superintendent of Trade in China` when the
-  Chairman is filled. Self-hires are skipped until explicit nepotism consent
-  prompts exist.
+  Chairman is filled.
 - Director of Trade supports promotion from an existing non-Chairman,
   non-Governor officeholder. The previous office is queued as vacant and fatigue
   moves to Director of Trade. If no eligible officeholder can be promoted, the
-  Chairman may hire a non-Chairman writer into Director of Trade; self-hires are
-  skipped until explicit nepotism consent prompts exist.
-- Request consent for nepotism when required.
+  Chairman may hire a writer into Director of Trade.
+- Military Affairs supports Chairman hiring from military pieces in priority
+  order: Commanders, officers, then officers in training. Officers are currently
+  tracked by Presidency army; Governor hiring still needs a state-model decision
+  for region-tied officer eligibility.
+- Presidents are hired by the Director of Trade from writers in that Presidency
+  or Governors associated with that Presidency. Matching writers are removed
+  from their Presidency box. Promoted Governors vacate their previous office and
+  move fatigue to the President office.
+- Governor General, when in play as a vacancy, is hired by the Chairman like
+  Director of Trade, using promotion from a non-Chairman, non-Governor
+  officeholder before writer fallback.
+- Governors are hired by the associated President from writers on orders in the
+  Governor's region, falling back to officers in the associated Presidency army.
+  This is a temporary state-model assumption until region-level officer location
+  exists.
+- Request consent for nepotism when required. Current implementation uses a
+  public table-consent decision; accepted consent completes the hire, while
+  denied consent leaves the vacancy unfilled for the turn.
 - Promote candidates and move fatigue from previous office.
 - Skip if no hirer or no eligible candidates.
 - Elect Chairman by majority Company share support.
   Current implementation covers the deterministic case where one player already
   controls a pure majority: `floor(total current Company shares / 2) + 1`.
-  A Chairman-slot share counts as a Company share. Negotiated support,
-  former-Chairman fallback, and Empty Court handling remain TODO.
+  A Chairman-slot share counts as a Company share. When no human player has a
+  pure majority, all human Company shareholders are exposed as public contested
+  candidates to record table-negotiated support. Empty Court/no-share states
+  expose an explicit public skip. Formal negotiated support commitments and
+  former-Chairman fallback remain TODO.
 - For Crown games, enforce Crown Chairman election behavior, Crown support bribes, Crown nepotism consent favors, Crown self-hiring priority, Crown Director of Trade/Governor General selection, and Crown candidate priority.
 
 ### Company Operation
@@ -369,9 +407,13 @@ Resolve vacant offices in ascending office-card order:
 Follow the red ribbon office order:
 
 - Current implementation resolves the red-ribbon office loop, skipping vacant
-  or uncreated offices with system log entries, giving occupied offices a
-  private `companyOperation.passOffice` fallback decision, and advancing to
-  Bonuses after the final red-ribbon office.
+  or uncreated offices with system log entries, giving occupied non-Chairman
+  offices a private `companyOperation.passOffice` fallback decision, and
+  advancing to Bonuses after the final red-ribbon office.
+- Current Chairman implementation uses `companyOperation.resolveChairman` to
+  take Company Debt and allocate Company Balance to created non-Chairman office
+  treasuries. Each debt taken adds `GBP 5` to Company Balance until the detailed
+  Chairman debt rule is encoded.
 - Temporary assumption: skipped vacant/uncreated offices are marked
   `actedThisTurn` to track loop progress until Upkeep refresh resets office
   action flags.
@@ -406,6 +448,22 @@ Company revenue sequence:
 - Trigger Company failure if Standing reaches the leftmost space.
 - For Crown games, apply Crown Chairman dividend reserve behavior, Royal Protection discard behavior, Royal Privilege for unaffordable Crown taxes/expenses, Crown firm emergency investment refusal unless bribed, and Crown firm dividend promise-cube rewards.
 
+Current Revenue implementation assumptions:
+
+- Each Debt, army piece, and ship in a Presidency sea zone costs `GBP 1`.
+- Each emergency loan adds `GBP 5` to Company Balance and increases Debt by
+  `1`; loans are taken until expenses can be paid.
+- Public embarrassment lowers Standing by one step per emergency loan.
+- Expectations lower Standing by one step if Balance after expenses and
+  emergency loans is below `company.expectations`.
+- The engine saves between expense resolution and `revenue.chooseDividends`.
+- Dividends are a whole-GBP amount per current Company share in the Court and
+  Chairman slot, limited by Company Balance.
+- Total dividends greater than `company.expectations` raise Standing by one
+  step.
+- Company failure currently triggers when Standing is below `0` after the
+  dividend decision.
+
 ### Events In India
 
 Resolve:
@@ -418,6 +476,18 @@ Resolve:
 - Elephant March.
 - Attacks against Company and region loss.
 - For Crown games, if the Crown Commander defends a Crisis, use soloist choice or two-player Player Button choice for exhausted pieces when the handbook gives that choice to humans.
+
+Current Events in India implementation assumptions:
+
+- `eventsInIndia.confirm` rolls one seeded temporary d6 labeled
+  `eventsInIndia.stormDie`, records the result in the log, and preserves it in a
+  saveable `eventsInIndia.resolveRolledEvents` pending decision.
+- Temporary storm mapping until storm die faces and event tiles are encoded:
+  `1-2` show one event tile, `3-4` show two event tiles, and `5-6` show three
+  event tiles with storms active.
+- Resolving the follow-up command does not consume RNG.
+- Storm ship checks, event tile effects, cascades, elephant movement, attacks,
+  and region loss remain TODO.
 
 ### Parliament Meets
 

@@ -220,6 +220,28 @@ export type OfficeDefinition = {
   operationOrder?: number;
   presidency?: PresidencyId;
   region?: RegionId;
+  hiring?: {
+    hirer:
+      | "chairman"
+      | {
+          type: "office";
+          officeId: string;
+        };
+    candidatePool:
+      | {
+          type: "writers";
+          presidencies: "any" | PresidencyId[];
+        }
+      | {
+          type: "special";
+          rule:
+            | "director-of-trade-promotion-then-writers"
+            | "military-affairs"
+            | "president"
+            | "governor";
+        };
+    excludeHirerUntilNepotismConsent: boolean;
+  };
   source: DataSourceRef;
   notes: string[];
 };

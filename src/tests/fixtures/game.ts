@@ -18,11 +18,15 @@ const KNOWN_COMMAND_TYPES = new Set([
   "hiring.pass",
   "hiring.electChairman",
   "hiring.hireOffice",
+  "hiring.resolveNepotismConsent",
   "hiring.skipVacancy",
   "companyOperation.passOffice",
+  "companyOperation.resolveChairman",
   "bonuses.confirm",
   "revenue.confirm",
+  "revenue.chooseDividends",
   "eventsInIndia.confirm",
+  "eventsInIndia.resolveRolledEvents",
   "parliament.confirm",
   "upkeep.confirm",
   "finalScoring.confirm",
@@ -42,6 +46,7 @@ export function createHotseatGame(
     seed: options.seed ?? "test-hotseat-game",
     gameId: options.gameId ?? "game-test-hotseat",
     now: options.now ?? TEST_NOW,
+    setupDistribution: "starter",
     players: HOTSEAT_PLAYERS.map((player) => ({ ...player })),
   });
 

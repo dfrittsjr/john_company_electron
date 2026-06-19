@@ -6,14 +6,23 @@ import type {
   ValidationError,
 } from "./types";
 import { confirmBonuses } from "./phases/bonuses";
-import { passCompanyOperation } from "./phases/company-operation";
-import { confirmEventsInIndia } from "./phases/events-in-india";
+import { passCompanyOperation, resolveChairmanOperation } from "./phases/company-operation";
+import {
+  confirmEventsInIndia,
+  resolveRolledEventsInIndia,
+} from "./phases/events-in-india";
 import { chooseFamilyAction, finishFamilyAction } from "./phases/family";
 import { confirmFinalScoring } from "./phases/final-scoring";
-import { electChairman, hireOffice, passHiring, skipHiringVacancy } from "./phases/hiring";
+import {
+  electChairman,
+  hireOffice,
+  passHiring,
+  resolveNepotismConsent,
+  skipHiringVacancy,
+} from "./phases/hiring";
 import { confirmLondonSeason } from "./phases/london-season";
 import { confirmParliament } from "./phases/parliament";
-import { confirmRevenue } from "./phases/revenue";
+import { chooseRevenueDividends, confirmRevenue } from "./phases/revenue";
 import { confirmStart } from "./phases/setup";
 import { confirmUpkeep } from "./phases/upkeep";
 
@@ -27,11 +36,15 @@ const COMMAND_HANDLERS: Record<string, CommandHandler> = {
   "hiring.pass": passHiring,
   "hiring.electChairman": electChairman,
   "hiring.hireOffice": hireOffice,
+  "hiring.resolveNepotismConsent": resolveNepotismConsent,
   "hiring.skipVacancy": skipHiringVacancy,
   "companyOperation.passOffice": passCompanyOperation,
+  "companyOperation.resolveChairman": resolveChairmanOperation,
   "bonuses.confirm": confirmBonuses,
   "revenue.confirm": confirmRevenue,
+  "revenue.chooseDividends": chooseRevenueDividends,
   "eventsInIndia.confirm": confirmEventsInIndia,
+  "eventsInIndia.resolveRolledEvents": resolveRolledEventsInIndia,
   "parliament.confirm": confirmParliament,
   "upkeep.confirm": confirmUpkeep,
   "finalScoring.confirm": confirmFinalScoring,
