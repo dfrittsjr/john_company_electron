@@ -14,7 +14,11 @@ const KNOWN_COMMAND_TYPES = new Set([
   "setup.confirmStart",
   "londonSeason.confirm",
   "family.chooseAction",
+  "family.finishAction",
   "hiring.pass",
+  "hiring.electChairman",
+  "hiring.hireOffice",
+  "hiring.skipVacancy",
   "companyOperation.passOffice",
   "bonuses.confirm",
   "revenue.confirm",
@@ -125,16 +129,7 @@ export function advanceThroughStarterFamily(): GameState {
 }
 
 export function advanceThroughStarterHiring(): GameState {
-  let state = advanceThroughStarterFamily();
-
-  for (const actorId of ["player-red", "player-blue", "player-yellow"] as const) {
-    state = applyFirstLegalCommand(state, {
-      commandId: `command-hiring-${actorId}`,
-      actorId,
-    });
-  }
-
-  return state;
+  return advanceThroughStarterFamily();
 }
 
 export function expectGameInvariants(state: GameState): void {

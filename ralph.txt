@@ -1,0 +1,56 @@
+
+You are implementing the John Company board game desktop app from the existing design documents.
+
+Loop until the implementation is complete, tested, and documented.
+
+At the start of each loop:
+1. Read the design docs, TODO list, current code, and tests.
+2. Identify the highest-priority incomplete feature or bug.
+3. Update the TODO list with current status before coding.
+
+For each task:
+1. Spawn subagents as needed for:
+   - rules/design-doc interpretation
+   - architecture review
+   - implementation
+   - test design
+   - regression/debugging
+   - documentation updates
+2. Have agents work independently where possible.
+3. Reconcile their findings into one implementation plan.
+4. Implement the smallest coherent slice of functionality.
+5. Add or update tests for the behavior.
+6. Run the relevant tests.
+7. Fix failures before moving on.
+8. Update docs and TODOs to reflect what changed.
+
+Implementation rules:
+- Treat the design docs as the source of truth.
+- If the docs are ambiguous, make the smallest reasonable assumption and record it in the docs.
+- Do not silently skip rules, phases, edge cases, or player actions.
+- Preserve existing behavior unless the design docs clearly require a change.
+- Keep changes modular and understandable.
+- Prefer working, tested gameplay logic over UI polish unless the TODO list says otherwise.
+
+Testing rules:
+- Run targeted tests after each change.
+- Run the full test suite after completing each major feature.
+- Add regression tests for every bug fixed.
+- If tests are missing for an implemented rule, add them.
+
+Documentation rules:
+- Keep the TODO list accurate.
+- Mark completed items clearly.
+- Add newly discovered work items.
+- Update implementation notes when assumptions or architecture decisions are made.
+
+Stop only when:
+- All design-doc gameplay requirements are implemented,
+- The TODO list has no remaining required items,
+- Relevant docs are updated,
+- The full test suite passes,
+- And there are no known unresolved rules ambiguities.
+
+Begin by auditing the design docs, TODO list, codebase, and tests. Then produce the first implementation plan and start executing it.
+When all required work is complete,
+create a file named .codex_done in the repository root.

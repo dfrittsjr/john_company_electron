@@ -1,25 +1,95 @@
 import type { ApplyCommandResult, GameCommand, GameState } from "../types";
-import { confirmStarterPhase, createSystemDecision, wrongPhase } from "./shared";
+import { createCommandLogEntry, createSystemDecision, wrongPhase } from "./shared";
 
 export function confirmBonuses(state: GameState, command: GameCommand): ApplyCommandResult {
   if (state.phase !== "bonuses" || state.pendingDecision.step !== "bonuses.confirm") {
-    return wrongPhase("Bonuses confirmation can only be chosen during starter Bonuses.");
+    return wrongPhase("Bonuses confirmation can only be chosen during Bonuses.");
   }
 
-  return confirmStarterPhase({
-    state,
+  const now = command.clientTimestamp;
+  const incomeByPlayer = calculateBonusIncome(state);
+  const players = Object.fromEntries(
+    Object.entries(state.players).map(([playerId, player]) => [
+      playerId,
+      {
+        ...player,
+        cash: player.cash + (incomeByPlayer[playerId]?.total ?? 0),
+      },
+    ]),
+  );
+  const stateAfterBonuses: GameState = {
+    ...state,
+    players,
+  };
+  const totalIncome = Object.values(incomeByPlayer).reduce(
+    (sum, income) => sum + income.total,
+    0,
+  );
+  const logEntry = createCommandLogEntry({
+    state: stateAfterBonuses,
     command,
-    logType: "bonuses.confirmed",
-    summary: "Starter Bonuses confirmed.",
-    detailsNote: "Starter scaffold records the phase; workshop and shipyard income comes later.",
-    nextDecision: createSystemDecision({
-      id: `decision-revenue-confirm-turn-${state.turn}`,
-      phase: "revenue",
-      step: "revenue.confirm",
-      prompt: "Confirm starter Revenue.",
-      commandType: "revenue.confirm",
-      label: "Confirm Revenue",
-      description: "Starter scaffold: records that Revenue was confirmed.",
-    }),
+    now,
+    type: "bonuses.confirmed",
+    summary: `Bonuses paid £${totalIncome}.`,
+    details: {
+      incomeByPlayer,
+      assumption:
+        "A shipyard pays if its matching ship is owned by the same player and located at shipyard:<enterprise id>.",
+    },
   });
+  const nextDecision = createSystemDecision({
+    id: `decision-revenue-confirm-turn-${state.turn}`,
+    phase: "revenue",
+    step: "revenue.confirm",
+    prompt: "Confirm starter Revenue.",
+    commandType: "revenue.confirm",
+    label: "Confirm Revenue",
+    description: "Starter scaffold: records that Revenue was confirmed.",
+  });
+
+  return {
+    ok: true,
+    logEntry,
+    state: {
+      ...stateAfterBonuses,
+      updatedAt: now,
+      phase: nextDecision.phase,
+      pendingDecision: nextDecision,
+      log: [...stateAfterBonuses.log, logEntry],
+    },
+  };
+}
+
+function calculateBonusIncome(state: GameState): Record<
+  string,
+  {
+    workshops: number;
+    fittedShipyards: number;
+    total: number;
+  }
+> {
+  const incomeByPlayer: Record<string, { workshops: number; fittedShipyards: number; total: number }> = {};
+
+  for (const player of Object.values(state.players)) {
+    if (player.isCrown) continue;
+
+    const workshops = player.enterprises.filter((enterprise) => enterprise.type === "workshop").length;
+    const fittedShipyards = player.enterprises.filter(
+      (enterprise) =>
+        enterprise.type === "shipyard" &&
+        state.company.ships.some(
+          (ship) => ship.owner === player.id && ship.location === `shipyard:${enterprise.id}`,
+        ),
+    ).length;
+    const total = workshops + fittedShipyards;
+    if (total <= 0) continue;
+
+    incomeByPlayer[player.id] = {
+      workshops,
+      fittedShipyards,
+      total,
+    };
+  }
+
+  return incomeByPlayer;
 }

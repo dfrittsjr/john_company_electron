@@ -320,6 +320,9 @@ Starting with the Chairman and proceeding clockwise:
 
 - Choose one family action.
 - If the opportunity marker was already on that action, allow the action twice.
+  The implemented hotseat flow represents the optional second action as
+  `family.chooseRepeatAction`; the marker is moved only after the player either
+  takes or declines the repeat.
 - Apply extra action from the most recent applicable law.
 - Support no-action only when player truly cannot act.
 - Enforce out-of-family-pieces rule by taking from a prize and lowering VP.
@@ -342,15 +345,36 @@ Only present after Deregulation:
 Resolve vacant offices in ascending office-card order:
 
 - Determine hirer and candidate pool from office data.
+  Current implementation supports Chairman-hired writer offices for
+  `Manager of Shipping` and `Superintendent of Trade in China` when the
+  Chairman is filled. Self-hires are skipped until explicit nepotism consent
+  prompts exist.
+- Director of Trade supports promotion from an existing non-Chairman,
+  non-Governor officeholder. The previous office is queued as vacant and fatigue
+  moves to Director of Trade. If no eligible officeholder can be promoted, the
+  Chairman may hire a non-Chairman writer into Director of Trade; self-hires are
+  skipped until explicit nepotism consent prompts exist.
 - Request consent for nepotism when required.
 - Promote candidates and move fatigue from previous office.
 - Skip if no hirer or no eligible candidates.
 - Elect Chairman by majority Company share support.
+  Current implementation covers the deterministic case where one player already
+  controls a pure majority: `floor(total current Company shares / 2) + 1`.
+  A Chairman-slot share counts as a Company share. Negotiated support,
+  former-Chairman fallback, and Empty Court handling remain TODO.
 - For Crown games, enforce Crown Chairman election behavior, Crown support bribes, Crown nepotism consent favors, Crown self-hiring priority, Crown Director of Trade/Governor General selection, and Crown candidate priority.
 
 ### Company Operation
 
 Follow the red ribbon office order:
+
+- Current implementation resolves the red-ribbon office loop, skipping vacant
+  or uncreated offices with system log entries, giving occupied offices a
+  private `companyOperation.passOffice` fallback decision, and advancing to
+  Bonuses after the final red-ribbon office.
+- Temporary assumption: skipped vacant/uncreated offices are marked
+  `actedThisTurn` to track loop progress until Upkeep refresh resets office
+  action flags.
 
 - Chairman: take debt, then allocate Company Balance to office treasuries.
 - Director of Trade: Special Envoy checks, open China or open order, then up to two writer/ship transfers.

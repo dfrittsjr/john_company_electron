@@ -8,9 +8,9 @@ import type {
 import { confirmBonuses } from "./phases/bonuses";
 import { passCompanyOperation } from "./phases/company-operation";
 import { confirmEventsInIndia } from "./phases/events-in-india";
-import { chooseFamilyAction } from "./phases/family";
+import { chooseFamilyAction, finishFamilyAction } from "./phases/family";
 import { confirmFinalScoring } from "./phases/final-scoring";
-import { passHiring } from "./phases/hiring";
+import { electChairman, hireOffice, passHiring, skipHiringVacancy } from "./phases/hiring";
 import { confirmLondonSeason } from "./phases/london-season";
 import { confirmParliament } from "./phases/parliament";
 import { confirmRevenue } from "./phases/revenue";
@@ -23,7 +23,11 @@ const COMMAND_HANDLERS: Record<string, CommandHandler> = {
   "setup.confirmStart": confirmStart,
   "londonSeason.confirm": confirmLondonSeason,
   "family.chooseAction": chooseFamilyAction,
+  "family.finishAction": finishFamilyAction,
   "hiring.pass": passHiring,
+  "hiring.electChairman": electChairman,
+  "hiring.hireOffice": hireOffice,
+  "hiring.skipVacancy": skipHiringVacancy,
   "companyOperation.passOffice": passCompanyOperation,
   "bonuses.confirm": confirmBonuses,
   "revenue.confirm": confirmRevenue,

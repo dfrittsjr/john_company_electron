@@ -182,14 +182,33 @@ Current behavior:
 - `Purchase Workshop`, `Purchase Shipyard`, and `Purchase Luxury` spend cash and
   take the next enterprise card. Shipyards create their matching ship token;
   luxuries award 2 VP and one window icon.
+<<<<<<< HEAD
+=======
+- If a player's opportunity marker is already on their chosen main action at
+  the start of their Family decision, the engine offers a private
+  `family.chooseRepeatAction` decision. The repeat legal commands are
+  regenerated after the first action, so resources, Stock Exchange slots, and
+  enterprise supply are rechecked. The player may decline with
+  `family.finishAction`.
+- The opportunity marker is moved only after the player's main/repeat decision
+  is finished. `No Action` does not repeat and places the marker in supply.
+>>>>>>> 92102859 (adding updates from first ralph loop. no clue what happened)
 - `No Action` is only generated when no other legal Family action is available.
 
 Implement:
 
+<<<<<<< HEAD
 - Opportunity marker double-action rule.
 - Extra family action from the most recent applicable law once laws exist.
 - Out-of-family-pieces rule once prizes exist.
 - Save/load coverage during each distinct Family decision type.
+=======
+- Done: Opportunity marker double-action rule for main Family actions.
+- Extra family action from the most recent applicable law once laws exist.
+- Out-of-family-pieces rule once prizes exist.
+- Save/load coverage during future Family decision types as laws, prizes, and
+  consent prompts are added.
+>>>>>>> 92102859 (adding updates from first ralph loop. no clue what happened)
 
 Tests:
 
@@ -197,33 +216,82 @@ Tests:
 - Done: cash and piece source/destination.
 - Done: writer, officer, share, shipyard, workshop, and luxury effects.
 - Done: share creation from debt.
+<<<<<<< HEAD
 - TODO: opportunity marker behavior.
 - TODO: save/load during each Family decision type.
+=======
+- Done: opportunity marker behavior, including repeat, decline, No Action, and
+  last-player Stock Exchange share resolution.
+- Done: save/load coverage for normal and repeated Family action
+  decisions.
+>>>>>>> 92102859 (adding updates from first ralph loop. no clue what happened)
 
 ### 5. Replace Starter Hiring Pass With Office Hiring
 
 Current behavior:
 
-- `hiring.pass` records each player passing.
+- Normal Family completion now enters a real Hiring vacancy resolver instead of
+  the starter player-by-player pass loop.
+- If there are no queued vacancies, Hiring advances directly to starter Company
+  Operation.
+- Vacancies are resolved in encoded office order; unresolved non-Chairman
+  offices expose a system skip that leaves the office vacant for the turn.
+- Chairman can be elected when one human player already controls a pure majority
+  of current Company shares. The elected share is moved from the Court to the
+  Chairman slot, remains a Company share, and the Chairman office is filled.
+- When the Chairman office is filled, `Manager of Shipping` and
+  `Superintendent of Trade in China` can be filled from non-Chairman writers.
+  The writer is removed from both the player's writer count and the Presidency
+  Writers box, then placed in the office.
+- `Director of Trade` can be filled by promoting a non-Chairman, non-Governor
+  officeholder. The previous office becomes a new queued vacancy and its fatigue
+  moves to Director of Trade.
 
 Implement:
 
-- Office vacancy order.
-- Hirer determination from office data.
-- Candidate pool generation.
-- Chairman election by Company-share majority.
-- Hire command.
-- Skip only if no hirer or no eligible candidate exists.
-- Nepotism consent prompt.
-- Promotion and fatigue transfer.
+- Done: replace the starter pass loop with a real vacancy resolver.
+- Done: Office vacancy order for the currently encoded office queue.
+- Done: Hirer determination and candidate pool generation for
+  Chairman-hired writer offices (`Manager of Shipping` and
+  `Superintendent of Trade in China`) when the Chairman office is filled,
+  excluding self-hires until nepotism consent exists.
+- Done: Director of Trade promotion from current non-Chairman,
+  non-Governor officeholders, including vacating the previous office and moving
+  fatigue.
+- Done: Director of Trade fallback to any writer when no eligible
+  non-Chairman, non-Governor officeholder can be promoted. Current assumption:
+  use the same no-nepotism behavior as other Chairman-hired offices until an
+  explicit consent prompt exists.
+- TODO: Hirer determination from office data for the remaining non-Chairman
+  offices.
+- TODO: Candidate pool generation for the remaining non-Chairman offices.
+- Done for deterministic majority: Chairman election by Company-share majority.
+  First slice assumes
+  a player who already controls a pure majority of Company shares can be elected
+  directly; negotiated share support and former-Chairman fallback remain TODO.
+- TODO: contested Chairman election support, negotiated support, and
+  former-Chairman fallback when no candidate reaches majority.
+- TODO: Empty Court Chairman handling.
+- Done for Chairman and Chairman-hired writer offices; TODO for
+  other offices: Hire command.
+- Done for current slice: Skip only if no hirer or no eligible candidate exists.
+- TODO: Nepotism consent prompt. Current non-Chairman hiring excludes
+  self-hires rather than treating them as consented, including Director of Trade
+  promotions from another officeholder owned by the Chairman player.
+- Done for Director of Trade: Promotion and fatigue transfer.
 
 Tests:
 
-- Chairman election.
-- Candidate pool includes legal candidates and rejects illegal ones.
+- Done for deterministic majority: Chairman election.
+- Done for Chairman-hired writer offices; TODO for other offices: Candidate
+  pool includes legal candidates and rejects illegal ones.
+- Done for Director of Trade writer fallback: legal fallback candidate and
+  current self-hire exclusion.
 - Nepotism consent accepted and denied.
-- Hiring advances through office order.
-- Save/load during a hire and a consent prompt.
+- Done for current queue: Hiring advances through office order.
+- Done for Chairman election and Chairman-hired writer office pending
+  decisions; TODO for later consent prompts: Save/load during a hire and a
+  consent prompt.
 
 ### 6. Implement London Season
 
@@ -257,11 +325,17 @@ Current behavior:
 
 Implement first:
 
-- Red-ribbon office order.
-- Skip vacant/uncreated offices with log entries.
-- Human officeholder pending decision.
-- `companyOperation.passOffice` only as a temporary fallback per office.
-- End of office loop advances to Bonuses.
+- Done: Red-ribbon office order.
+- Done: Skip vacant/uncreated offices with log entries.
+- Done: Human officeholder pending decision.
+- Done: `companyOperation.passOffice` only as a temporary fallback per
+  office.
+- Done: End of office loop advances to Bonuses.
+
+Current assumptions:
+
+- Until Upkeep refresh is implemented, skipped vacant/uncreated offices are
+  marked `actedThisTurn` to track Company Operation loop progress.
 
 Then replace office pass behavior in this order:
 
@@ -287,19 +361,26 @@ Tests:
 
 Current behavior:
 
-- Starter Bonuses is a system confirmation.
+- Bonuses confirmation now pays implemented enterprise income and advances to
+  starter Revenue.
 
 Implement:
 
-- `GBP 1` for each workshop.
-- `GBP 1` for each shipyard with a fitted ship.
-- Correct income ownership and log entries.
+- Done: `GBP 1` for each workshop.
+- Done: `GBP 1` for each shipyard with a fitted ship.
+- Done: Correct income ownership and log entries.
+
+Current assumption:
+
+- Until Manager of Shipping fitting/placement rules exist, a shipyard has a
+  fitted ship when a ship owned by the same player is located at
+  `shipyard:<enterprise instance id>`.
 
 Tests:
 
-- Workshop income.
-- Fitted and unfitted shipyard income.
-- Save/load at phase start.
+- Done: Workshop income.
+- Done: Fitted and unfitted shipyard income.
+- Done: Save/load at phase start.
 
 ### 9. Implement Revenue
 
