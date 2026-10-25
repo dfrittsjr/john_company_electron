@@ -1,10 +1,28 @@
 import type { PhaseId } from "../engine/types";
+import { rulesFigures } from "./rules-figures";
 
 export type RuleBlock = {
   kind: "h3" | "p" | "ul";
   text?: string;
   items?: string[];
 };
+
+/** A picture cropped from the printed rulebook. */
+export type RuleFigure = {
+  /** Site-relative URL under /images/rules/. */
+  src: string;
+  alt: string;
+  /** What the rulebook calls it, without the page reference. */
+  caption: string;
+  /** Printed page number in the rulebook. */
+  page: number;
+  width: number;
+  height: number;
+};
+
+export function figureCaption(figure: RuleFigure): string {
+  return `${figure.caption} (rulebook p.${figure.page})`;
+}
 
 export type RuleSection = {
   id: string;
@@ -18,6 +36,8 @@ export type RuleSection = {
   /** Rules this app does not implement yet. */
   notInApp?: boolean;
   blocks: RuleBlock[];
+  /** Pictures and worked examples from the rulebook, shown after the text. */
+  figures?: RuleFigure[];
 };
 
 export const RULES_ATTRIBUTION =
@@ -27,7 +47,7 @@ const h3 = (text: string): RuleBlock => ({ kind: "h3", text });
 const p = (text: string): RuleBlock => ({ kind: "p", text });
 const ul = (...items: string[]): RuleBlock => ({ kind: "ul", items });
 
-export const rulesSections: RuleSection[] = [
+const baseSections: RuleSection[] = [
   {
     id: "introduction",
     title: "Introduction",
@@ -970,6 +990,10 @@ export const rulesSections: RuleSection[] = [
     ],
   },
 ];
+
+export const rulesSections: RuleSection[] = baseSections.map((section) =>
+  rulesFigures[section.id] ? { ...section, figures: rulesFigures[section.id] } : section,
+);
 
 export function ruleSectionForPhase(phase: PhaseId): RuleSection | undefined {
   return rulesSections.find((section) => section.phase === phase);

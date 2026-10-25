@@ -1,6 +1,9 @@
+import { existsSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
   RULES_ATTRIBUTION,
+  figureCaption,
   highlightParts,
   ruleSectionForPhase,
   rulesSections,
@@ -81,3 +84,38 @@ describe("rules text", () => {
     expect(sectionText("success-checks")).toContain("Use the lowest rolled value to determine one of three results.");
   });
 });
+
+describe("rules figures", () => {
+  const figures = rulesSections.flatMap((section) => (section.figures ?? []).map((figure) => ({ section, figure })));
+
+  test("the rulebook pictures are attached to sections", () => {
+    expect(figures.length).toBeGreaterThanOrEqual(30);
+    const sources = figures.map(({ figure }) => figure.src);
+    expect(new Set(sources).size).toBe(sources.length);
+  });
+
+  test("every figure has a file, alt text, caption, page and size", () => {
+    for (const { section, figure } of figures) {
+      const label = `${section.id}: ${figure.src}`;
+      expect(figure.src, label).toMatch(/^\/images\/rules\/[a-z0-9-]+\.webp$/);
+      const file = join(process.cwd(), "public", figure.src);
+      expect(existsSync(file), label).toBe(true);
+      expect(statSync(file).size, label).toBeGreaterThan(1000);
+      expect(figure.alt.length, label).toBeGreaterThan(20);
+      expect(figure.caption, label).not.toBe("");
+      expect(figure.page, label).toBeGreaterThan(0);
+      expect(figure.width, label).toBeGreaterThan(0);
+      expect(figure.height, label).toBeGreaterThan(0);
+      expect(figureCaption(figure), label).toContain(`(rulebook p.${figure.page})`);
+    }
+  });
+
+  test("a figure's page is within its section's printed pages", () => {
+    for (const { section, figure } of figures) {
+      const [from, to] = section.pages.split("-").map(Number);
+      expect(figure.page, section.id).toBeGreaterThanOrEqual(from);
+      expect(figure.page, section.id).toBeLessThanOrEqual(to ?? from);
+    }
+  });
+});
+

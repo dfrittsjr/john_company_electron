@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   RULES_ATTRIBUTION,
+  figureCaption,
   highlightParts,
   rulesSections,
   searchRuleSections,
   type RuleBlock,
+  type RuleFigure,
   type RuleSection,
 } from "../data/rules-text";
 
@@ -39,6 +41,18 @@ function Block({ block, query }: { block: RuleBlock; query: string }) {
     );
   }
   return <p><Highlighted text={block.text ?? ""} query={query} /></p>;
+}
+
+function Figure({ figure }: { figure: RuleFigure }) {
+  const caption = figureCaption(figure);
+  return (
+    <figure className="rules-figure">
+      <a href={figure.src} target="_blank" rel="noreferrer" title="Open full size">
+        <img src={figure.src} alt={figure.alt} width={figure.width} height={figure.height} loading="lazy" />
+      </a>
+      <figcaption>{caption}</figcaption>
+    </figure>
+  );
 }
 
 export function RulesPanel({ initialSectionId, onClose }: Props) {
@@ -114,6 +128,9 @@ export function RulesPanel({ initialSectionId, onClose }: Props) {
                 </p>
                 {selected.blocks.map((block, index) => (
                   <Block key={index} block={block} query={query} />
+                ))}
+                {(selected.figures ?? []).map((figure) => (
+                  <Figure key={figure.src} figure={figure} />
                 ))}
               </article>
             ) : null}
