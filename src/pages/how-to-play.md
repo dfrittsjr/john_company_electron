@@ -25,6 +25,23 @@ save file (`.joco`) that you pass between players.
 
 Chrome and Edge ask where to save. Firefox and Safari put the file in your downloads folder.
 
+## Playing online
+
+Instead of passing a file, you can play at a shared table where a server holds the game.
+
+1. Open [Play online](/online/), choose **Start an online game**, and enter the players' names.
+2. You get one private link per player and a spectator link. Send each friend their own link. A
+   seat link works like a password: anyone who has it can play that seat.
+3. Open your link. The page keeps the key in this browser, so next time you can return from the
+   "Your games in this browser" list on the same page and see which games are waiting for you.
+4. Make your decisions when it is your turn. When it is someone else's, the page says who it is
+   waiting for. Updates appear on their own, and the tab title shows "(Your turn)" when it is yours.
+   Press **Notify me** if you also want a desktop notification while the tab is in the background.
+5. **Undo** takes back your own last move, as long as nobody has acted since and no dice or cards
+   were involved. **Export .joco** downloads a save you can continue offline.
+
+You can also move a game you are already playing onto an online table with **Import a .joco save**.
+
 ## Tips
 
 - Always load the newest file. If two people play from the same file, the game forks; agree on

@@ -20,6 +20,8 @@ type Props = {
   revealedPlayer: PlayerId | null;
   onReveal: (playerId: PlayerId | null) => void;
   onCommand: (actorId: PlayerId, type: string, payload: unknown) => void;
+  /** Online: the form always acts as this player, with no device hand-over step. */
+  fixedPlayer?: PlayerId;
 };
 
 const prestigeById = new Map(prestigeCards.map((card) => [card.id, card]));
@@ -95,9 +97,9 @@ function buildItems(
   return items;
 }
 
-export function NegotiationPanel({ game, revealedPlayer, onReveal, onCommand }: Props) {
+export function NegotiationPanel({ game, revealedPlayer, onReveal, onCommand, fixedPlayer }: Props) {
   const players = game.seatingOrder.filter((playerId) => !game.players[playerId].isCrown);
-  const [chosen, setChosen] = useState<PlayerId>(players[0]);
+  const [chosen, setChosen] = useState<PlayerId>(fixedPlayer ?? players[0]);
   const [partner, setPartner] = useState<PlayerId>(players[1] ?? players[0]);
   const [giveCash, setGiveCash] = useState(0);
   const [askCash, setAskCash] = useState(0);
@@ -179,9 +181,11 @@ export function NegotiationPanel({ game, revealedPlayer, onReveal, onCommand }: 
     <section className="negotiation-panel">
       <div className="negotiation-heading">
         <h2>Deals &amp; Cards: {player.name}</h2>
-        <button type="button" className="plain-button" onClick={() => onReveal(null)}>
-          Hide
-        </button>
+        {fixedPlayer ? null : (
+          <button type="button" className="plain-button" onClick={() => onReveal(null)}>
+            Hide
+          </button>
+        )}
       </div>
       <p className="status-note">
         £{player.cash} · {player.enterprises.length} enterprise(s) ·{" "}

@@ -1,0 +1,110 @@
+.online-landing .online-grid {
+  align-items: start;
+}
+
+.online-landing .plain-link {
+  color: #2c261f;
+  border-color: #4f3e2b;
+}
+
+.link-list,
+.my-games {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.link-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 8px;
+  align-items: center;
+}
+
+.link-list .link-owner {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+}
+
+.link-list input {
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 8px;
+  border: 1px solid #beb2a2;
+  border-radius: 6px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.my-games li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.my-games li a {
+  flex: 1 1 200px;
+}
+
+.import-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.turnstile {
+  margin: 8px 0;
+  min-height: 4px;
+}
+
+.online-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 0;
+}
+
+.watching-badge {
+  background: #6a5238;
+  color: #f8f3e8;
+}
+
+.connection-live {
+  background: #2e7d4f;
+  color: #fff;
+}
+
+.connection-reconnecting,
+.connection-connecting {
+  background: #c9971a;
+  color: #201b15;
+}
+
+.connection-offline {
+  background: #8b2d38;
+  color: #fff;
+}
+
+.turn-badge {
+  background: #8b2d38;
+  color: #fff;
+}
+
+.waiting-banner {
+  border: 2px solid #6a5238;
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: #efe5d2;
+}
+
+.your-turn-banner {
+  border-color: #8b2d38;
+  background: #fbe9d7;
+  font-weight: 600;
+}

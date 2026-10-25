@@ -16,11 +16,13 @@ type Props = {
   error: string | null;
   /** Opens the rules reference at a section. Without it the rules link is not shown. */
   onOpenRules?: (sectionId: string) => void;
+  /** Online: shown instead of "Nothing to decide" when the decision is not this viewer's. */
+  note?: string;
 };
 
 const COMPACT_GROUP_SIZE = 7;
 
-export function DecisionPanel({ game, hidden, onReveal, onRun, onHover, filter, onClearFilter, error, onOpenRules }: Props) {
+export function DecisionPanel({ game, hidden, onReveal, onRun, onHover, filter, onClearFilter, error, onOpenRules, note }: Props) {
   const decision = game.pendingDecision;
   const actor = decision.actor;
   const actorName =
@@ -61,7 +63,7 @@ export function DecisionPanel({ game, hidden, onReveal, onRun, onHover, filter, 
         </div>
       ) : decision.legalCommands.length === 0 ? (
         <p className="status-note">
-          {game.finalScoring.complete ? "The game is over. See the final scores." : "Nothing to decide right now."}
+          {game.finalScoring.complete ? "The game is over. See the final scores." : (note ?? "Nothing to decide right now.")}
         </p>
       ) : (
         <div className="command-groups" onMouseLeave={() => onHover([])}>

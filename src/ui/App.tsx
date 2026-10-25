@@ -18,16 +18,8 @@ import {
 } from "../data";
 import { deserializeGameState, serializeSave } from "../save";
 import "./game-screen.css";
-import { BoardView } from "./BoardView";
-import { DecisionPanel } from "./DecisionPanel";
-import { DetailsPanel } from "./DetailsPanel";
-import { FinalScoringView } from "./FinalScoringView";
+import { GameScreen } from "./GameScreen";
 import { HandoffBanner } from "./HandoffBanner";
-import { LogPanel } from "./LogPanel";
-import { NegotiationPanel } from "./NegotiationPanel";
-import { ParliamentPanel } from "./ParliamentPanel";
-import { PlayerDashboards } from "./PlayerDashboards";
-import { RulesPanel } from "./RulesPanel";
 import { copyText, openTextFile, saveTextFile, TEXT_FILE_TYPE } from "./platform/files";
 import { installFlexGapFallback } from "./platform/flex-gap-fallback";
 import { nextActorName, suggestedSaveName, suggestedSummaryName } from "./save-names";
@@ -170,10 +162,6 @@ export function App() {
   const [revealedPlayer, setRevealedPlayer] = useState<string | null>(null);
   // The player who should receive the save after the last move, when it is someone else.
   const [handoff, setHandoff] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [hovered, setHovered] = useState<string[]>([]);
-  const [sideTab, setSideTab] = useState<"log" | "deals" | "laws">("log");
-  const [rulesOpen, setRulesOpen] = useState<{ sectionId?: string } | null>(null);
   const [boardResetKey, setBoardResetKey] = useState(0);
   // Earlier states of this browser session, oldest first. Cleared whenever the game is saved,
   // loaded, or created, so a file that has been passed on can never be taken back.
@@ -192,29 +180,11 @@ export function App() {
     setGame(previous);
     setHistory((current) => current.slice(0, -1));
     setCommandError(null);
-    setHovered([]);
-    setSelected(null);
     // The restored decision may belong to someone else: hide private information again.
     setHandoff(null);
     setRevealedPlayer(null);
   }
 
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key.toLowerCase() !== "z" || !(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey) {
-        return;
-      }
-      const target = event.target as HTMLElement | null;
-      if (target && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))) return;
-
-      event.preventDefault();
-      undo();
-    }
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  });
-  const [finalScoringDismissed, setFinalScoringDismissed] = useState(false);
   const [setup, setSetup] = useState<SetupState>({
     scenario: "1710",
     playerCount: 4,
@@ -275,13 +245,12 @@ export function App() {
     setCommandError(null);
     setSaveStatus(null);
     setHandoff(null);
-    setSelected(null);
     setRevealedPlayer(null);
-    setFinalScoringDismissed(false);
+    setBoardResetKey((key) => key + 1);
     setScreen("board");
   }
 
-  function executeLegalCommand(legalCommand: LegalCommand) {
+  function runCommand(actorId: string, type: string, payload: unknown) {
     if (!game) return;
 
     if (game.pendingDecision.actor === "simultaneous") {
@@ -289,16 +258,15 @@ export function App() {
       return;
     }
 
-    const command: GameCommand = {
+    applyAndHandOff({
       id: `cmd-${Date.now()}`,
       gameId: game.gameId,
-      actorId: game.pendingDecision.actor,
+      actorId,
       decisionId: game.pendingDecision.id,
-      type: legalCommand.type,
-      payload: legalCommand.payload ?? {},
+      type,
+      payload,
       clientTimestamp: new Date().toISOString(),
-    };
-    applyAndHandOff(command);
+    });
   }
 
   function applyAndHandOff(command: GameCommand) {
@@ -315,8 +283,6 @@ export function App() {
     setUndoStatus(null);
     setGame(result.state);
     setCommandError(null);
-    setHovered([]);
-    setSelected(null);
     if (next) {
       // Someone else decides next: hide private information until they reveal it.
       setHandoff(next);
@@ -324,20 +290,6 @@ export function App() {
     } else {
       setHandoff(null);
     }
-  }
-
-  function runAnytimeCommand(actorId: string, type: string, payload: unknown) {
-    if (!game) return;
-
-    applyAndHandOff({
-      id: `cmd-${Date.now()}`,
-      gameId: game.gameId,
-      actorId,
-      decisionId: game.pendingDecision.id,
-      type,
-      payload,
-      clientTimestamp: new Date().toISOString(),
-    });
   }
 
   async function saveGame() {
@@ -387,8 +339,6 @@ export function App() {
       setCommandError(null);
       setRevealedPlayer(null);
       setHandoff(null);
-      setSelected(null);
-      setFinalScoringDismissed(false);
       setSaveStatus(`Loaded ${result.fileName}`);
       setScreen("board");
     } catch (error) {
@@ -625,69 +575,21 @@ export function App() {
     return null;
   }
 
-  const decisionActor = game.pendingDecision.actor;
-  const decisionHidden =
-    game.pendingDecision.visibility === "private" &&
-    decisionActor !== "system" &&
-    decisionActor !== "simultaneous" &&
-    revealedPlayer !== decisionActor;
-  const highlights = new Set(decisionHidden ? [] : game.pendingDecision.legalCommands.flatMap(commandTargets));
-  const filter = selected && highlights.has(selected) ? selected : null;
-  const optionCount = selected
-    ? game.pendingDecision.legalCommands.filter((command) => commandTargets(command).includes(selected)).length
-    : 0;
-  const policySpace = policyDial.spaces[game.parliament.policyDialPosition];
-  const showFinalScoring = Boolean(game.finalScoring.complete) && !finalScoringDismissed;
-
   return (
-    <main className="game-screen">
-      <header className="game-header">
-        <div className="game-title">
-          <p className="eyebrow">John Company · {game.scenario}</p>
-          <h1>
-            Turn {game.turn} · {phaseLabel(game.phase)}
-          </h1>
-        </div>
-        <dl className="track-strip">
-          <div>
-            <dt title="Company Standing: the Balance the Company must keep after expenses at Revenue (p.27)">Standing (expectations)</dt>
-            <dd>
-              {standingLabel(game)}
-              {game.company.failed ? " (failed)" : ""}
-            </dd>
-          </div>
-          <div>
-            <dt>Debt</dt>
-            <dd>{game.company.debt}</dd>
-          </div>
-          <div>
-            <dt>Balance</dt>
-            <dd>£{game.company.balance}</dd>
-          </div>
-          <div>
-            <dt>Prime Minister</dt>
-            <dd>{playerName(game, game.parliament.primeMinister)}</dd>
-          </div>
-          <div>
-            <dt>Policy</dt>
-            <dd>{policySpace ? `${humanize(policySpace.consequence)} · ${humanize(policySpace.target)}` : "-"}</dd>
-          </div>
-        </dl>
-        <div className="header-actions">
-          <button
-            type="button"
-            onClick={undo}
-            disabled={Boolean(undoBlocked)}
-            title={undoBlocked ?? "Undo the last action (Ctrl+Z)."}
-            aria-describedby={undoBlocked ? "undo-reason" : undefined}
-          >
-            Undo
-          </button>
-          {undoBlocked ? (
-            <span id="undo-reason" className="visually-hidden">
-              {undoBlocked}
-            </span>
-          ) : null}
+    <GameScreen
+      key={boardResetKey}
+      game={game}
+      mode="local"
+      runCommand={runCommand}
+      commandError={commandError}
+      revealedPlayer={revealedPlayer}
+      onRevealPlayer={setRevealedPlayer}
+      undo={{ run: undo, blockedReason: undoBlocked ?? null }}
+      boardResetKey={boardResetKey}
+      onMenu={() => setScreen("start")}
+      onSaveFinal={saveGame}
+      headerActions={
+        <>
           <button type="button" onClick={saveGame} title="Save a .joco file named for whoever acts next, then send it to them.">
             Save &amp; pass
           </button>
@@ -700,93 +602,23 @@ export function App() {
           <button type="button" onClick={downloadSaveSummary}>
             Summary file
           </button>
-          {game.finalScoring.complete ? (
-            <button type="button" onClick={() => setFinalScoringDismissed(false)}>
-              Final scores
-            </button>
-          ) : null}
-          <button type="button" onClick={() => setRulesOpen({})}>
-            Rules
-          </button>
-          <button type="button" className="plain-button" onClick={() => setScreen("start")}>
-            Menu
-          </button>
-        </div>
-      </header>
-
-      {handoff && game.players[handoff] ? (
-        <HandoffBanner game={game} target={handoff} onSave={saveGame} onDismiss={() => setHandoff(null)} />
-      ) : null}
-
-      <div className="game-body">
-        <div className="board-column">
-          <div className="board-area">
-            <BoardView
-              game={game}
-              resetKey={boardResetKey}
-              highlights={highlights}
-              focus={new Set(hovered)}
-              selected={selected}
-              onSelect={(target) => setSelected((current) => (current === target ? null : target))}
-            />
-            {selected ? (
-              <DetailsPanel game={game} target={selected} optionCount={decisionHidden ? 0 : optionCount} onClose={() => setSelected(null)} />
-            ) : null}
-          </div>
-          <PlayerDashboards game={game} revealedPlayer={revealedPlayer} onSelectPlayer={(playerId) => setSelected(`player:${playerId}`)} />
-        </div>
-
-        <aside className="sidebar">
+        </>
+      }
+      banner={
+        handoff && game.players[handoff] ? (
+          <HandoffBanner game={game} target={handoff} onSave={saveGame} onDismiss={() => setHandoff(null)} />
+        ) : null
+      }
+      notices={
+        <>
           {saveStatus ? <p className="status-strip">{saveStatus}</p> : null}
           {undoStatus ? (
             <p className="status-strip" role="status">
               {undoStatus}
             </p>
           ) : null}
-          <DecisionPanel
-            game={game}
-            hidden={decisionHidden}
-            onReveal={() => setRevealedPlayer(decisionActor)}
-            onRun={executeLegalCommand}
-            onHover={setHovered}
-            filter={filter}
-            onClearFilter={() => setSelected(null)}
-            error={commandError}
-            onOpenRules={(sectionId) => setRulesOpen({ sectionId })}
-          />
-          <div className="sidebar-tabs" role="tablist" aria-label="Side panels">
-            <button type="button" role="tab" aria-selected={sideTab === "log"} className={sideTab === "log" ? "tab tab-active" : "tab"} onClick={() => setSideTab("log")}>
-              Log
-            </button>
-            <button type="button" role="tab" aria-selected={sideTab === "deals"} className={sideTab === "deals" ? "tab tab-active" : "tab"} onClick={() => setSideTab("deals")}>
-              Deals &amp; Cards
-            </button>
-            <button type="button" role="tab" aria-selected={sideTab === "laws"} className={sideTab === "laws" ? "tab tab-active" : "tab"} onClick={() => setSideTab("laws")}>
-              Laws
-            </button>
-          </div>
-          <div className="sidebar-tab-body">
-            {sideTab === "log" ? (
-              <LogPanel game={game} />
-            ) : sideTab === "laws" ? (
-              <ParliamentPanel game={game} />
-            ) : (
-              <NegotiationPanel game={game} revealedPlayer={revealedPlayer} onReveal={setRevealedPlayer} onCommand={runAnytimeCommand} />
-            )}
-          </div>
-          {game.crown ? (
-            <div className="crown-summary">
-              <h3>Crown</h3>
-              <p>Difficulty: {game.crown.difficulty}</p>
-              <p>Climate: {game.crown.climate}</p>
-              <p>Crown cubes: {game.crown.promiseCubes.crownSupply}</p>
-            </div>
-          ) : null}
-        </aside>
-      </div>
-
-      {showFinalScoring ? <FinalScoringView game={game} onClose={() => setFinalScoringDismissed(true)} onSave={saveGame} /> : null}
-      {rulesOpen ? <RulesPanel initialSectionId={rulesOpen.sectionId} onClose={() => setRulesOpen(null)} /> : null}
-    </main>
+        </>
+      }
+    />
   );
 }
