@@ -25,8 +25,7 @@ import { createCommandLogEntry, wrongPhase } from "./shared";
 
 /**
  * Refresh step (p.36): "Any active local alliances are exhausted." Bought alliances return to the
- * bottom of their Army box, ready to be bought again next turn.
- * TODO(LS): call from the Upkeep and Refresh step.
+ * bottom of their Army box, ready to be bought again next turn. Called from Upkeep and Refresh.
  */
 export function exhaustActiveLocalAlliances(state: GameState): GameState {
   return {
@@ -48,7 +47,7 @@ export function exhaustActiveLocalAlliances(state: GameState): GameState {
   };
 }
 
-/** Refresh step (p.36): "Return all extra ships to the supply." TODO(LS): call from Upkeep and Refresh. */
+/** Refresh step (p.36): "Return all extra ships to the supply." Called from Upkeep and Refresh. */
 export function returnExtraShips(state: GameState): GameState {
   return { ...state, company: { ...state.company, ships: state.company.ships.filter((ship) => ship.kind !== "extra") } };
 }

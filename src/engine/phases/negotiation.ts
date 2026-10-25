@@ -350,9 +350,11 @@ export function isActivatedThisPhase(state: GameState, assetId: string): boolean
   );
 }
 
-/** True if the asset changed hands this turn (Lady Newcome: transferred enterprises cannot vote). */
-export function wasTransferredThisTurn(state: GameState, assetId: string): boolean {
-  return state.negotiation.transfers.some((event) => event.turn === state.turn && event.assetId === assetId);
+/** True if the asset changed hands this turn, optionally only when given away by `from`. */
+export function wasTransferredThisTurn(state: GameState, assetId: string, from?: PlayerId): boolean {
+  return state.negotiation.transfers.some(
+    (event) => event.turn === state.turn && event.assetId === assetId && (from === undefined || event.from === from),
+  );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -675,7 +677,7 @@ export function applyTransfer(state: GameState, from: PlayerId, to: PlayerId, it
   return withNegotiation(next, {
     transfers: [
       ...next.negotiation.transfers.filter((event) => event.turn === next.turn),
-      ...movedAssets.map((assetId) => ({ turn: next.turn, phase: next.phase, assetId })),
+      ...movedAssets.map((assetId) => ({ turn: next.turn, phase: next.phase, assetId, from })),
     ],
   });
 }

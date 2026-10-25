@@ -495,7 +495,6 @@ function createInitialIndiaState(scenario: ScenarioDefinition): IndiaState {
       Bengal: createPresidency("Bengal"),
     },
     elephant: mapSetup ? { regionId: mapSetup.elephant.region, facing: mapSetup.elephant.facing } : {},
-    eventDiscards: [],
     regionsLostThisTurn: 0,
   };
 }

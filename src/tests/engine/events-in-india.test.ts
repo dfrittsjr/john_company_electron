@@ -435,6 +435,31 @@ describe("attacks against the Company and Region Loss (pp.29, 32)", () => {
     expect(state.india.regions.bengal.companyControlled).toBe(true);
   });
 
+  it("counts a local alliance bought this turn at its full strength in defence (p.21)", () => {
+    let state = eventsInIndiaState({ drawPile: ["crisis-bombay", "peace-mysore"] });
+    state = withRegion(state, "maratha", { empireFlag: undefined, isCapital: false, towerLevels: 2 });
+    state = withAssociatedRegion(state, "bengal", "Bengal");
+    state = withRegion(state, "bengal", { unrest: 1 });
+    state = withCommander(state, "Bengal", RED);
+    state = withOfficers(state, BLUE, "Bengal", { ready: 1 });
+    state = withRegiments(state, { Bengal: { ready: 2, exhausted: 0 } });
+    const bengal = state.company.armies.Bengal;
+    state = { ...state, company: { ...state.company, armies: { ...state.company.armies, Bengal: { ...bengal, localAlliances: { ...bengal.localAlliances, "alliance-jagat-seths": "ready" } } } } };
+    state = withElephant(state, "maratha", "bengal");
+
+    state = resolve(state);
+    expect(state.pendingDecision.step).toBe("eventsInIndia.defend");
+    state = chooseByPayload(state, { piece: "alliance", allianceId: "alliance-jagat-seths" });
+    state = chooseByPayload(state, { piece: "auto" });
+
+    // Strength 4: the alliance counts 2, then two regiments; Blue's officer is not needed.
+    expect(state.company.armies.Bengal.localAlliances?.["alliance-jagat-seths"]).toBe("exhausted");
+    expect(state.company.armies.Bengal.regiments).toEqual({ ready: 0, exhausted: 2 });
+    expect(state.company.armies.Bengal.officers[BLUE]).toEqual({ ready: 1, exhausted: 0 });
+    expect(state.india.regions.bengal.companyControlled).toBe(true);
+    expect(state.players[RED].trophies).toBe(1);
+  });
+
   it("rejects a choice that was not offered", () => {
     let state = eventsInIndiaState({ drawPile: ["crisis-bombay", "peace-mysore"] });
     state = withRegion(state, "maratha", { empireFlag: undefined, isCapital: false, towerLevels: 2 });

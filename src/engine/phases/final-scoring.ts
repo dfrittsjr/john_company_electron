@@ -1,3 +1,4 @@
+import { governorsLostToRegionLossOnTurn } from "./events-in-india";
 import type { CommandHandler } from "../command-handler";
 import {
   blackmailCards,
@@ -344,15 +345,9 @@ function failureCardEntries(state: GameState, playerId: PlayerId, card: FailureC
   return entries;
 }
 
-/**
- * Governors this family lost to Region Loss on the final turn, for The British Despots of India!.
- * TODO(EV): record this in EventsInIndiaState as `governorsLostToRegionLossThisTurn:
- * Record<PlayerId, number>` (reset each turn); until then this reads 0.
- */
+/** Governors this family lost to Region Loss on the final turn, for The British Despots of India!. */
 function governorsLostToRegionLossOnFinalTurn(state: GameState, playerId: PlayerId): number {
-  const record = (state.eventsInIndia as { governorsLostToRegionLossThisTurn?: Record<PlayerId, number> })
-    .governorsLostToRegionLossThisTurn;
-  return record?.[playerId] ?? 0;
+  return governorsLostToRegionLossOnTurn(state, state.turn).filter((record) => record.holder === playerId).length;
 }
 
 function completeFinalScoring(state: GameState): GameState {

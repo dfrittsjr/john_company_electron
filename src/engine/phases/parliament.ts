@@ -8,7 +8,7 @@ import type { ParliamentSession, PolicyTarget } from "./parliament.state";
 import { createFinalScoringDecision } from "./revenue";
 import { createCommandLogEntry, createSystemDecision, wrongPhase } from "./shared";
 import { registerHiringResume } from "./hiring-resume";
-import { registerStateRefresher } from "./negotiation";
+import { markActivated, registerStateRefresher } from "./negotiation";
 import { newCollector, nextDecisionId, playerName, primeMinisterOrder, updatePlayer, type Collector } from "./parliament/common";
 import { prestigeCardOwners } from "./parliament/holdings";
 import {
@@ -751,7 +751,7 @@ const castVotes = handler<CastPayload>("parliament.vote", "parliament.votesCast"
   } else {
     const card = availableVoteCards(state, voter, session).find((candidate) => candidate.key === payload.cardKey)!;
     votes = card.votes;
-    next = withSession(next, { usedCards: [...session.usedCards, card.key] });
+    next = withSession(markActivated(next, [card.cardInstanceId]), { usedCards: [...session.usedCards, card.key] });
   }
 
   const current = next.parliament.session!;

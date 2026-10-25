@@ -1,3 +1,4 @@
+import { localAlliances } from "../../../data";
 import { officeHolder, PRESIDENCY_IDS } from "../../selectors";
 import type { ArmyId, GameState, PendingDecision, PlayerId, PresidencyId, RegionId } from "../../types";
 import { lowerStanding } from "../revenue";
@@ -15,7 +16,11 @@ import {
 
 // Attacks against the Company (rulebook p.32) and Region Loss (p.29).
 
-export type DefenceChoice = { piece: "regiment" } | { piece: "officer"; playerId: PlayerId } | { piece: "auto" };
+export type DefenceChoice =
+  | { piece: "regiment" }
+  | { piece: "officer"; playerId: PlayerId }
+  | { piece: "alliance"; allianceId: string }
+  | { piece: "auto" };
 
 /** The Presidency (and so the Army) a Company-controlled region belongs to. */
 export function regionArmy(state: GameState, regionId: RegionId): ArmyId | undefined {
@@ -35,17 +40,38 @@ export function startCompanyAttack(ctx: ResolutionContext, primary: CompanyAttac
   progress(ctx).attacks = { primary };
 }
 
-type ReadyPieces = { regiments: number; officers: Array<{ playerId: PlayerId; ready: number }> };
+type ReadyPieces = {
+  regiments: number;
+  officers: Array<{ playerId: PlayerId; ready: number }>;
+  /** Local alliances bought this turn and not yet used: each counts its printed strength (p.21). */
+  alliances: Array<{ allianceId: string; strength: number }>;
+};
 
-// TODO(CO): include purchased local alliances here once they exist in state. Each counts its
-// printed strength and cannot be split between purposes (p.21).
 function readyPieces(state: GameState, army: ArmyId | undefined): ReadyPieces {
-  if (!army) return { regiments: 0, officers: [] };
+  if (!army) return { regiments: 0, officers: [], alliances: [] };
   const armyState = state.company.armies[army];
   const officers = state.seatingOrder
     .map((playerId) => ({ playerId, ready: armyState.officers[playerId]?.ready ?? 0 }))
     .filter((entry) => entry.ready > 0);
-  return { regiments: armyState.regiments.ready, officers };
+  const alliances = Object.entries(armyState.localAlliances ?? {})
+    .filter(([, status]) => status === "ready")
+    .map(([allianceId]) => ({ allianceId, strength: localAlliances.find((alliance) => alliance.id === allianceId)?.strength ?? 0 }));
+  return { regiments: armyState.regiments.ready, officers, alliances };
+}
+
+function piecesStrength(pieces: ReadyPieces): number {
+  return (
+    pieces.regiments +
+    pieces.officers.reduce((sum, entry) => sum + entry.ready, 0) +
+    pieces.alliances.reduce((sum, entry) => sum + entry.strength, 0)
+  );
+}
+
+/** A local alliance's strength "cannot be split among more than one purpose" (p.21): it is used whole. */
+function exhaustAlliance(ctx: ResolutionContext, current: ActiveCompanyAttack, allianceId: string): void {
+  const army = ctx.draft.company.armies[current.army!];
+  army.localAlliances = { ...(army.localAlliances ?? {}), [allianceId]: "exhausted" };
+  current.exhausted += localAlliances.find((alliance) => alliance.id === allianceId)?.strength ?? 0;
 }
 
 function exhaustRegiment(ctx: ResolutionContext, current: ActiveCompanyAttack): void {
@@ -62,15 +88,15 @@ function exhaustOfficer(ctx: ResolutionContext, current: ActiveCompanyAttack, pl
   current.exhausted += 1;
 }
 
-/** Exhaust pieces in a fixed order (regiments, then officers in seating order) up to `count`. */
+/** Exhaust pieces in a fixed order (regiments, officers in seating order, then alliances) up to `count` strength. */
 function exhaustAutomatically(ctx: ResolutionContext, current: ActiveCompanyAttack, count: number): void {
-  let remaining = count;
-  while (remaining > 0) {
+  const target = current.exhausted + count;
+  while (current.exhausted < target) {
     const pieces = readyPieces(ctx.draft, current.army);
     if (pieces.regiments > 0) exhaustRegiment(ctx, current);
     else if (pieces.officers.length > 0) exhaustOfficer(ctx, current, pieces.officers[0].playerId);
+    else if (pieces.alliances.length > 0) exhaustAlliance(ctx, current, pieces.alliances[0].allianceId);
     else break;
-    remaining -= 1;
   }
 }
 
@@ -80,6 +106,7 @@ export function applyDefenceChoice(ctx: ResolutionContext, choice: DefenceChoice
 
   if (choice.piece === "regiment") exhaustRegiment(ctx, current);
   else if (choice.piece === "officer") exhaustOfficer(ctx, current, choice.playerId);
+  else if (choice.piece === "alliance") exhaustAlliance(ctx, current, choice.allianceId);
   else exhaustAutomatically(ctx, current, current.needed - current.exhausted);
 }
 
@@ -181,14 +208,14 @@ function continueDefence(
   for (let guard = 0; guard < 1000; guard += 1) {
     const remaining = current.needed - current.exhausted;
     const pieces = readyPieces(ctx.draft, current.army);
-    const total = pieces.regiments + pieces.officers.reduce((sum, entry) => sum + entry.ready, 0);
+    const total = piecesStrength(pieces);
 
     if (remaining <= 0 || total === 0) {
       resolveAttackOutcome(ctx, current, tile);
       return undefined;
     }
 
-    const kinds = (pieces.regiments > 0 ? 1 : 0) + pieces.officers.length;
+    const kinds = (pieces.regiments > 0 ? 1 : 0) + pieces.officers.length + pieces.alliances.length;
     if (total <= remaining || kinds === 1 || !current.actor) {
       exhaustAutomatically(ctx, current, remaining);
       continue;
@@ -358,6 +385,11 @@ function defenceDecision(state: GameState, current: ActiveCompanyAttack, pieces:
         type: "eventsInIndia.defend",
         label: `Exhaust one of ${state.players[entry.playerId]?.name ?? entry.playerId}'s officers`,
         payload: { piece: "officer", playerId: entry.playerId },
+      })),
+      ...pieces.alliances.map((entry) => ({
+        type: "eventsInIndia.defend",
+        label: `Exhaust ${localAlliances.find((alliance) => alliance.id === entry.allianceId)?.name ?? entry.allianceId} (strength ${entry.strength})`,
+        payload: { piece: "alliance", allianceId: entry.allianceId },
       })),
       {
         type: "eventsInIndia.defend",

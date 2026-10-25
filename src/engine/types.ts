@@ -298,7 +298,6 @@ export type IndiaState = {
   regions: Record<RegionId, RegionState>;
   presidencies: Record<PresidencyId, PresidencyState>;
   elephant: ElephantState;
-  eventDiscards: EventTileId[];
   regionsLostThisTurn: number;
 };
 

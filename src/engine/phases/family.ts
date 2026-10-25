@@ -1110,7 +1110,7 @@ function purchaseEnterprise(
  * The next enterprise card in the supply. Cards owned by a player are out of the supply, and a
  * returned shipyard cannot be bought while its fitted ship is still in play (pp.12, 34).
  */
-function availableEnterpriseCard(state: GameState, type: EnterpriseType): EnterpriseCardDefinition | undefined {
+export function availableEnterpriseCard(state: GameState, type: EnterpriseType): EnterpriseCardDefinition | undefined {
   const deck = enterpriseDecks.find((candidate) => candidate.type === type);
   if (!deck) return undefined;
 

@@ -1,3 +1,4 @@
+import { exhaustActiveLocalAlliances, returnExtraShips } from "./company-operation";
 import type { CommandHandler } from "../command-handler";
 import type {
   ApplyCommandResult,
@@ -192,14 +193,11 @@ function payUpkeep(state: GameState, playerId: PlayerId): GameState {
 // --- Refresh (p.36) ---
 
 function refreshBoard(state: GameState): { state: GameState; details: Record<string, unknown> } {
-  // "Return all extra ships to the supply."
+  // "Return all extra ships to the supply." "Any active local alliances are exhausted."
+  // Presidency dividers need no state: each writer on an order records its Presidency.
   const extraShips = state.company.ships.filter((ship) => ship.kind === "extra").map((ship) => ship.id);
-  // TODO(CO): return Presidency dividers and exhaust active local alliances once CO models them.
-  const withoutExtraShips: GameState = {
-    ...state,
-    company: { ...state.company, ships: state.company.ships.filter((ship) => ship.kind !== "extra") },
-  };
-  const orders = cleanFilledOrders(withoutExtraShips);
+  const refreshed = exhaustActiveLocalAlliances(returnExtraShips(state));
+  const orders = cleanFilledOrders(refreshed);
   const armies = refreshArmies(orders.state);
 
   return {

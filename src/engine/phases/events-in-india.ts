@@ -91,6 +91,7 @@ function describeDefenceChoice(ctx: ResolutionContext, choice: DefenceChoice): s
   const actor = playerName(ctx, ctx.command.actorId);
   if (choice.piece === "regiment") return `${actor} exhausts a regiment.`;
   if (choice.piece === "officer") return `${actor} exhausts one of ${playerName(ctx, choice.playerId)}'s officers.`;
+  if (choice.piece === "alliance") return `${actor} exhausts the local alliance ${choice.allianceId}.`;
   return `${actor} exhausts the remaining pieces automatically.`;
 }
 

@@ -1,4 +1,4 @@
-import { enterpriseVoteGuarantors } from "../negotiation";
+import { enterpriseVoteGuarantors, isActivatedThisPhase, wasTransferredThisTurn } from "../negotiation";
 import { policyDial } from "../../../data";
 import type { GameState, PlayerId } from "../../types";
 import type { ParliamentSession } from "../parliament.state";
@@ -87,7 +87,15 @@ export function availableVoteCards(state: GameState, voterId: PlayerId, session:
     }),
   );
 
+  // A card rotated to vote cannot vote again this session, even after changing hands (p.8 golden
+  // rule); enterprises a Lady Newcome family transferred away cannot vote this turn (card text).
+  const newcomeFamilies = Object.values(state.players)
+    .filter((player) => player.prestigeCards.some((card) => card.cardId === "lady-newcome"))
+    .map((player) => player.id);
   return [...ownedVoteCards(state, voterId, session), ...borrowed].filter(
-    (source) => !session.usedCards.includes(source.key),
+    (source) =>
+      !session.usedCards.includes(source.key) &&
+      !isActivatedThisPhase(state, source.cardInstanceId) &&
+      !newcomeFamilies.some((familyId) => familyId !== source.ownerId && wasTransferredThisTurn(state, source.cardInstanceId, familyId)),
   );
 }

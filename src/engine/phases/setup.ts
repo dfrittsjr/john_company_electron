@@ -10,7 +10,7 @@ import type {
   PlayerState,
   PresidencyId,
 } from "../types";
-import { startFamilyPhase } from "./family";
+import { availableEnterpriseCard, startFamilyPhase } from "./family";
 import { buildLondonSeasonDisplay, drawSetupBlackmail } from "./london-season";
 import { createCommandLogEntry } from "./shared";
 
@@ -348,7 +348,7 @@ function addEnterprises(
   let nextState = state;
 
   for (let index = 0; index < count; index += 1) {
-    const card = nextEnterpriseCard(nextState, type);
+    const card = availableEnterpriseCard(nextState, type);
     if (!card) throw new Error(`No ${type} enterprise cards remain for setup.`);
 
     const instance = {
@@ -389,19 +389,6 @@ function addEnterprises(
   }
 
   return nextState;
-}
-
-function nextEnterpriseCard(state: GameState, type: EnterpriseType) {
-  const deck = enterpriseDecks.find((candidate) => candidate.type === type);
-  if (!deck) return undefined;
-
-  const ownedCount = Object.values(state.players).reduce(
-    (count, player) =>
-      count + player.enterprises.filter((enterprise) => enterprise.type === type).length,
-    0,
-  );
-
-  return deck.cards[ownedCount];
 }
 
 function updatePlayer(

@@ -42,6 +42,8 @@ export type AssetEvent = {
   turn: number;
   phase: PhaseId;
   assetId: string;
+  /** For transfers: the player who gave the asset away. */
+  from?: PlayerId;
 };
 
 /** Everything that can change hands in a binding immediate transfer (p.8). */

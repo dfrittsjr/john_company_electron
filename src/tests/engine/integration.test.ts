@@ -233,3 +233,58 @@ describe("promise hooks", () => {
     expect(card?.removedFromGame).toBe(true);
   });
 });
+
+describe("refresh and scoring gaps", () => {
+  it("exhausts local alliances still active at Refresh (p.36)", () => {
+    const base = createHotseatGame({ seed: "integration-refresh", gameId: "game-integration-refresh" });
+    const army = base.company.armies.Bengal;
+    let state: GameState = {
+      ...base,
+      company: { ...base.company, armies: { ...base.company.armies, Bengal: { ...army, localAlliances: { ...army.localAlliances, "alliance-orissa": "ready" } } } },
+    };
+    state = confirmSystem(atConfirmation({ ...state, turn: 1, finalTurn: 5 }, "upkeep", "upkeep.confirm"));
+
+    expect(state.company.armies.Bengal.localAlliances?.["alliance-orissa"]).toBe("exhausted");
+    expect(state.turn).toBe(2);
+  });
+
+  it("charges The British Despots of India! for Governors lost to Region Loss on the final turn", () => {
+    let scored: GameState | undefined;
+    for (let index = 0; index < 300 && !scored; index += 1) {
+      const base = createHotseatGame({ seed: `despots-${index}`, gameId: "game-despots" });
+      let state: GameState = {
+        ...base,
+        company: { ...base.company, failed: true },
+        eventsInIndia: {
+          ...base.eventsInIndia,
+          governorsLostToRegionLoss: [{ turn: 5, regionId: "madras", officeId: "governor-madras", holder: RED }],
+        },
+      };
+      state = confirmSystem(atConfirmation({ ...state, turn: 5 }, "finalScoring", "finalScoring.confirm"));
+      if (state.finalScoring.failureCardId === "the-british-despots-of-india") scored = state;
+    }
+
+    expect(scored).toBeDefined();
+    const entries = scored!.finalScoring.players?.[RED].entries.filter((entry) => entry.label.startsWith("The British Despots")) ?? [];
+    expect(entries.map((entry) => entry.victoryPoints)).toContain(-2);
+  });
+});
+
+describe("golden rule (p.8)", () => {
+  it("a card rotated to vote cannot vote again after it changes hands", () => {
+    let state = voteState({ [RED]: 1, [BLUE]: 0, [YELLOW]: 1 });
+    state = withEnterprises(state, BLUE, [{ type: "workshop", cardId: "workshop-01" }]);
+    state = choose(state, "parliament.passVote");
+    expect(state.pendingDecision.actor).toBe(BLUE);
+    state = choose(state, "parliament.castVotes", (payload) => payload.source === "card");
+    const workshopId = state.players[BLUE].enterprises[0].id;
+    state = act(state, BLUE, "negotiation.give", { to: YELLOW, items: [{ kind: "enterprise", enterpriseId: workshopId }] });
+    while (state.pendingDecision.actor === BLUE && state.pendingDecision.step === "parliament.vote") {
+      state = choose(state, "parliament.passVote");
+    }
+
+    expect(state.pendingDecision.actor).toBe(YELLOW);
+    expect(hasCommand(state, "parliament.castVotes", (payload) => payload.source === "card")).toBe(false);
+  });
+});
+
