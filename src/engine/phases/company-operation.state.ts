@@ -110,6 +110,8 @@ export type CommanderActivity = {
   deploys?: number;
   /** Local Alliance purchases asked for so far (the Crown buys at most one, or two with a favour). */
   alliancesAsked?: number;
+  /** Alliances a Crown President refused this turn: not offered again, since the Crown won't change its mind. */
+  alliancesRefused?: string[];
 };
 
 export type GovernorActivity = {

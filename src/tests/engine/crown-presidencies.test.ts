@@ -287,6 +287,19 @@ describe("Commanders (Handbook pp.11-12)", () => {
   });
   const strong = (state: GameState) => withOfficers(withRegiments(state, { Madras: { ready: 3, exhausted: 0 } }), CROWN, "Madras", { ready: 2 });
 
+  it("a Crown President's refusal stands: the Commander isn't offered that alliance again", () => {
+    let state = scene({ climate: "lion", treasury: 10 });
+    state = withCommander(state, "Madras", ANN);
+    state = withAlliances([])(state);
+    state = inActivity(state, { kind: "commander", stage: "alliances" });
+    const buy = (id: string) => state.pendingDecision.legalCommands.find((legal) => payload(legal).allianceId === id);
+    state = act(state, buy("alliance-arcot")!);
+    expect(state.pendingDecision.step).toBe("companyOperation.allianceConsent");
+    state = act(state, state.pendingDecision.legalCommands[0]);
+    expect(buy("alliance-arcot")).toBeUndefined();
+    expect(buy("alliance-the-nizam")).toBeDefined();
+  });
+
   it("Bull and Stag buy no Local Alliance", () => {
     expect(only(commander("bull", "alliances", strong))).toEqual({ action: "beginDeploys" });
     expect(only(commander("stag", "alliances", strong))).toEqual({ action: "beginDeploys" });
@@ -657,7 +670,7 @@ describe("Revenue: firms (Handbook p.14)", () => {
       { type: "revenue.firmMergeAnswer", payload: { accept: true } },
     ]);
     expect(payload(merge.pendingDecision.legalCommands[0])).toEqual({ accept: true });
-    const waive = crownFaces(game, "revenue.firmWaive", [
+    const waive = crownFaces(game, "revenue.firmWaiver", [
       { type: "revenue.firmWaive", payload: { forgone: 1 } },
       { type: "revenue.firmWaive", payload: { forgone: 0 } },
     ]);

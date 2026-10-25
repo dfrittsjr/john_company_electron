@@ -1,5 +1,5 @@
 import { CROWN_PLAYER_ID, isCrownGame } from "../../crown/state";
-import { PRESIDENCY_IDS, officeHolder } from "../../selectors";
+import { PRESIDENCY_IDS, familyAdjective, officeHolder } from "../../selectors";
 import type { ArmyId, ArmyState, GameState, LegalCommand, PendingDecision, PlayerId } from "../../types";
 import type { OfficeMove, OfficeProgress } from "../company-operation.state";
 import { coState, decisionId, playerName, withCo } from "./context";
@@ -99,7 +99,7 @@ export function militaryDecision(state: GameState): PendingDecision {
         for (const playerId of Object.keys(army.officers).filter((id) => officerCount(army, id) > 0)) {
           commands.push({
             type: "companyOperation.militaryAffairs",
-            label: `Move a ${playerName(state, playerId)} officer from the Army of ${from} to ${to}`,
+            label: `Move a ${familyAdjective(state, playerId)} officer from the Army of ${from} to ${to}`,
             payload: { action: "moveOfficer", playerId, from, to } satisfies MilitaryPayload,
           });
         }
@@ -118,7 +118,7 @@ export function militaryDecision(state: GameState): PendingDecision {
       for (const army of PRESIDENCY_IDS) {
         commands.push({
           type: "companyOperation.militaryAffairs",
-          label: `Assign a ${playerName(state, playerId)} officer-in-training to the Army of ${army}`,
+          label: `Assign a ${familyAdjective(state, playerId)} officer-in-training to the Army of ${army}`,
           payload: { action: "assignOfficer", playerId, army } satisfies MilitaryPayload,
         });
       }
@@ -133,7 +133,7 @@ export function militaryDecision(state: GameState): PendingDecision {
     for (const playerId of crownFirst ? [CROWN_PLAYER_ID] : candidates) {
       commands.push({
         type: "companyOperation.militaryAffairs",
-        label: `Appoint a ${playerName(state, playerId)} officer as Commander of the Army of ${army}`,
+        label: `Appoint a ${familyAdjective(state, playerId)} officer as Commander of the Army of ${army}`,
         payload: { action: "appointCommander", army, playerId } satisfies MilitaryPayload,
       });
     }
@@ -162,7 +162,7 @@ export const militaryStep: OperationStep = (state, command) => {
       const moves = recordMove(state, current, { kind: "officer", playerId: payload.playerId, from: payload.from, to: payload.to });
       return advance(
         withCo(next, { current: { ...current, ...moves, transfersMade: made, stage: made >= MAX_TRANSFERS ? "assign" : "transfers" } }),
-        `Military Affairs moved a ${playerName(state, payload.playerId)} officer from the Army of ${payload.from} to ${payload.to}.`,
+        `Military Affairs moved a ${familyAdjective(state, payload.playerId)} officer from the Army of ${payload.from} to ${payload.to}.`,
       );
     }
     case "moveRegiment": {
@@ -179,7 +179,7 @@ export const militaryStep: OperationStep = (state, command) => {
     case "assignOfficer":
       return advance(
         withCo(assignOfficer(state, payload.playerId, payload.army), { current }),
-        `Military Affairs assigned a ${playerName(state, payload.playerId)} officer-in-training to the Army of ${payload.army}.`,
+        `Military Affairs assigned a ${familyAdjective(state, payload.playerId)} officer-in-training to the Army of ${payload.army}.`,
       );
     case "appointCommander": {
       const next = appointCommander(state, payload.army, payload.playerId);

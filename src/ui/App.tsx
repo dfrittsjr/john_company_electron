@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   applyCommand,
   createNewGame,
   standingLabel,
   undoBlockReason,
+  crownPausingFavorKeys,
   runCrownSteps,
   type GameCommand,
   type GameState,
@@ -143,10 +144,28 @@ function buildSaveSummary(game: GameState): string {
   return lines.join("\n");
 }
 
-/** Plays the Crown's automatic steps; stops when a player must act, choose for the Crown, or buy a favour. */
-function playCrown(state: GameState, idPrefix: string): GameState {
+/**
+ * Plays the Crown's automatic steps; stops when a player must act or choose for the Crown, or a
+ * favour they haven't passed on (`seenFavors`) is on offer.
+ */
+function playCrown(state: GameState, idPrefix: string, pauses?: { seenFavors: ReadonlySet<string>; waitForFavors: boolean }): GameState {
   if (!state.crown) return state;
-  return runCrownSteps(state, { now: new Date().toISOString(), idPrefix: `${idPrefix}-crown` }).state;
+  return runCrownSteps(state, {
+    now: new Date().toISOString(),
+    idPrefix: `${idPrefix}-crown`,
+    seenFavors: pauses?.seenFavors,
+    ignoreFavors: pauses ? !pauses.waitForFavors : false,
+  }).state;
+}
+
+const WAIT_FOR_FAVORS_KEY = "jc-crown-wait-for-favours";
+
+function readWaitForFavors(): boolean {
+  try {
+    return window.localStorage.getItem(WAIT_FOR_FAVORS_KEY) !== "off";
+  } catch {
+    return true;
+  }
 }
 
 export function App() {
@@ -162,6 +181,18 @@ export function App() {
   // Earlier states of this browser session, oldest first. Cleared whenever the game is saved,
   // loaded, or created, so a file that has been passed on can never be taken back.
   const [history, setHistory] = useState<GameState[]>([]);
+  // Favours the players let pass when the Crown waited (crownPausingFavorKeys): it doesn't wait for
+  // the same favour again while acting in the same place. Keys carry the turn and phase.
+  const seenFavors = useRef(new Set<string>());
+  const [waitForFavors, setWaitForFavorsState] = useState(readWaitForFavors);
+  function setWaitForFavors(on: boolean) {
+    setWaitForFavorsState(on);
+    try {
+      window.localStorage.setItem(WAIT_FOR_FAVORS_KEY, on ? "on" : "off");
+    } catch {
+      // Private windows may refuse storage; the setting then lasts for this visit.
+    }
+  }
   const [undoStatus, setUndoStatus] = useState<string | null>(null);
 
   useEffect(() => installFlexGapFallback(), []);
@@ -274,9 +305,13 @@ export function App() {
       return;
     }
 
+    // Letting the Crown act passes on the favours that were on offer.
+    if (game.crown && command.actorId === "crown") {
+      for (const key of crownPausingFavorKeys(game)) seenFavors.current.add(key);
+    }
     // In a Crown game the Crown's single-option steps follow without anyone clicking. They share
     // this move's history entry, so one Undo takes back the move and everything it triggered.
-    const state = playCrown(result.state, command.id);
+    const state = playCrown(result.state, command.id, { seenFavors: seenFavors.current, waitForFavors });
     const next = handoffTarget(state, command.actorId);
     setHistory((current) => [...current, game]);
     setUndoStatus(null);
@@ -588,6 +623,7 @@ export function App() {
       boardResetKey={boardResetKey}
       onMenu={() => setScreen("start")}
       onSaveFinal={saveGame}
+      crownPauses={game.crown ? { waitForFavors, setWaitForFavors, seenFavors: seenFavors.current } : undefined}
       headerActions={
         <>
           <button type="button" onClick={saveGame} title="Save a .joco file named for whoever acts next, then send it to them.">

@@ -1,6 +1,6 @@
 import { beginImmediateHire } from "../hiring";
 import { rollCheck } from "../../checks";
-import { PRESIDENCY_IDS, officeHolder } from "../../selectors";
+import { PRESIDENCY_IDS, familyAdjective, officeHolder } from "../../selectors";
 import type { GameState, LegalCommand, PendingDecision, PlayerId, PresidencyId, ShipState } from "../../types";
 import { isCrownGame } from "../../crown/state";
 import type { OfficeMove, OfficeProgress, ShipDestination } from "../company-operation.state";
@@ -150,7 +150,7 @@ function transferCommands(state: GameState): LegalCommand[] {
       for (const to of PRESIDENCY_IDS.filter((presidency) => presidency !== from)) {
         commands.push({
           type: "companyOperation.directorOfTrade",
-          label: `Move a ${playerName(state, playerId)} writer from ${from} to ${to}`,
+          label: `Move a ${familyAdjective(state, playerId)} writer from ${from} to ${to}`,
           payload: { action: "moveWriter", playerId, from, to } satisfies DirectorPayload,
         });
       }
@@ -252,7 +252,7 @@ export const directorStep: OperationStep = (state, command) => {
             ...recordMove(state, current, { kind: "writer", playerId: payload.playerId, from: payload.from, to: payload.to }),
           },
         }),
-        summary: `The Director of Trade moved a ${playerName(state, payload.playerId)} writer from ${payload.from} to ${payload.to}.`,
+        summary: `The Director of Trade moved a ${familyAdjective(state, payload.playerId)} writer from ${payload.from} to ${payload.to}.`,
       };
     case "moveShip": {
       const ship = state.company.ships.find((candidate) => candidate.id === payload.shipId)!;

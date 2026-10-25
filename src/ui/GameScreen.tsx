@@ -50,6 +50,11 @@ export type GameScreenProps = {
   fixedPlayer?: PlayerId;
   /** Extra header content next to the title (e.g. a connection indicator). */
   titleExtra?: ReactNode;
+  /**
+   * Local Crown games: whether the Crown waits for favours, and the favours already passed on
+   * (crownPausingFavorKeys), so the favours list opens only when the Crown is really waiting.
+   */
+  crownPauses?: { waitForFavors: boolean; setWaitForFavors: (on: boolean) => void; seenFavors: ReadonlySet<string> };
   /** Online: one more sidebar tab (table talk). `onShow` runs while it is open and `unread` changes. */
   extraTab?: { label: string; unread?: number; content: ReactNode; onShow?: () => void };
 };
@@ -73,6 +78,7 @@ export function GameScreen({
   fixedPlayer,
   titleExtra,
   extraTab,
+  crownPauses,
 }: GameScreenProps) {
   const [selected, setSelected] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string[]>([]);
@@ -144,7 +150,8 @@ export function GameScreen({
     decisionActor !== "system" &&
     decisionActor !== "simultaneous" &&
     game.players[decisionActor]?.isCrown === true &&
-    crownFavorsPausing(game);
+    (crownPauses?.waitForFavors ?? true) &&
+    crownFavorsPausing(game, crownPauses?.seenFavors);
 
   function runLegal(legalCommand: LegalCommand) {
     // The acting player is whoever the decision names. Online, the server ignores this and uses
@@ -260,7 +267,13 @@ export function GameScreen({
             onOpenRules={(sectionId) => setRulesOpen({ sectionId })}
             note={decisionNote}
           />
-          {game.crown && !readOnly ? <CrownFavors game={game} waiting={crownWaiting} onFavor={buyFavor} onGive={giveCubes} /> : null}
+          {game.crown && !readOnly ? <CrownFavors
+              game={game}
+              waiting={crownWaiting}
+              onFavor={buyFavor}
+              onGive={giveCubes}
+              waitForFavors={crownPauses ? { on: crownPauses.waitForFavors, set: crownPauses.setWaitForFavors } : undefined}
+            /> : null}
           <div className="sidebar-tabs" role="tablist" aria-label="Side panels">
             <button type="button" role="tab" aria-selected={sideTab === "log"} className={sideTab === "log" ? "tab tab-active" : "tab"} onClick={() => setSideTab("log")}>
               Log

@@ -45,6 +45,7 @@ export function playerName(state: GameState, playerId: string | undefined): stri
 
 /** One or two letters to print on a family piece so colour is never the only cue. */
 export function playerInitials(state: GameState, playerId: PlayerId): string {
+  if (state.players[playerId]?.isCrown) return "CR";
   const name = playerName(state, playerId).trim();
   const words = name.split(/\s+/).filter(Boolean);
   if (words.length >= 2 && /\d/.test(words[1])) return `${words[0][0]}${words[1]}`.slice(0, 3).toUpperCase();

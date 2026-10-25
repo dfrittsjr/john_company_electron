@@ -2,7 +2,7 @@ import { localAlliances } from "../../../data";
 import { clearScopedCrownEffects } from "../../crown/state";
 import { countSixes, rollCheck } from "../../checks";
 import { rollDice } from "../../rng";
-import { commanderOf, presidentOf } from "../../selectors";
+import { commanderOf, familyAdjective, presidentOf } from "../../selectors";
 import type {
   ArmyState,
   GameState,
@@ -127,7 +127,7 @@ export function commanderDecision(state: GameState, presidency: PresidencyId, ac
     if (president) {
       for (const [allianceId, status] of Object.entries(army.localAlliances ?? {})) {
         const definition = alliance(allianceId);
-        if (status !== "exhausted" || definition.cost > treasury) continue;
+        if (status !== "exhausted" || definition.cost > treasury || activity.alliancesRefused?.includes(allianceId)) continue;
         commands.push({
           type: "companyOperation.commander",
           label: `Buy ${definition.name} (strength ${definition.strength}) for £${definition.cost} from the President's treasury`,
@@ -170,7 +170,7 @@ export function commanderDecision(state: GameState, presidency: PresidencyId, ac
       if (stack.ready - (selection.officers[playerId] ?? 0) <= 0) continue;
       commands.push({
         type: "companyOperation.commander",
-        label: `Exhaust a ${playerName(state, playerId)} officer`,
+        label: `Exhaust a ${familyAdjective(state, playerId)} officer`,
         payload: { action: "exhaustOfficer", playerId } satisfies CommanderPayload,
       });
     }
@@ -254,7 +254,7 @@ export function commanderStep(
         state: withActivity(state, presidency, { ...activity, selection: next }),
         summary:
           payload.action === "exhaustOfficer"
-            ? `${commanderName} committed a ${playerName(state, payload.playerId)} officer.`
+            ? `${commanderName} committed a ${familyAdjective(state, payload.playerId)} officer.`
             : payload.action === "exhaustRegiment"
               ? `${commanderName} committed a regiment.`
               : `${commanderName} committed ${alliance(payload.allianceId).name}.`,

@@ -47,7 +47,11 @@ the Crown, hand its choices to `"system"`, or decide for it inline. After every 
 `runCrownSteps` (`src/engine/automatic.ts`) plays the Crown's single-option steps (and single-option
 `system` steps) in a row. It stops when a player must act, when someone must choose for the Crown,
 or when a favour that would change the Crown's step is on offer (`crownFavorsPausing`), so players
-get the chance to buy it before the Crown acts.
+get the chance to buy it before the Crown acts. Once the players let the Crown act, the favours that
+were on offer count as passed on (`crownPausingFavorKeys`, keyed by turn, phase and office or
+Presidency), so the Crown doesn't stop for the same favour before every step of one office. The UI
+also has a per-browser switch, "Wait for me when a favour could change the Crown's move"; with it off
+the Crown plays straight through (favours can still be bought whenever play stops).
 
 ### Modules (`src/engine/crown/`)
 

@@ -11,7 +11,7 @@ UI, undo and the rules reference. **Deregulation and firms (1) and Long 1710 (2)
 | 3 | 1758 "Company Under Siege" | scenario | M | 1 |
 | 4 | 1813 "Post Monopoly" | scenario | M | 1 |
 | 5 | Setup-card draft variant | rulebook p.5 option | S | — |
-| 6 | The Crown (solo and two-player) | 1-2 player games | XL | — |
+| 6 | The Crown (solo and two-player) | 1-2 player games | XL | built on `crown` |
 | 7 | Polish backlog | quality | S each | — |
 
 **Recommended order:** 1 → 2 → 3 → 4 → 5, then the polish items as your group runs into them.
@@ -187,8 +187,11 @@ cards run out.
 **Status (2026-10-25):** the data is transcribed and verified: the Handbook, the 10 AI cards, the
 Crown board's favours and the rulebook's pp.43-46 are in `src/data/crown.ts` and
 `src/data/crown-handbook.ts` (two independent transcriptions, compared field by field; marker
-positions checked on the card images). Solo and two-player games stay blocked
-(`CROWN_BEHAVIOUR_BUILT` in `src/data/validate.ts`) until the Crown's behaviour is built.
+positions checked on the card images). The Crown is built on branch `crown`: the core in
+`src/engine/crown/`, the behaviour of every phase and all the Handbook's favours in its four area
+modules, and the UI (Crown board, favours, decisions, the Handbook in the rules). See
+docs/phases/crown.md. Crown games are file-only, in 1710 and Long 1710 (the only transcribed setup
+cards).
 
 **Size.** XL, comparable to Deregulation. It's only worth it if you'll play with one or two people.
 

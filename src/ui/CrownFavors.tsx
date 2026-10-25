@@ -8,6 +8,8 @@ type Props = {
   waiting: boolean;
   onFavor: (playerId: PlayerId, offer: CrownFavorOffer) => void;
   onGive: (from: PlayerId, to: PlayerId, count: number) => void;
+  /** Whether the Crown stops for favours that could change its move (a per-browser setting). */
+  waitForFavors?: { on: boolean; set: (on: boolean) => void };
 };
 
 /** A favour's cost: red when the player pays cubes, blue when the player gains them (rulebook p.46). */
@@ -49,7 +51,7 @@ function GiveCubes({ game, from, to, onGive }: { game: GameState; from: PlayerId
 }
 
 /** The favours on offer to each human now, and (two players) a way to pass promise cubes between them. */
-export function CrownFavors({ game, waiting, onFavor, onGive }: Props) {
+export function CrownFavors({ game, waiting, onFavor, onGive, waitForFavors }: Props) {
   if (!game.crown || game.finalScoring.complete) return null;
   const humans = humanPlayerIds(game);
   const offers = humans.map((playerId) => ({ playerId, offers: crownFavorOffers(game, playerId) }));
@@ -58,6 +60,12 @@ export function CrownFavors({ game, waiting, onFavor, onGive }: Props) {
 
   const body = (
     <div className="favor-lists">
+      {waitForFavors ? (
+        <label className="favor-wait">
+          <input type="checkbox" checked={waitForFavors.on} onChange={(event) => waitForFavors.set(event.target.checked)} />
+          Wait for me when a favour could change the Crown's move
+        </label>
+      ) : null}
       {offers.map(({ playerId, offers: list }) => (
         <div key={playerId} className="favor-player">
           <h4>

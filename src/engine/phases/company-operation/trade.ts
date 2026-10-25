@@ -1,6 +1,6 @@
 import { rollCheck } from "../../checks";
 import { clearScopedCrownEffects } from "../../crown/state";
-import { presidentOf } from "../../selectors";
+import { familyAdjective, presidentOf } from "../../selectors";
 import type {
   GameState,
   LegalCommand,
@@ -259,7 +259,7 @@ export function tradeDecision(state: GameState, presidency: PresidencyId, activi
       for (const playerId of writersInBox) {
         commands.push({
           type: "companyOperation.trade",
-          label: `Place a ${playerName(state, playerId)} writer on ${orderId}`,
+          label: `Place a ${familyAdjective(state, playerId)} writer on ${orderId}`,
           payload: { action: "place", orderId, writer: playerId } satisfies TradePayload,
         });
       }
@@ -422,7 +422,7 @@ function placeOrder(
   const summary =
     writer === "token"
       ? `Filled ${orderId} with a filled-order token.`
-      : `Placed a ${playerName(state, writer)} writer on ${orderId}.`;
+      : `Placed a ${familyAdjective(state, writer)} writer on ${orderId}.`;
   next = withActivity(next, presidency, placing);
 
   if (placementCandidates(next, presidency, placing).length > 0) return { state: next, summary };

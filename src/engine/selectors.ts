@@ -180,6 +180,12 @@ export function familyPieceLocations(state: GameState, playerId: PlayerId): Reco
   };
 }
 
+/** A family's name used before a piece: "a Red officer", "a Crown writer" (not "a The Crown writer"). */
+export function familyAdjective(state: GameState, playerId: PlayerId): string {
+  const player = state.players[playerId];
+  return player?.isCrown ? "Crown" : player?.name ?? playerId;
+}
+
 export function familyPieceTotal(state: GameState, playerId: PlayerId): number {
   return Object.values(familyPieceLocations(state, playerId)).reduce((total, count) => total + count, 0);
 }

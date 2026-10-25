@@ -468,7 +468,7 @@ export const presidencyPolicies: Record<string, CrownPolicy> = {
   "revenue.royalProtection": royalProtectionPolicy,
   "revenue.firmInvestAsk": investAskPolicy,
   "revenue.firmMergeConsent": mergeConsentPolicy,
-  "revenue.firmWaive": waiverPolicy,
+  "revenue.firmWaiver": waiverPolicy,
   "revenue.companyFraud": keepBlackmailPolicy,
   "revenue.playScandal": keepBlackmailPolicy,
 };

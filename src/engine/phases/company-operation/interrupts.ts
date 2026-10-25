@@ -1,7 +1,7 @@
 import { rollCheck } from "../../checks";
-import { crownEffects } from "../../crown/state";
-import { PRESIDENCY_IDS, clockwiseFrom, commanderOf, officeHolder, presidentOf } from "../../selectors";
-import type { ArmyId, GameState, LegalCommand, PendingDecision, PlayerId, RngRollRecord } from "../../types";
+import { crownEffects, isCrownPlayer } from "../../crown/state";
+import { PRESIDENCY_IDS, clockwiseFrom, commanderOf, familyAdjective, officeHolder, presidentOf } from "../../selectors";
+import type { ArmyId, GameState, LegalCommand, PendingDecision, PlayerId, PresidencyId, RngRollRecord } from "../../types";
 import { appendLog, nepotismConsentGuarantors, registerDecisionRefresher } from "../negotiation";
 import {
   facedownBlackmailInstance,
@@ -25,6 +25,7 @@ import { localAlliances } from "../../../data";
 import { withBoardOfControlOffer, type OperationStep, type StepResult } from "./step";
 import { resolveTradeCheck } from "./trade";
 import { resolveFirmRoll } from "./firm-trade";
+import { presidencyProgress, withActivity } from "./presidency-progress";
 
 // Decisions that interrupt an office: blackmail reactions, consents, and laws that trigger after an
 // office acts. Each records enough in CompanyOperationState to resume where the office left off.
@@ -114,7 +115,7 @@ export function interruptDecision(state: GameState, interrupt: OperationInterrup
           pm,
           `Military Oversight: appoint the new Commander of the Army of ${interrupt.army} from its officers.`,
           candidates.map((playerId) =>
-            command(`Appoint a ${playerName(state, playerId)} officer`, { action: "oversightAppoint", army: interrupt.army, playerId }),
+            command(`Appoint a ${familyAdjective(state, playerId)} officer`, { action: "oversightAppoint", army: interrupt.army, playerId }),
           ),
         );
       }
@@ -172,9 +173,10 @@ export const interruptStep: OperationStep = (state, cmd) => {
       if (interrupt.kind !== "allianceConsent") break;
       const name = localAlliances.find((alliance) => alliance.id === interrupt.allianceId)!.name;
       const cleared = withCo(state, { interrupt: undefined });
-      return payload.action === "approveAlliance"
-        ? { state: buyAlliance(cleared, interrupt.presidency, interrupt.allianceId), summary: `The President approved buying ${name}.` }
-        : { state: cleared, summary: `The President refused to pay for ${name}.` };
+      if (payload.action === "approveAlliance") {
+        return { state: buyAlliance(cleared, interrupt.presidency, interrupt.allianceId), summary: `The President approved buying ${name}.` };
+      }
+      return { state: rememberCrownRefusal(cleared, interrupt.presidency, interrupt.allianceId), summary: `The President refused to pay for ${name}.` };
     }
     case "boardOfControl": {
       if (interrupt.kind !== "boardOfControl") break;
@@ -337,3 +339,10 @@ registerDecisionRefresher("companyOperation.connection", (state) => {
     ),
   };
 });
+
+/** A Crown President's refusal stands for the turn, so the Commander isn't offered that alliance again. */
+function rememberCrownRefusal(state: GameState, presidency: PresidencyId, allianceId: string): GameState {
+  const activity = presidencyProgress(state, presidency).activity;
+  if (!isCrownPlayer(state, presidentOf(state, presidency)) || activity?.kind !== "commander") return state;
+  return withActivity(state, presidency, { ...activity, alliancesRefused: [...(activity.alliancesRefused ?? []), allianceId] });
+}

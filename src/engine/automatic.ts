@@ -98,32 +98,74 @@ export function runAutomaticSteps(
 // --- The Crown (src/engine/crown) ---
 
 /**
- * Favours some player could buy right now that would change the Crown's pending step. While there
- * are any, the Crown waits instead of acting on its own.
+ * Where the Crown is acting, for remembering which favours the players have already passed on: the
+ * turn, the phase, and the office (or Presidency) in Company Operation, else the step.
  */
-export function crownFavorsPausing(state: GameState): boolean {
-  return humanPlayerIds(state).some((playerId) => crownFavorOffers(state, playerId).some((offer) => offer.pausesCrown));
+export function crownPauseContext(state: GameState): string {
+  const current = state.phase === "companyOperation" ? state.companyOperation.current : undefined;
+  const where = current
+    ? current.office === "presidency"
+      ? `presidency:${current.presidency}`
+      : current.office
+    : state.pendingDecision.step;
+  return `${state.turn}|${state.phase}|${where}`;
+}
+
+/**
+ * Favours some player could buy right now that would change the Crown's pending step, keyed by
+ * where the Crown is acting and the favour (see crownPauseContext).
+ */
+export function crownPausingFavorKeys(state: GameState): string[] {
+  const context = crownPauseContext(state);
+  const keys = humanPlayerIds(state).flatMap((playerId) =>
+    crownFavorOffers(state, playerId)
+      .filter((offer) => offer.pausesCrown)
+      .map((offer) => `${context}|${offer.favorId}`),
+  );
+  return [...new Set(keys)];
+}
+
+/**
+ * Whether the Crown should wait for the players: some favour is on offer that would change its
+ * pending step and that they haven't already passed on here (`seen`, from crownPausingFavorKeys).
+ * Without this, the Crown would stop before every step of an office while the same favour stays on
+ * offer (e.g. "request £3 for an office" before each of the Chairman's allocations).
+ */
+export function crownFavorsPausing(state: GameState, seen?: ReadonlySet<string>): boolean {
+  return crownPausingFavorKeys(state).some((key) => !seen?.has(key));
 }
 
 /**
  * The Crown's next command when it can act without anyone: its decision has one option, nobody has
- * to choose for it, and (unless `ignoreFavors`) no favour on offer would change it.
+ * to choose for it, and (unless `ignoreFavors`) no favour the players haven't passed on would change it.
  */
-export function crownAutoCommand(state: GameState, options: { ignoreFavors?: boolean } = {}): LegalCommand | undefined {
+export function crownAutoCommand(
+  state: GameState,
+  options: { ignoreFavors?: boolean; seenFavors?: ReadonlySet<string> } = {},
+): LegalCommand | undefined {
   const decision = state.pendingDecision;
   if (!state.crown || decision.actor !== CROWN_PLAYER_ID || decision.legalCommands.length !== 1) return undefined;
   if (decision.crown?.chooser) return undefined;
-  if (!options.ignoreFavors && crownFavorsPausing(state)) return undefined;
+  if (!options.ignoreFavors && crownFavorsPausing(state, options.seenFavors)) return undefined;
   return decision.legalCommands[0];
 }
 
 /**
  * Plays the Crown's steps (and single-option "system" steps in between) until a player must act,
- * someone must choose for the Crown, or a favour is on offer. Command ids are `${idPrefix}-1`, ...
+ * someone must choose for the Crown, or a favour they haven't passed on is on offer. Command ids
+ * are `${idPrefix}-1`, ...
  */
 export function runCrownSteps(
   state: GameState,
-  options: { now: string; idPrefix: string; maxSteps?: number; includeSystem?: boolean; ignoreFavors?: boolean },
+  options: {
+    now: string;
+    idPrefix: string;
+    maxSteps?: number;
+    includeSystem?: boolean;
+    ignoreFavors?: boolean;
+    /** Favours the players have passed on (crownPausingFavorKeys): the Crown doesn't wait for them again. */
+    seenFavors?: ReadonlySet<string>;
+  },
 ): AutomaticStepsResult {
   const maxSteps = options.maxSteps ?? MAX_AUTOMATIC_STEPS;
   const includeSystem = options.includeSystem ?? true;
@@ -133,7 +175,7 @@ export function runCrownSteps(
   for (;;) {
     const decision = current.pendingDecision;
     const legal =
-      crownAutoCommand(current, { ignoreFavors: options.ignoreFavors }) ??
+      crownAutoCommand(current, { ignoreFavors: options.ignoreFavors, seenFavors: options.seenFavors }) ??
       (includeSystem && isAutomaticDecision(decision) ? decision.legalCommands[0] : undefined);
     if (!legal) break;
     if (commands.length >= maxSteps) {
