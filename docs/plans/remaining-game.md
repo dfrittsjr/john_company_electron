@@ -184,8 +184,11 @@ cards run out.
 - Crown setup: 36 pieces, and the draft or deal distributions.
 - The solo scoring adjustment.
 
-**Status:** codex's placeholder data in `src/data/crown.ts` and the "with Crown" choice on the setup
-screen are blocked by validation today. Replace or remove them.
+**Status (2026-10-25):** the data is transcribed and verified: the Handbook, the 10 AI cards, the
+Crown board's favours and the rulebook's pp.43-46 are in `src/data/crown.ts` and
+`src/data/crown-handbook.ts` (two independent transcriptions, compared field by field; marker
+positions checked on the card images). Solo and two-player games stay blocked
+(`CROWN_BEHAVIOUR_BUILT` in `src/data/validate.ts`) until the Crown's behaviour is built.
 
 **Size.** XL, comparable to Deregulation. It's only worth it if you'll play with one or two people.
 

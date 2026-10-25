@@ -22,18 +22,8 @@ export type FamilyActionId =
   | "purchase-workshop"
   | "seek-share";
 
-export type CompanyStandingBand =
-  | "expectations-below-10"
-  | "expectations-10-to-13"
-  | "expectations-14-to-17"
-  | "expectations-18-plus";
-
-export type CrownClimateId =
-  | "climate-unknown-a"
-  | "climate-unknown-b"
-  | "climate-unknown-c";
-
-export type CrownDecisionProfileId = string;
+/** The Crown's five climates (Crown family board, AI cards, Crown Handbook). */
+export type CrownClimate = "bull" | "stag" | "lion" | "bear" | "peacock";
 
 export type DataSourceRef =
   | "John-Company-Rules.txt"
@@ -406,41 +396,25 @@ export type SetupCardDeckDefinition = {
 
 export type CrownAiCardId = `crown-ai-${string}`;
 
+/** One AI card (rulebook p.45); field meanings are documented on `crownAiCards` in ./crown.ts. */
 export type CrownAiCard = {
   id: CrownAiCardId;
-  source: DataSourceRef;
-  climateIcon: CrownClimateId;
-  standingClimateMap: Record<CompanyStandingBand, CrownClimateId>;
-  splayCardIndex: 0 | 1 | 2;
-  direction: "clockwise" | "counterClockwise";
-  presidencyPriority: {
-    blackArrow: PresidencyId;
-    whiteArrow: PresidencyId;
-    fallback: PresidencyId;
-  };
+  number: number;
+  source: { front: string; back: string };
+  criterion: string;
+  climateBands: Array<{ range: string; climate: CrownClimate; deregulated?: boolean }>;
+  splaySlot: "left" | "middle" | "right";
+  firstArrow: "top" | "middle" | "bottom";
+  secondArrow: "top" | "middle" | "bottom";
+  hand: "upper" | "lower";
   regionPriority: RegionId[];
-  familyActionPriority: FamilyActionId[];
-  voteToDeregulateLimit: number;
-  chairmanSeekDebtProfile: CrownDecisionProfileId;
-  chairmanAllocationProfile: CrownDecisionProfileId;
-  shippingPurchaseProfile: CrownDecisionProfileId;
-  governorGeneralDiceMinimum: number;
-  governorDiceMinimum: number;
-  commanderLocalAllianceProfile: CrownDecisionProfileId;
-  commanderDeployDiceMinimums: {
-    nonCompanyControlled: number;
-    companyControlled: number;
+  back: {
+    /** Top to bottom. */
+    presidencies: [PresidencyId, PresidencyId, PresidencyId];
+    /** The arrow between the top and middle Presidency, and between the middle and bottom one. */
+    upperArrow: "clockwise" | "counterclockwise";
+    lowerArrow: "clockwise" | "counterclockwise";
   };
-  commanderDeployAgain: boolean;
-  presidentTradeDiceMinimum: number;
-  chinaTradeDiceMinimum: number;
-  revenueDividendReserve: number;
-};
-
-export type CrownAiCardPlaceholder = Partial<CrownAiCard> & {
-  id: CrownAiCardId;
-  source: DataSourceRef;
-  placeholderReason: string;
 };
 
 export type CrownDifficulty = "easy" | "normal" | "hard" | "expert";
@@ -464,7 +438,7 @@ export type CrownDifficultySetting = {
 };
 
 export type CrownStaticData = {
-  aiCards: CrownAiCardPlaceholder[];
+  aiCards: CrownAiCard[];
   setupDistributions: CrownSetupDistribution[];
   difficultySettings: CrownDifficultySetting[];
 };
