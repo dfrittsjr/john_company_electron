@@ -5,7 +5,7 @@ import { commanderDecision, commanderStep, startCommander, type CommanderPayload
 import { governorDecision, governorStep, startGovernor, type GovernorPayload } from "./governor";
 import { presidencyProgress } from "./presidency-progress";
 import { finishOffice, type OperationStep, type StepResult } from "./step";
-import { canTrade, startTrade, tradeDecision, tradeStep, type TradePayload } from "./trade";
+import { canTrade, startTrade, tradeDecision, tradeStep, tradeUnavailableReason, type TradePayload } from "./trade";
 
 // Presidency Operations (p.20): the President decides the order in which they Trade and their Commander
 // and Governor(s) act. Commanders and Governors need not act but must be given the opportunity, and each
@@ -82,6 +82,7 @@ export function presidencyDecision(state: GameState, presidency: PresidencyId): 
   }
 
   const chooser = presidencyChooser(state, presidency);
+  const noTrade = presidentOf(state, presidency) ? tradeUnavailableReason(state, presidency) : undefined;
   return {
     id: decisionId(state, `company-operation-presidency-${presidency.toLowerCase()}`),
     phase: "companyOperation",
@@ -89,7 +90,7 @@ export function presidencyDecision(state: GameState, presidency: PresidencyId): 
     actor: chooser,
     visibility: "public",
     prompt: presidentOf(state, presidency)
-      ? `President of ${presidency}: choose who acts next.`
+      ? `President of ${presidency}: choose who acts next.${noTrade ? ` No Trade: ${noTrade}.` : ""}`
       : `The President of ${presidency} is vacant: the Chairman orders the Commander and Governors.`,
     legalCommands: commands,
     canSave: true,

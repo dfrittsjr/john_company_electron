@@ -12,6 +12,7 @@ import type {
 import type { PendingCheck, TradeActivity } from "../company-operation.state";
 import {
   SEA_ZONE_BY_PRESIDENCY,
+  SEA_ZONE_LABEL,
   addToCompanyBalance,
   changeOfficeTreasury,
   coState,
@@ -112,12 +113,21 @@ function declarableRegions(state: GameState, presidency: PresidencyId, declared:
 }
 
 export function canTrade(state: GameState, presidency: PresidencyId): boolean {
-  if (!presidentOf(state, presidency)) return false;
-  if ((coState(state).tradedPresidencies ?? []).includes(presidency)) return false;
+  return tradeUnavailableReason(state, presidency) === undefined;
+}
+
+/** Why the President can't Trade right now, for the prompt; undefined when Trade is legal. */
+export function tradeUnavailableReason(state: GameState, presidency: PresidencyId): string | undefined {
+  if (!presidentOf(state, presidency)) return "the President is vacant";
+  if ((coState(state).tradedPresidencies ?? []).includes(presidency)) return "this Presidency has already traded this turn (p.20)";
   const port = homePort(state, presidency);
-  if (!port || !isOrderAvailable(port)) return false;
+  if (!port || !isOrderAvailable(port)) return "its home port is closed or filled";
+  if (shipsInPresidencyZone(state, presidency) === 0) {
+    return `there are no ships in the ${SEA_ZONE_LABEL[SEA_ZONE_BY_PRESIDENCY[presidency]]} sea zone (the Manager of Shipping places them)`;
+  }
   const treasury = state.company.offices[presidentOfficeId(presidency)]?.treasury ?? 0;
-  return shipsInPresidencyZone(state, presidency) > 0 && treasury >= 1;
+  if (treasury < 1) return "the President's treasury is empty";
+  return undefined;
 }
 
 export function startTrade(state: GameState, presidency: PresidencyId): GameState {

@@ -5,10 +5,12 @@ import { playerColors, playerName } from "./view-model";
 type Props = {
   game: GameState;
   onClose: () => void;
+  /** Save the finished game (the dialog covers the header's Save & pass button). */
+  onSave?: () => void;
 };
 
 /** Per-player breakdown of Final Scoring (rulebook p.9), from state.finalScoring. */
-export function FinalScoringView({ game, onClose }: Props) {
+export function FinalScoringView({ game, onClose, onSave }: Props) {
   const scoring = game.finalScoring;
   const colors = playerColors(game);
   const ranking = scoring.ranking ?? game.seatingOrder;
@@ -30,6 +32,11 @@ export function FinalScoringView({ game, onClose }: Props) {
             </p>
             {failureCard ? <p className="status-note">{failureCard.text}</p> : null}
           </div>
+          {onSave ? (
+            <button type="button" onClick={onSave}>
+              Save final game
+            </button>
+          ) : null}
           <button type="button" onClick={onClose}>
             View the board
           </button>

@@ -650,7 +650,7 @@ export function App() {
         </div>
         <dl className="track-strip">
           <div>
-            <dt>Standing</dt>
+            <dt title="Company Standing: the Balance the Company must keep after expenses at Revenue (p.27)">Standing (expectations)</dt>
             <dd>
               {standingLabel(game)}
               {game.company.failed ? " (failed)" : ""}
@@ -785,7 +785,7 @@ export function App() {
         </aside>
       </div>
 
-      {showFinalScoring ? <FinalScoringView game={game} onClose={() => setFinalScoringDismissed(true)} /> : null}
+      {showFinalScoring ? <FinalScoringView game={game} onClose={() => setFinalScoringDismissed(true)} onSave={saveGame} /> : null}
       {rulesOpen ? <RulesPanel initialSectionId={rulesOpen.sectionId} onClose={() => setRulesOpen(null)} /> : null}
     </main>
   );

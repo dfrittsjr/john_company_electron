@@ -152,7 +152,11 @@ export function commanderDecision(state: GameState, presidency: PresidencyId, ac
     const target = activity.target!;
     const strength = defendingStrength(state, target);
     const dice = selectionDice(selection);
-    prompt = `Deploy against ${state.india.regions[target].name}: ${dice} ${dice === 1 ? "die" : "dice"} selected, strength ${strength}. Exhaust more pieces or roll.`;
+    const net = dice - strength;
+    prompt =
+      `Deploy against ${state.india.regions[target].name}: ${dice} ${dice === 1 ? "die" : "dice"} from exhausted pieces ` +
+      `− strength ${strength} = ${Math.max(net, 0)} to roll (p.22). ` +
+      (net >= 1 ? "Exhaust more pieces or roll." : `Exhaust pieces worth ${1 - net} more ${1 - net === 1 ? "die" : "dice"} before you can roll.`);
     if (dice - strength >= 1) {
       commands.push({
         type: "companyOperation.commander",
