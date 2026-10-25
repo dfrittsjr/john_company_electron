@@ -68,8 +68,10 @@ Envoy to China (trade value), Inclosure Acts.
     another family.
 13. **Board of Control** is offered after each office finishes: red-ribbon offices, Presidents at the
     end of their Presidency, and Governors. Commanders are not offices.
-14. **Military Oversight**: candidates are families with officers in that Army; Nepotism is one
-    table-wide consent decision.
+14. **Military Oversight**: candidates are families with officers in that Army. Appointing the
+    Prime Minister's own officer asks each other family with officers there for Nepotism consent,
+    one at a time from the Prime Minister's left; one refusal is enough, and a called-in "My
+    consent for nepotism" promise counts as consent (p.14).
 
 ## Left for other areas
 

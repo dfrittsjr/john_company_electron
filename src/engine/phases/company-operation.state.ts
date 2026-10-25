@@ -116,7 +116,14 @@ export type OperationInterrupt =
   | { kind: "boardOfControl"; officeId: OfficeId }
   | { kind: "militaryOversight"; stage: "demote" }
   | { kind: "militaryOversight"; stage: "appoint"; army: ArmyId; selfRefused?: boolean }
-  | { kind: "militaryOversight"; stage: "nepotism"; army: ArmyId; candidate: PlayerId };
+  | {
+      kind: "militaryOversight";
+      stage: "nepotism";
+      army: ArmyId;
+      candidate: PlayerId;
+      /** Families still to be asked for Nepotism consent, in order from the Prime Minister's left (p.14). */
+      pending: PlayerId[];
+    };
 
 export function createInitialCompanyOperationState(
   input: SubsystemInitInput,

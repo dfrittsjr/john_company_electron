@@ -525,6 +525,41 @@ describe("laws and cards during Company Operation", () => {
     expect(state.pendingDecision.step).not.toBe("companyOperation.boardOfControl");
   });
 
+  it("Military Oversight asks each other family with officers in the Army for Nepotism consent (p.14)", () => {
+    const setup = () => {
+      let state = operationGame("military-oversight-nepotism");
+      state = withLaw(state, "military-oversight");
+      state = { ...state, parliament: { ...state.parliament, primeMinister: RED } };
+      state = withOffice(state, "military-affairs", YELLOW);
+      state = withCommander(state, "Bombay", BLUE);
+      state = withOfficers(state, RED, "Bombay", { ready: 1 });
+      state = withOfficers(state, YELLOW, "Bombay", { ready: 1 });
+      state = enterOperation(state, ["chairman", "director-of-trade", "manager-of-shipping"]);
+      state = choose(state, { action: "endTransfers" });
+      expect(state.pendingDecision.step).toBe("companyOperation.militaryOversight");
+      state = choose(state, { action: "oversightDemote", army: "Bombay" });
+      return choose(state, { action: "oversightAppoint", army: "Bombay", playerId: RED });
+    };
+
+    let state = setup();
+    const askedInOrder = state.seatingOrder.indexOf(YELLOW) === (state.seatingOrder.indexOf(RED) + 1) % 3 ? [YELLOW, BLUE] : [BLUE, YELLOW];
+    expect(state.pendingDecision.actor).toBe(askedInOrder[0]);
+    state = choose(state, { action: "oversightConsent", accepted: true });
+    expect(state.pendingDecision.actor).toBe(askedInOrder[1]);
+    expect(state.company.armies.Bombay.commander).toBeUndefined();
+    state = choose(state, { action: "oversightConsent", accepted: true });
+    expect(state.company.armies.Bombay.commander).toBe(RED);
+    expectGameInvariants(state);
+
+    // One refusal is enough: the Prime Minister appoints another family's officer.
+    let refused = setup();
+    refused = choose(refused, { action: "oversightConsent", accepted: true });
+    refused = choose(refused, { action: "oversightConsent", accepted: false });
+    expect(refused.pendingDecision.actor).toBe(RED);
+    expect(payloads(refused).map((payload) => payload.playerId).sort()).toEqual([BLUE, YELLOW].sort());
+    expectGameInvariants(refused);
+  });
+
   it("Trade Regulations sends the President's bonus to the Company Balance", () => {
     let state = operationGame("trade-regulations");
     state = withLaw(state, "trade-regulations");

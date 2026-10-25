@@ -1,5 +1,5 @@
 import { applyCommand } from "./commands";
-import { chairmanTitleHolder, clockwiseFrom } from "./selectors";
+import { chairmanTitleHolder } from "./selectors";
 import type { GameCommand, GameState, PendingDecision, PlayerId, ValidationError } from "./types";
 
 // Automatic steps for a server-run game (docs/plans/online-multiplayer.md, "No choosing 'system'
@@ -20,10 +20,6 @@ export function isAutomaticDecision(decision: PendingDecision): boolean {
  * which seat may send it online.
  *
  * Audit (2026-10-25, code reading plus 80 random games over every scenario):
- * - Military Oversight nepotism (companyOperation.militaryOversight, "do the other families with
- *   officers in that Army consent...?"): goes to the first other family with officers in that
- *   Army, clockwise from the Prime Minister. The rules ask each of those families; the engine
- *   models it as one yes/no, so with two or more such families one answers for all (known gap).
  * - Revenue dividends with the Chairman's office vacant (revenue.chooseDividends), Presidency
  *   order with both the President and the Chairman vacant (companyOperation.presidency), and the
  *   former Chairman's pick with no former Chairman (hiring.electChairman): these go to the family
@@ -38,18 +34,6 @@ export function systemDecisionDelegate(state: GameState): PlayerId | undefined {
 
   const human = (playerId: PlayerId | undefined): playerId is PlayerId =>
     Boolean(playerId && state.players[playerId] && !state.players[playerId].isCrown);
-
-  const interrupt = state.companyOperation.interrupt;
-  if (decision.step === "companyOperation.militaryOversight" && interrupt?.kind === "militaryOversight" && interrupt.stage === "nepotism") {
-    const officers = state.company.armies[interrupt.army]?.officers ?? {};
-    const consenting = clockwiseFrom(state, state.parliament.primeMinister).find(
-      (playerId) =>
-        playerId !== interrupt.candidate &&
-        human(playerId) &&
-        (officers[playerId]?.ready ?? 0) + (officers[playerId]?.exhausted ?? 0) > 0,
-    );
-    if (consenting) return consenting;
-  }
 
   const titleHolder = chairmanTitleHolder(state);
   if (human(titleHolder)) return titleHolder;

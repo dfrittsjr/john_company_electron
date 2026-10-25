@@ -68,37 +68,6 @@ describe("automatic steps", () => {
     expect(systemDecisionDelegate(noMarker)).toBe(state.seatingOrder[0]);
   });
 
-  it("asks a family with officers in the Army for Military Oversight nepotism consent", () => {
-    const base = negotiationGame("companyOperation");
-    const state: GameState = {
-      ...base,
-      parliament: { ...base.parliament, primeMinister: RED },
-      company: {
-        ...base.company,
-        armies: {
-          ...base.company.armies,
-          Bombay: { ...base.company.armies.Bombay, officers: { [RED]: { ready: 1, exhausted: 0 }, [YELLOW]: { ready: 1, exhausted: 0 } } },
-        },
-      },
-      companyOperation: { ...base.companyOperation, interrupt: { kind: "militaryOversight", stage: "nepotism", army: "Bombay", candidate: RED } },
-      pendingDecision: {
-        id: "decision-oversight-test",
-        phase: "companyOperation",
-        step: "companyOperation.militaryOversight",
-        actor: "system",
-        visibility: "public",
-        prompt: "Nepotism (p.14): do the other families with officers in that Army consent?",
-        legalCommands: [
-          { type: "companyOperation.interrupt", label: "Everyone consents", payload: { action: "oversightConsent", accepted: true } },
-          { type: "companyOperation.interrupt", label: "Someone refuses", payload: { action: "oversightConsent", accepted: false } },
-        ],
-        canSave: true,
-      },
-    };
-    expect(systemDecisionDelegate(state)).toBe(YELLOW);
-    expect(systemDecisionDelegate(state)).not.toBe(BLUE);
-  });
-
   it("has no delegate for a player's own decision", () => {
     expect(systemDecisionDelegate(negotiationGame("family"))).toBeUndefined();
     expect(effectiveDecisionActor(negotiationGame("family"))).toBe(RED);

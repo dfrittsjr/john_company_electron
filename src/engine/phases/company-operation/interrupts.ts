@@ -1,7 +1,7 @@
 import { rollCheck } from "../../checks";
-import { PRESIDENCY_IDS, commanderOf, officeHolder, presidentOf } from "../../selectors";
+import { PRESIDENCY_IDS, clockwiseFrom, commanderOf, officeHolder, presidentOf } from "../../selectors";
 import type { ArmyId, GameState, LegalCommand, PendingDecision, PlayerId, RngRollRecord } from "../../types";
-import { appendLog, registerDecisionRefresher } from "../negotiation";
+import { appendLog, nepotismConsentGuarantors, registerDecisionRefresher } from "../negotiation";
 import {
   facedownBlackmailInstance,
   registerBlackmailResume,
@@ -111,9 +111,10 @@ export function interruptDecision(state: GameState, interrupt: OperationInterrup
           ),
         );
       }
-      return decision(state, "militaryOversight", "system", "Nepotism (p.14): do the other families with officers in that Army consent to the Prime Minister appointing their own officer?", [
-        command("Everyone consents", { action: "oversightConsent", accepted: true }),
-        command("Someone refuses", { action: "oversightConsent", accepted: false }),
+      const pmName = playerName(state, interrupt.candidate);
+      return decision(state, "militaryOversight", interrupt.pending[0], `Nepotism (p.14): ${pmName} wants to appoint their own officer as Commander of the Army of ${interrupt.army}. Do you consent?`, [
+        command("Consent", { action: "oversightConsent", accepted: true }, `Allow ${pmName} to appoint their own officer.`),
+        command("Refuse", { action: "oversightConsent", accepted: false }, `${pmName} must appoint another family's officer.`),
       ]);
     }
   }
@@ -197,24 +198,33 @@ export const interruptStep: OperationStep = (state, cmd) => {
     }
     case "oversightAppoint": {
       const pm = primeMinister(state);
-      const others = Object.entries(state.company.armies[payload.army].officers).some(
-        ([playerId, stack]) => playerId !== pm && stack.ready + stack.exhausted > 0,
-      );
-      if (payload.playerId === pm && others) {
+      const pending = payload.playerId === pm ? oversightConsentNeededFrom(state, payload.army, payload.playerId) : [];
+      if (pending.length > 0) {
         return {
-          state: withCo(state, { interrupt: { kind: "militaryOversight", stage: "nepotism", army: payload.army, candidate: payload.playerId } }),
-          summary: "The Prime Minister proposed their own officer as Commander.",
+          state: withCo(state, { interrupt: { kind: "militaryOversight", stage: "nepotism", army: payload.army, candidate: payload.playerId, pending } }),
+          summary: `The Prime Minister proposed their own officer as Commander; ${pending.map((playerId) => playerName(state, playerId)).join(", ")} must consent.`,
         };
       }
       return appointByOversight(state, payload.army, payload.playerId);
     }
     case "oversightConsent": {
       if (interrupt.kind !== "militaryOversight" || interrupt.stage !== "nepotism") break;
-      if (payload.accepted) return appointByOversight(state, interrupt.army, interrupt.candidate);
-      return {
-        state: withCo(state, { interrupt: { kind: "militaryOversight", stage: "appoint", army: interrupt.army, selfRefused: true } }),
-        summary: "Nepotism consent refused; the Prime Minister must appoint another family's officer.",
-      };
+      const consenter = playerName(state, interrupt.pending[0]);
+      if (!payload.accepted) {
+        return {
+          state: withCo(state, { interrupt: { kind: "militaryOversight", stage: "appoint", army: interrupt.army, selfRefused: true } }),
+          summary: `${consenter} refused Nepotism consent; the Prime Minister must appoint another family's officer.`,
+        };
+      }
+      const remaining = interrupt.pending.slice(1);
+      if (remaining.length > 0) {
+        return {
+          state: withCo(state, { interrupt: { ...interrupt, pending: remaining } }),
+          summary: `${consenter} consented to the Prime Minister appointing their own officer.`,
+        };
+      }
+      const appointed = appointByOversight(state, interrupt.army, interrupt.candidate);
+      return { ...appointed, summary: `${consenter} consented. ${appointed.summary}` };
     }
   }
   throw new Error(`Interrupt command ${payload.action} does not match the pending interrupt.`);
@@ -264,6 +274,22 @@ registerBlackmailResume(CONNECTION_RESUME, (state, _play, outcome) => {
   const decision = decideOperation(logged);
   return { ...logged, phase: decision.phase, pendingDecision: decision };
 });
+
+/**
+ * Nepotism (p.14): every other family in the candidate pool, here the other families with officers
+ * in that Army, must consent. A called-in "My consent for nepotism" promise counts as consent.
+ */
+function oversightConsentNeededFrom(state: GameState, armyId: ArmyId, candidate: PlayerId): PlayerId[] {
+  const officers = state.company.armies[armyId].officers;
+  const guarantors = new Set(nepotismConsentGuarantors(state, candidate));
+  return clockwiseFrom(state, candidate).filter(
+    (playerId) =>
+      playerId !== candidate &&
+      !state.players[playerId].isCrown &&
+      !guarantors.has(playerId) &&
+      (officers[playerId]?.ready ?? 0) + (officers[playerId]?.exhausted ?? 0) > 0,
+  );
+}
 
 function appointByOversight(state: GameState, armyId: ArmyId, playerId: PlayerId): StepResult {
   const army = state.company.armies[armyId];
