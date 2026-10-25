@@ -22,7 +22,7 @@
     // site key of your Turnstile widget before deploying; the matching secret is the Worker
     // secret TURNSTILE_SECRET (`npx wrangler secret put TURNSTILE_SECRET`), and locally
     // .dev.vars (copy .dev.vars.example).
-    "TURNSTILE_SITE_KEY": "1x00000000000000000000AA"
+    "TURNSTILE_SITE_KEY": "0x4AAAAAAFlfrXz3TXHuP-Vh"
   },
   "observability": { "enabled": true }
 }
