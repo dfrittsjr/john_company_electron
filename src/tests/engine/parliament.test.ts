@@ -172,6 +172,9 @@ describe("Voting (p.35)", () => {
     let state = pass(tradeRegulationsVote());
     state = pass(castCash(state, "against", 1));
     state = choose(state, "parliament.setVoteCredit", (payload) => payload.creditTo === "player-blue");
+    // The partner must consent (p.35).
+    expect(state.pendingDecision).toEqual(expect.objectContaining({ step: "negotiation.consent", actor: "player-blue" }));
+    state = choose(state, "negotiation.respondToConsent", (payload) => payload.accept === true);
     state = castCash(state, "against", 2);
 
     expect(state.parliament.session?.votes["player-blue"].credited).toBe(3);

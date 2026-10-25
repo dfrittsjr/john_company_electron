@@ -8,7 +8,7 @@ import type { ParliamentSession, PolicyTarget } from "./parliament.state";
 import { createFinalScoringDecision } from "./revenue";
 import { createCommandLogEntry, createSystemDecision, wrongPhase } from "./shared";
 import { registerHiringResume } from "./hiring-resume";
-import { markActivated, registerStateRefresher } from "./negotiation";
+import { markActivated, registerConsentResolver, registerStateRefresher, requestConsent } from "./negotiation";
 import { newCollector, nextDecisionId, playerName, primeMinisterOrder, updatePlayer, type Collector } from "./parliament/common";
 import { prestigeCardOwners } from "./parliament/holdings";
 import {
@@ -460,9 +460,10 @@ function voteCommands(state: GameState, voter: PlayerId): { commands: LegalComma
   if (castCount > 0 && directions.includes("against") && !session.creditTo[voter]) {
     for (const partner of state.seatingOrder) {
       if (partner === voter || partner === pm) continue;
+      if (session.coalitionRefused?.includes(`${voter}>${partner}`)) continue;
       commands.push({
         type: "parliament.setVoteCredit",
-        label: `Cast my votes against on behalf of ${playerName(state, partner)} (coalition; they join the opposition)`,
+        label: `Cast my votes against on behalf of ${playerName(state, partner)} (coalition; they must consent)`,
         payload: { creditTo: partner },
       });
     }
@@ -789,7 +790,7 @@ const castVotes = handler<CastPayload>("parliament.vote", "parliament.votesCast"
   return updateOppositionLeader(next);
 });
 
-const setVoteCredit = handler<{ creditTo: PlayerId }>("parliament.vote", "parliament.coalition", (state, { creditTo }, collector) => {
+const applyVoteCredit = handler<{ creditTo: PlayerId }>("parliament.vote", "parliament.coalition", (state, { creditTo }, collector) => {
   const session = state.parliament.session!;
   const voter = state.pendingDecision.actor as PlayerId;
   collector.notes.push(
@@ -803,6 +804,50 @@ const setVoteCredit = handler<{ creditTo: PlayerId }>("parliament.vote", "parlia
     opposition: creditTo === voter ? session.opposition : [...new Set([...session.opposition, creditTo])],
   });
 });
+
+// A coalition needs the partner's consent: they commit to the opposition (p.35). On refusal nothing
+// changes except that the partner is not asked again for this law.
+registerConsentResolver("parliament.coalition", (state, request, accepted) => {
+  const { voter, partner } = request.context as { voter: PlayerId; partner: PlayerId };
+  const session = state.parliament.session;
+  if (!session) return state;
+  if (!accepted) {
+    const refused = withSession(state, { coalitionRefused: [...(session.coalitionRefused ?? []), `${voter}>${partner}`] });
+    return refreshParliamentDecision(refused);
+  }
+  const credited = withSession(state, {
+    creditTo: { ...session.creditTo, [voter]: partner },
+    opposition: [...new Set([...session.opposition, partner])],
+  });
+  return refreshParliamentDecision(credited);
+});
+
+const setVoteCredit: CommandHandler = (state, command) => {
+  if (state.phase !== "parliament" || state.pendingDecision.step !== "parliament.vote" || !state.parliament.session) {
+    return wrongPhase(`"${command.type}" is not available now.`);
+  }
+  const payload = legalPayload<{ creditTo: PlayerId }>(state, command);
+  if (!payload) return illegal('That choice is not one of the legal options for "parliament.vote".');
+  const voter = state.pendingDecision.actor as PlayerId;
+  if (payload.creditTo === voter) return applyVoteCredit(state, command);
+
+  const requested = requestConsent(state, {
+    kind: "parliament.coalition",
+    requestedBy: voter,
+    from: [payload.creditTo],
+    prompt: `${playerName(state, voter)} asks ${playerName(state, payload.creditTo)} to join a coalition: they cast their votes against the law on your behalf and you commit to the opposition (p.35).`,
+    context: { voter, partner: payload.creditTo },
+  });
+  const logEntry = createCommandLogEntry({
+    state,
+    command,
+    now: command.clientTimestamp,
+    type: "parliament.coalitionRequested",
+    summary: `${playerName(state, voter)} asked ${playerName(state, payload.creditTo)} to join a coalition against the law.`,
+    details: { voter, partner: payload.creditTo },
+  });
+  return { ok: true, logEntry, state: { ...requested, updatedAt: command.clientTimestamp, log: [...requested.log, logEntry] } };
+};
 
 const passVote = handler<Record<string, never>>("parliament.vote", "parliament.votePassed", (state, _payload, collector) => {
   const session = state.parliament.session!;

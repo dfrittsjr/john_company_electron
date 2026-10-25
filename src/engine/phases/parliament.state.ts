@@ -72,6 +72,8 @@ export type ParliamentSession = {
   opposition: PlayerId[];
   /** Coalitions: whom a voter's votes against are credited to (p.35). */
   creditTo: Record<PlayerId, PlayerId>;
+  /** Coalition requests a partner refused this law, as `${voter}>${partner}` (they are not asked again). */
+  coalitionRefused?: string[];
   /** "Vote with my enterprises as if you owned them": beneficiary -> guarantors. */
   borrowedEnterprises: Record<PlayerId, PlayerId[]>;
   /** Cards rotated to vote this session, as `${ownerId}:${cardInstanceId}`. */

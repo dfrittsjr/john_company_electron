@@ -239,3 +239,36 @@ describe("Vote with my enterprises timing (card back: afterLawProposedBeforeVote
     expect(callable(state)).toBe(false);
   });
 });
+
+describe("Coalitions need the partner's consent (p.35)", () => {
+  function coalitionRequest(): GameState {
+    let state = parliamentState({ drawPile: ["trade-regulations"], cash: { [RED]: 2, [BLUE]: 5, [YELLOW]: 5 } });
+    state = choose(state, "parliament.confirm");
+    state = choose(state, "parliament.selectLaw");
+    state = choose(state, "parliament.choosePolicy", (payload) => payload.space === 2);
+    state = choose(state, "parliament.passVote"); // Red, the Prime Minister
+    expect(state.pendingDecision.actor).toBe(BLUE);
+    state = choose(state, "parliament.passVote");
+    expect(state.pendingDecision.actor).toBe(YELLOW);
+    return choose(state, "parliament.setVoteCredit", (payload) => payload.creditTo === BLUE);
+  }
+
+  it("asks the partner and joins the opposition only when they accept", () => {
+    let state = coalitionRequest();
+    expect(state.pendingDecision).toEqual(expect.objectContaining({ step: "negotiation.consent", actor: BLUE }));
+    expect(state.parliament.session?.opposition).not.toContain(BLUE);
+    state = choose(state, "negotiation.respondToConsent", (payload) => payload.accept === true);
+    expect(state.parliament.session?.creditTo[YELLOW]).toBe(BLUE);
+    expect(state.parliament.session?.opposition).toContain(BLUE);
+    expect(state.pendingDecision.actor).toBe(YELLOW);
+  });
+
+  it("changes nothing on refusal and does not offer the same partner again", () => {
+    let state = coalitionRequest();
+    state = choose(state, "negotiation.respondToConsent", (payload) => payload.accept === false);
+    expect(state.parliament.session?.creditTo[YELLOW]).toBeUndefined();
+    expect(state.parliament.session?.opposition).not.toContain(BLUE);
+    expect(state.pendingDecision).toEqual(expect.objectContaining({ step: "parliament.vote", actor: YELLOW }));
+    expect(hasCommand(state, "parliament.setVoteCredit", (payload) => payload.creditTo === BLUE)).toBe(false);
+  });
+});
