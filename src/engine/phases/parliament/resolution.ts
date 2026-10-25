@@ -16,6 +16,7 @@ import {
 } from "./laws";
 import { installGovernorGeneral, officeCategory, officeLabel, vacateOffice } from "../../offices";
 import { beginImmediateHire } from "../hiring";
+import { enactDeregulation, failDeregulation } from "./deregulation";
 
 type StepOutcome =
   | { state: GameState; decision?: undefined; replaceWith?: ParliamentResolutionStep[] }
@@ -383,6 +384,9 @@ function applyLawPassed(state: GameState, lawId: string, collector: Collector): 
     case "governor-general":
       current = enactGovernorGeneral(current, collector);
       break;
+    case "deregulation":
+      current = enactDeregulation(current, collector);
+      break;
     case "public-demands-impeachment": {
       const officeId = current.parliament.session?.impeachmentOfficeId;
       if (officeId) extraSteps.push({ kind: "impeach", officeId });
@@ -416,6 +420,8 @@ function applyLawFailed(state: GameState, lawId: string, collector: Collector): 
   // These dilemmas resolve India effects with Events in India's own rules, including attacks on
   // the Company and their defence decisions.
   switch (law.effectHandler) {
+    case "deregulation":
+      return { state: failDeregulation(current, collector) };
     case "relief-demanded-for-indian-famine":
       return {
         state: current,

@@ -34,6 +34,8 @@ import {
 } from "./parliament/resolution";
 import { registerNestedIndiaResume } from "./events-in-india";
 import { availableVoteCards, ownedVoteCards } from "./parliament/votes";
+import { DEREGULATION_LAW_ID, deregulationStartingSupport } from "./parliament/deregulation";
+import { londonSeasonStartDecision } from "./turn-start";
 
 export { isLawPassed } from "./parliament/laws";
 export { playerWindowIcons } from "./parliament/holdings";
@@ -156,6 +158,10 @@ function progressParliament(state: GameState, collector: Collector): { state: Ga
       case "resolving": {
         const resolved = runQueue(current, collector);
         if (resolved.decision) return { state: resolved.state, decision: resolved.decision };
+        // The Vote to Deregulate leads straight on to the London Season (p.36).
+        if (session.special && !resolved.state.parliament.session) {
+          return { state: resolved.state, decision: londonSeasonStartDecision(resolved.state) };
+        }
         current = resolved.state.parliament.session
           ? withSession(resolved.state, { queue: [{ kind: "finish" }] })
           : resolved.state;
@@ -426,8 +432,9 @@ function voteCommands(state: GameState, voter: PlayerId): { commands: LegalComma
   const pm = primeMinister(state);
   const directions: Array<"for" | "against"> = [];
   if (!session.opposition.includes(voter)) directions.push("for");
-  // The Prime Minister's Honor: the Prime Minister cannot vote against the law.
-  if (voter !== pm) directions.push("against");
+  // The Prime Minister's Honor: the Prime Minister cannot vote against the law, except the Vote to
+  // Deregulate, which the Prime Minister may vote against (p.36).
+  if (voter !== pm || session.special) directions.push("against");
 
   const cost = voteCost(state);
   const maxCashVotes = Math.floor((state.players[voter]?.cash ?? 0) / cost);
@@ -457,7 +464,7 @@ function voteCommands(state: GameState, voter: PlayerId): { commands: LegalComma
 
   // Coalitions: a voter may pledge their votes against to another player once per vote; the
   // partner commits to the opposition (p.35).
-  if (castCount > 0 && directions.includes("against") && !session.creditTo[voter]) {
+  if (castCount > 0 && directions.includes("against") && !session.creditTo[voter] && !session.special) {
     for (const partner of state.seatingOrder) {
       if (partner === voter || partner === pm) continue;
       if (session.coalitionRefused?.includes(`${voter}>${partner}`)) continue;
@@ -544,6 +551,19 @@ function startResolution(state: GameState, collector: Collector): GameState {
 
   let next = state;
   const queue: ParliamentSession["queue"] = [];
+  if (session.special) {
+    // Deregulation: no policy; a pass gives the Prime Minister a passed law token; a failure keeps the
+    // Prime Minister in power and the law is not discarded (p.36).
+    if (passed) {
+      next = addPassedLaw(next, lawId);
+      next = updatePlayer(next, pm, (player) => ({ ...player, passedLawTokens: player.passedLawTokens + 1 }));
+      queue.push({ kind: "lawPassed", lawId });
+    } else {
+      queue.push({ kind: "lawFailed", lawId });
+    }
+    queue.push({ kind: "finish" });
+    return withSession(next, { stage: "resolving", outcome: passed ? "passed" : "failed", queue });
+  }
   if (passed) {
     next = addPassedLaw(next, lawId);
     next = updatePlayer(next, pm, (player) => ({ ...player, passedLawTokens: player.passedLawTokens + 1 }));
@@ -645,6 +665,44 @@ function handler<T>(
     return complete(state, apply(state, payload, collector, command), command, collector, logType);
   };
 }
+
+/** The Prime Minister calls (or declines) the Vote to Deregulate at the start of a turn (p.36). */
+const deregulationCall: CommandHandler = (state, command) => {
+  if (state.pendingDecision.step !== "parliament.deregulationCall") {
+    return wrongPhase(`"${command.type}" is not available now.`);
+  }
+  const payload = legalPayload<{ call: boolean }>(state, command);
+  if (!payload) return illegal('That choice is not one of the legal options for "parliament.deregulationCall".');
+
+  const collector = newCollector();
+  const pm = primeMinister(state);
+  const now = command.clientTimestamp;
+  if (!payload.call) {
+    collector.notes.push(`${playerName(state, pm)} did not call a special session on Deregulation.`);
+    const decision = londonSeasonStartDecision(state);
+    const logEntry = createCommandLogEntry({ state, command, now, type: "parliament.deregulationDeclined", summary: collector.notes.join(" ") });
+    return {
+      ok: true,
+      logEntry,
+      state: { ...state, updatedAt: now, phase: decision.phase, pendingDecision: decision, log: [...state.log, logEntry] },
+    };
+  }
+
+  const startingSupport = deregulationStartingSupport(state);
+  collector.notes.push(
+    `${playerName(state, pm)} called a special session of Parliament to vote on Deregulation (starting support ${signed(startingSupport)}).`,
+  );
+  const opened = startVoting({
+    ...state,
+    parliament: {
+      ...state.parliament,
+      session: { ...emptySession(), stage: "voting", lawId: DEREGULATION_LAW_ID, startingSupport, special: "deregulation" },
+      voteMarker: startingSupport,
+      votesByPlayer: {},
+    },
+  });
+  return complete(state, opened, command, collector, "parliament.deregulationCalled");
+};
 
 const drawLaw = handler<Record<string, never>>("parliament.chooseLaw", "parliament.lawDrawn", (state, _payload, collector) =>
   drawIntoSession(state, collector),
@@ -787,7 +845,8 @@ const castVotes = handler<CastPayload>("parliament.vote", "parliament.votesCast"
   collector.notes.push(
     `${playerName(state, voter)} cast ${votes} vote${votes === 1 ? "" : "s"} ${payload.direction} the law (support now ${signed(voteMarker)}).`,
   );
-  return updateOppositionLeader(next);
+  // The special session changes no Prime Minister, so it hands out no Opposition Leader marker.
+  return session.special ? next : updateOppositionLeader(next);
 });
 
 const applyVoteCredit = handler<{ creditTo: PlayerId }>("parliament.vote", "parliament.coalition", (state, { creditTo }, collector) => {
@@ -923,6 +982,7 @@ const moveFailedPolicy = handler<{ space: number; addWindowTax: boolean }>(
 /** Commands this phase answers; composed by the dispatcher in ../commands.ts. */
 export const parliamentCommandHandlers: Record<string, CommandHandler> = {
   "parliament.confirm": confirmParliament,
+  "parliament.deregulationCall": deregulationCall,
   "parliament.drawLaw": drawLaw,
   "parliament.selectLaw": selectLaw,
   "parliament.selectFromDiscard": selectFromDiscard,

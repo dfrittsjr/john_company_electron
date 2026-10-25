@@ -1,4 +1,5 @@
 import type { GameState } from "../types";
+import { deregulationCallDecision, deregulationOffer } from "./parliament/deregulation";
 import { createSystemDecision } from "./shared";
 
 // The start of a turn, after Upkeep and Refresh, before the London Season (p.11).
@@ -7,6 +8,12 @@ import { createSystemDecision } from "./shared";
 
 /** The state at the start of `state.turn` (already advanced), with its first decision. */
 export function beginTurn(state: GameState): GameState {
+  // The Prime Minister may (or must) call the Vote to Deregulate first (p.36, ruling 1).
+  const offer = deregulationOffer(state);
+  if (offer) {
+    const decision = deregulationCallDecision(state, offer.mandatory);
+    return { ...state, phase: decision.phase, pendingDecision: decision };
+  }
   return { ...state, pendingDecision: londonSeasonStartDecision(state) };
 }
 

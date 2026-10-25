@@ -79,6 +79,8 @@ export type ParliamentSession = {
   /** Cards rotated to vote this session, as `${ownerId}:${cardInstanceId}`. */
   usedCards: string[];
   outcome?: "passed" | "failed";
+  /** The Vote to Deregulate special session (p.36): no policy, the Prime Minister may vote against. */
+  special?: "deregulation";
   queue: ParliamentResolutionStep[];
   /** An office a law created is being hired at once; resume the queue when it is filled (p.25). */
   awaitingHire?: boolean;
@@ -86,7 +88,35 @@ export type ParliamentSession = {
   awaitingIndia?: boolean;
 };
 
-export type RevenueStage = "companyFraud" | "royalProtection" | "dividends" | "scandal";
+export type RevenueStage = "companyFraud" | "firms" | "royalProtection" | "dividends" | "scandal";
+
+/**
+ * Firm expenses and dividends at the start of Revenue (pp.41-42), one firm at a time. The head of
+ * `queue` is the firm being settled. See phases/revenue-firms.ts.
+ */
+export type FirmRevenueProgress = {
+  queue: string[];
+  /** What the head firm is waiting for. */
+  step: "start" | "payFrom" | "rescue" | "investAsk" | "mergeConsent" | "dividends" | "waiver";
+  /** Firms whose expenses are paid this Revenue (an emergency merger needs to know, p.41). */
+  paid: string[];
+  /** Cash from emergency investments in the head firm: spent first on expenses, the rest is lost. */
+  emergencyCash: number;
+  /** Investors who declined to invest in the head firm (`${player}:${kind}`); not asked again. */
+  declined: string[];
+  /** An emergency investment the manager asked this player for. */
+  ask?: { investor: PlayerId; source: { kind: "companyShare"; shareId: string } | { kind: "workshop"; enterpriseId: string } };
+  /** An emergency merger being put to every shareholder of both firms. */
+  merge?: { other: string; primary: string; askers: PlayerId[] };
+  /** Other firms whose shareholders refused a merger with the head firm. */
+  mergeRefused: string[];
+  /** Dividends paid so far this Revenue by the head firm. */
+  dividendsPaid: number;
+  /** £ paid out so far by the head firm (the dividend cube). */
+  cashPaid: number;
+  /** A dividend being set up: holders still to be asked and what each forgoes. */
+  waivers?: { holders: PlayerId[]; forgone: Record<PlayerId, number> };
+};
 
 /** In-flight Revenue phase choices (Revenue's rules live with the Parliament area). */
 export type RevenueProgress = {
@@ -95,6 +125,10 @@ export type RevenueProgress = {
   fraudCandidates: PlayerId[];
   /** Players still to be offered an after-Revenue blackmail (the Scandal cards). */
   scandalCandidates: PlayerId[];
+  /** Firm expenses and dividends in progress (pp.41-42). */
+  firms?: FirmRevenueProgress;
+  /** Set once the firms have settled, so they are not started again. */
+  firmsSettled?: boolean;
 };
 
 export type ParliamentState = {
