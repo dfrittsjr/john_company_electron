@@ -1,5 +1,6 @@
 import { blackmailCards, offices, prestigeCards, prizes } from "../../data";
 import type { PrizeDefinition } from "../../data";
+import { allFirms } from "../firms";
 import { vacateOffice } from "../offices";
 import { rollDie } from "../rng";
 import { chairmanTitleHolder, clockwiseFrom, playerSpouses } from "../selectors";
@@ -123,7 +124,11 @@ function officeOrder(officeId: OfficeId): number {
 
 /** Remember the sitting Chairman so a later vacancy still knows who leads retirements (p.11). */
 /** "Starting with the Chairman (or former Chairman if the office is vacant) and going clockwise" (p.11). */
-export function beginRetirements(state: GameState, context: RetirementContext): GameState {
+export function beginRetirements(
+  state: GameState,
+  context: RetirementContext,
+  carry?: { usedDiscounts?: Record<PlayerId, DiscountKey[]>; lettersOfIntroduction?: PlayerId[] },
+): GameState {
   const leader = chairmanTitleHolder(state);
   const progress: RetirementProgress = {
     context,
@@ -131,8 +136,9 @@ export function beginRetirements(state: GameState, context: RetirementContext): 
     current: 0,
     spending: {},
     retired: [],
-    usedDiscounts: {},
-    lettersOfIntroduction: [],
+    usedDiscounts: carry?.usedDiscounts ?? {},
+    lettersOfIntroduction: carry?.lettersOfIntroduction ?? [],
+    specialUsed: [],
   };
 
   return { ...state, londonSeason: { ...state.londonSeason, retirement: progress } };
@@ -148,20 +154,54 @@ export function advanceRetirements(state: GameState): { state: GameState; decisi
 
   // A player with no affordable prize is still asked: another player may lend them cash first
   // ("players can transfer funds to each other at any time", p.8, p.36).
+  // Each player first retires pensioners, then may take one special retirement from supply (p.37).
   let current = progress.current;
-  while (current < progress.order.length && (state.players[progress.order[current]]?.familyMembers.pensioners ?? 0) === 0) {
+  let special = inSpecialStage(progress);
+  while (current < progress.order.length) {
+    const playerId = progress.order[current];
+    if (!special) {
+      if ((state.players[playerId]?.familyMembers.pensioners ?? 0) > 0) break;
+      special = true;
+    }
+    if (specialRetirementAvailable(state, progress, playerId)) break;
     current += 1;
+    special = progress.context === "finalSpecial";
   }
-  const next = state;
-
   const nextState: GameState =
-    current === progress.current && next === state
+    current === progress.current && special === inSpecialStage(progress)
       ? state
-      : { ...next, londonSeason: { ...next.londonSeason, retirement: { ...progress, current } } };
+      : { ...state, londonSeason: { ...state.londonSeason, retirement: { ...progress, current, special } } };
 
   if (current >= progress.order.length) return { state: nextState };
 
   return { state: nextState, decision: retirementDecision(nextState, progress.order[current]) };
+}
+
+/** Final Scoring's opening special retirement skips the pensioner stage (p.37). */
+function inSpecialStage(progress: RetirementProgress): boolean {
+  return progress.context === "finalSpecial" || Boolean(progress.special);
+}
+
+/**
+ * The most a special retirement may cost (p.37): the highest dividend cube among firms the player
+ * holds a share in. A firm whose cube was never placed or sits on 0 is disreputable and doesn't count.
+ */
+export function specialRetirementCap(state: GameState, playerId: PlayerId): number {
+  return allFirms(state)
+    .filter((firm) => (firm.shares[playerId] ?? 0) > 0)
+    .reduce((best, firm) => Math.max(best, firm.dividendCube ?? 0), 0);
+}
+
+/** One special retirement per player: needs a firm with a dividend, a piece in supply and a prize within the cap. */
+function specialRetirementAvailable(state: GameState, progress: RetirementProgress, playerId: PlayerId): boolean {
+  const player = state.players[playerId];
+  // Final Scoring's special retirement comes first ("finalSpecial"); its later pensioner step has none.
+  if (progress.context === "finalScoring") return false;
+  if (!player || player.familyMembers.supply < 1) return false;
+  if ((progress.specialUsed ?? []).includes(playerId)) return false;
+  const cap = specialRetirementCap(state, playerId);
+  // Cash can still be lent, so affordability is not checked here.
+  return cap > 0 && retirementOptions(state, progress, playerId, { cap, ignoreCash: true }).length > 0;
 }
 
 // Cash can change hands mid-retirement (p.8): rebuild the affordable prizes after a transfer.
@@ -175,7 +215,9 @@ registerDecisionRefresher("retirement.retirePensioner", (state) => {
 function retirementDecision(state: GameState, playerId: PlayerId): PendingDecision {
   const progress = state.londonSeason.retirement as RetirementProgress;
   const player = state.players[playerId];
-  const prizeOptions = retirementOptions(state, progress, playerId);
+  const special = inSpecialStage(progress);
+  const cap = special ? specialRetirementCap(state, playerId) : undefined;
+  const prizeOptions = retirementOptions(state, progress, playerId, { cap });
   const legalCommands: LegalCommand[] = [...prizeOptions];
   const holdsLetters =
     !progress.lettersOfIntroduction.includes(playerId) &&
@@ -191,26 +233,31 @@ function retirementDecision(state: GameState, playerId: PlayerId): PendingDecisi
 
   legalCommands.push({
     type: "retirement.stop",
-    label:
-      player.familyMembers.pensioners === 1
+    label: special
+      ? "Do not take a special retirement"
+      : player.familyMembers.pensioners === 1
         ? "Do not retire this pensioner"
         : `Do not retire the remaining ${player.familyMembers.pensioners} pensioners`,
-    description:
-      progress.context === "londonSeason"
+    description: special
+      ? "The special retirement is skipped for this step."
+      : progress.context === "londonSeason"
         ? "Unretired pensioners return to supply at the end of the London Season (p.12)."
         : "Unretired pensioners score nothing.",
     payload: {},
   });
 
   return {
-    id: `decision-retirement-${progress.context}-t${state.turn}-${playerId}-${state.log.length + 1}`,
+    id: `decision-retirement-${progress.context}${special ? "-special" : ""}-t${state.turn}-${playerId}-${state.log.length + 1}`,
     phase: state.phase,
     step: "retirement.retirePensioner",
     actor: playerId,
     // Offering Letters of Introduction would reveal a face-down blackmail card.
     visibility: holdsLetters ? "private" : "public",
-    prompt:
-      prizeOptions.length > 0
+    prompt: special
+      ? prizeOptions.length > 0
+        ? `${player.name}: take your special retirement, using a piece from supply, spending at most £${cap} (your firm's highest dividend; p.37).`
+        : `${player.name}: no prize within £${cap} is affordable with £${player.cash}. Another player may lend you cash first (Deals & Cards); otherwise choose not to retire.`
+      : prizeOptions.length > 0
         ? `${player.name}: retire a pensioner to a prize (${player.familyMembers.pensioners} pensioner(s), £${player.cash}).`
         : `${player.name}: no prize is affordable with £${player.cash}. Another player may lend you cash first (Deals & Cards); otherwise choose not to retire.`,
     legalCommands,
@@ -263,7 +310,12 @@ function heldPrizeUpkeep(prizeCounts: Record<string, number>): number {
  * each is used once per London Season / Final Scoring). Discounts of equal value are
  * interchangeable, so combinations are enumerated by how many of each value are used.
  */
-function retirementOptions(state: GameState, progress: RetirementProgress, playerId: PlayerId): LegalCommand[] {
+function retirementOptions(
+  state: GameState,
+  progress: RetirementProgress,
+  playerId: PlayerId,
+  limits: { cap?: number; ignoreCash?: boolean } = {},
+): LegalCommand[] {
   const player = state.players[playerId];
   const discounts = availableDiscounts(state, progress, playerId).sort(
     (left, right) => right.amount - left.amount || left.key.localeCompare(right.key),
@@ -292,7 +344,9 @@ function retirementOptions(state: GameState, progress: RetirementProgress, playe
       if (combo.length > 0 && total - smallest >= prize.cost) continue;
 
       const cost = Math.max(0, prize.cost - total);
-      if (player.cash < cost) continue;
+      if (!limits.ignoreCash && player.cash < cost) continue;
+      // Special retirement (p.37): the money spent can't exceed the firm's dividend.
+      if (limits.cap !== undefined && cost > limits.cap) continue;
 
       const discountText =
         combo.length === 0 ? "" : ` using ${combo.map((discount) => `-£${discount.amount} ${discount.label}`).join(", ")}`;
@@ -328,15 +382,24 @@ export function applyRetirementCommand(
   const playerId = progress.order[progress.current];
   const player = state.players[playerId];
 
+  const special = inSpecialStage(progress);
   if (command.type === "retirement.stop") {
+    // Stopping the pensioners moves on to the special retirement (if any); stopping that ends the player's turn.
+    const retirement: RetirementProgress = special
+      ? {
+          ...progress,
+          current: progress.current + 1,
+          special: false,
+          specialUsed: [...(progress.specialUsed ?? []), playerId],
+        }
+      : { ...progress, special: true };
     return {
       ok: true,
-      state: {
-        ...state,
-        londonSeason: { ...state.londonSeason, retirement: { ...progress, current: progress.current + 1 } },
-      },
-      summary: `${player.name} stopped retiring pensioners.`,
-      details: { playerId, unretiredPensioners: player.familyMembers.pensioners },
+      state: { ...state, londonSeason: { ...state.londonSeason, retirement } },
+      summary: special
+        ? `${player.name} skipped the special retirement.`
+        : `${player.name} stopped retiring pensioners.`,
+      details: { playerId, unretiredPensioners: player.familyMembers.pensioners, special },
     };
   }
 
@@ -361,7 +424,8 @@ export function applyRetirementCommand(
           victoryPoints: player.victoryPoints + prize.victoryPoints,
           familyMembers: {
             ...player.familyMembers,
-            pensioners: player.familyMembers.pensioners - 1,
+            pensioners: special ? player.familyMembers.pensioners : player.familyMembers.pensioners - 1,
+            supply: special ? player.familyMembers.supply - 1 : player.familyMembers.supply,
             prizes: {
               ...player.familyMembers.prizes,
               [prize.id]: (player.familyMembers.prizes[prize.id] ?? 0) + 1,
@@ -373,6 +437,9 @@ export function applyRetirementCommand(
         ...state.londonSeason,
         retirement: {
           ...progress,
+          ...(special
+            ? { current: progress.current + 1, special: false, specialUsed: [...(progress.specialUsed ?? []), playerId] }
+            : {}),
           spending: { ...progress.spending, [playerId]: (progress.spending[playerId] ?? 0) + cost },
           retired: progress.retired.includes(playerId) ? progress.retired : [...progress.retired, playerId],
           usedDiscounts: {
@@ -382,8 +449,8 @@ export function applyRetirementCommand(
         },
       },
     },
-    summary: `${player.name} retired a pensioner to the £${prize.cost} prize for £${cost} (+${prize.victoryPoints} VP).`,
-    details: { playerId, prizeId: prize.id, cost, discounts: payload.discounts, victoryPoints: prize.victoryPoints },
+    summary: `${player.name} ${special ? "took a special retirement" : "retired a pensioner"} to the £${prize.cost} prize for £${cost} (+${prize.victoryPoints} VP).`,
+    details: { playerId, special, prizeId: prize.id, cost, discounts: payload.discounts, victoryPoints: prize.victoryPoints },
   };
 }
 

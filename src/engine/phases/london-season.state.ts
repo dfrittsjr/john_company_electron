@@ -1,8 +1,11 @@
 import type { SubsystemInitInput, SubsystemInitResult } from "../subsystem";
 import type { CardInstanceId, PlayerId } from "../types";
 
-/** Where a retirement step is running: the London Season (p.11) or Final Scoring (p.9). */
-export type RetirementContext = "londonSeason" | "finalScoring";
+/**
+ * Where a retirement step is running: the London Season (p.11) or Final Scoring (p.9).
+ * "finalSpecial" is Final Scoring's opening special retirement, before the rest of scoring (p.37).
+ */
+export type RetirementContext = "londonSeason" | "finalScoring" | "finalSpecial";
 
 /**
  * A retirement discount a player may use once this step. Own spouses are `own:<cardId>`;
@@ -24,6 +27,10 @@ export type RetirementProgress = {
   usedDiscounts: Record<PlayerId, DiscountKey[]>;
   /** Players who played Letters of Introduction during this step. */
   lettersOfIntroduction: PlayerId[];
+  /** True while the current player is on their special retirement, from supply (Deregulation, p.37). */
+  special?: boolean;
+  /** Players who have taken or declined their one special retirement this step. */
+  specialUsed?: PlayerId[];
 };
 
 export type PrestigeProgress = {
