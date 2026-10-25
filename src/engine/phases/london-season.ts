@@ -9,7 +9,7 @@ import type {
   PlayerId,
   RngRollRecord,
 } from "../types";
-import { createFamilyActionCommands } from "./family";
+import { startFamilyPhase } from "./family";
 import {
   createCommandLogEntry,
   firstHumanActor,
@@ -59,25 +59,16 @@ export function confirmLondonSeason(
     rngRolls: londonSeasonResult.rolls,
   });
 
+  // TODO(LS): keep handing over with startFamilyPhase when the London Season ends; it sets the
+  // Family turn order from the Chairman title (p.13).
   return {
     ok: true,
     logEntry,
-    state: {
+    state: startFamilyPhase({
       ...resolvedState,
       updatedAt: now,
-      phase: "family",
-      pendingDecision: {
-        id: `decision-family-choose-action-turn-${state.turn}-${nextActor}`,
-        phase: "family",
-        step: "family.chooseAction",
-        actor: nextActor,
-        visibility: "private",
-        prompt: "Choose a family action.",
-        legalCommands: createFamilyActionCommands(resolvedState, nextActor),
-        canSave: true,
-      },
       log: [...resolvedState.log, logEntry],
-    },
+    }),
   };
 }
 

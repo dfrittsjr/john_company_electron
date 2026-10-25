@@ -11,7 +11,7 @@ import type {
   PlayerState,
   PresidencyId,
 } from "../types";
-import { createFamilyActionCommands } from "./family";
+import { startFamilyPhase } from "./family";
 import { createCommandLogEntry } from "./shared";
 
 export function confirmStart(state: GameState, command: GameCommand): ApplyCommandResult {
@@ -22,9 +22,7 @@ export function confirmStart(state: GameState, command: GameCommand): ApplyComma
       ? applyRandomHotseat1710SetupCards(state)
       : { state, details: undefined };
   const setupState = setupResult.state;
-  const nextActor = setupState.seatingOrder.find((playerId) => !setupState.players[playerId].isCrown);
-
-  if (!nextActor) {
+  if (!setupState.seatingOrder.some((playerId) => !setupState.players[playerId].isCrown)) {
     return {
       ok: false,
       errors: [
@@ -36,16 +34,6 @@ export function confirmStart(state: GameState, command: GameCommand): ApplyComma
     };
   }
 
-  const pendingDecision: PendingDecision = {
-    id: `decision-family-choose-action-turn-${setupState.turn}`,
-    phase: "family",
-    step: "family.chooseAction",
-    actor: nextActor,
-    visibility: "private",
-    prompt: "Choose a family action.",
-    legalCommands: createFamilyActionCommands(setupState, nextActor),
-    canSave: true,
-  };
   const logEntry = createCommandLogEntry({
     state: setupState,
     command,
@@ -58,16 +46,15 @@ export function confirmStart(state: GameState, command: GameCommand): ApplyComma
     details: setupResult.details,
   });
 
+  // The London Season is skipped on the first turn (p.11), so play starts with Family.
   return {
     ok: true,
     logEntry,
-    state: {
+    state: startFamilyPhase({
       ...setupState,
       updatedAt: now,
-      phase: "family",
-      pendingDecision,
       log: [...setupState.log, logEntry],
-    },
+    }),
   };
 }
 
@@ -234,6 +221,8 @@ function placeOffice(state: GameState, playerId: PlayerId, officeId: string): Ga
       },
       vacantOffices: state.company.vacantOffices.filter((candidate) => candidate !== officeId),
       unusedOffices: state.company.unusedOffices.filter((candidate) => candidate !== officeId),
+      // The Chairman also takes the Chairman marker (p.15).
+      chairmanMarker: officeId === "chairman" ? playerId : state.company.chairmanMarker,
     },
   };
 

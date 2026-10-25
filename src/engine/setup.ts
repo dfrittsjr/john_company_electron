@@ -2,7 +2,9 @@ import { componentManifest, mapData, offices, stockExchangeTrack } from "../data
 import type { ScenarioDefinition } from "../data/types";
 import { createInitialCompanyOperationState } from "./phases/company-operation.state";
 import { createInitialEventsInIndiaState } from "./phases/events-in-india.state";
+import { createInitialFamilyState } from "./phases/family.state";
 import { createInitialFinalScoringState } from "./phases/final-scoring.state";
+import { createInitialHiringState } from "./phases/hiring.state";
 import { createInitialLondonSeasonState } from "./phases/london-season.state";
 import { createInitialNegotiationState } from "./phases/negotiation.state";
 import { createRngState, shuffle } from "./rng";
@@ -117,7 +119,9 @@ export function createNewGame(options: NewGameOptions): GameState {
   const eventsInIndia = createInitialEventsInIndiaState({ scenario, seatingOrder, rng: companyOperation.rng });
   const finalScoring = createInitialFinalScoringState({ scenario, seatingOrder, rng: eventsInIndia.rng });
   const negotiation = createInitialNegotiationState({ scenario, seatingOrder, rng: finalScoring.rng });
-  rng = negotiation.rng;
+  const family = createInitialFamilyState({ scenario, seatingOrder, rng: negotiation.rng });
+  const hiring = createInitialHiringState({ scenario, seatingOrder, rng: family.rng });
+  rng = hiring.rng;
 
   const pendingDecision = createInitialPendingDecision(
     options.mode,
@@ -146,6 +150,8 @@ export function createNewGame(options: NewGameOptions): GameState {
     eventsInIndia: eventsInIndia.state,
     finalScoring: finalScoring.state,
     negotiation: negotiation.state,
+    family: family.state,
+    hiring: hiring.state,
     decks: {},
     firms: scenario.startsDeregulated ? [] : undefined,
     crown,
