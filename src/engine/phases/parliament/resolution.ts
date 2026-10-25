@@ -6,7 +6,7 @@ import { lowerStanding } from "../revenue";
 import type { ParliamentResolutionStep, ParliamentSession, PolicyTarget } from "../parliament.state";
 import { addCash, nextDecisionId, playerName, primeMinisterOrder, updatePlayer, type Collector } from "./common";
 import { policyTargetItems, prestigeCardOwners, surrenderItem, windowTaxItems, type TaxedItem } from "./holdings";
-import { addUnrestToCompanyRegions, turmoil, warAgainstFranceInvasions } from "./india-effects";
+import { startNestedIndiaResolution } from "../events-in-india";
 import {
   adjacentPolicySpaces,
   describePolicySpace,
@@ -14,7 +14,8 @@ import {
   isLawPassed,
   lawCard,
 } from "./laws";
-import { createOffice, officeLabel, returnOfficeToBox, vacateOffice } from "../../offices";
+import { installGovernorGeneral, officeCategory, officeLabel, vacateOffice } from "../../offices";
+import { beginImmediateHire } from "../hiring";
 
 type StepOutcome =
   | { state: GameState; decision?: undefined; replaceWith?: ParliamentResolutionStep[] }
@@ -41,6 +42,12 @@ export function withSession(state: GameState, patch: Partial<ParliamentSession>)
 function setQueue(state: GameState, queue: ParliamentResolutionStep[]): GameState {
   return withSession(state, { queue });
 }
+
+/** Resume key for law effects resolved through Events in India; registered in parliament.ts. */
+export const PARLIAMENT_INDIA_RESUME = "parliament.indiaEffects";
+
+/** Hiring resume key for offices a law creates (Envoy to China); registered in parliament.ts. */
+export const PARLIAMENT_HIRE_RESUME = "parliament.immediateHire";
 
 /** Runs queued steps until one needs a player's choice or the vote is fully resolved. */
 export function runQueue(state: GameState, collector: Collector): { state: GameState; decision?: PendingDecision } {
@@ -92,6 +99,24 @@ function runStep(state: GameState, step: ParliamentResolutionStep, collector: Co
       return chooseWarPiece(state, step.remaining);
     case "changePrimeMinister":
       return changePrimeMinister(state, collector);
+    case "indiaEffects": {
+      const session = state.parliament.session!;
+      const resolved = startNestedIndiaResolution(state, step.label, step.work, PARLIAMENT_INDIA_RESUME);
+      // Done without any decision: back in Parliament, and runQueue drops this step.
+      if (!resolved.eventsInIndia.progress?.nested) return { state: resolved };
+      // Waiting for a Commander's defence: drop this step now; the queue resumes afterwards.
+      const waiting = withSession(setQueue(resolved, session.queue.slice(1)), { awaitingIndia: true });
+      return { state: waiting, decision: resolved.pendingDecision };
+    }
+    case "hireImmediately": {
+      const session = state.parliament.session!;
+      const hired = beginImmediateHire(state, step.officeId, PARLIAMENT_HIRE_RESUME);
+      // Filled or left vacant at once: the queue carries on (runQueue drops this step).
+      if (!hired.hiring.immediate) return { state: { ...hired, phase: "parliament" } };
+      // Waiting for the Chairman: drop this step now; the queue resumes once the hire is done.
+      const waiting = withSession(setQueue(hired, session.queue.slice(1)), { awaitingHire: true });
+      return { state: waiting, decision: hired.pendingDecision };
+    }
     case "movePolicyAfterFailure":
       return moveFailedPolicyDecision(state, step.taxCollectorsMayAdd);
     case "finish":
@@ -323,9 +348,9 @@ function applyLawPassed(state: GameState, lawId: string, collector: Collector): 
         break;
       case "createOfficeIfMissing":
         if (!current.company.offices[effect.officeId]?.created) {
-          current = createOffice(current, effect.officeId);
-          // TODO(FH): the Chairman hires this office immediately when it is created (p.25).
-          collector.notes.push(`${officeLabel(effect.officeId)} was created and is vacant.`);
+          // "The office is hired immediately by the Chairman" (p.25).
+          extraSteps.push({ kind: "hireImmediately", officeId: effect.officeId });
+          collector.notes.push(`${officeLabel(effect.officeId)} was created and is hired at once.`);
         }
         break;
       case "placeRegimentsInEachArmy":
@@ -388,19 +413,33 @@ function applyLawFailed(state: GameState, lawId: string, collector: Collector): 
     }
   }
 
+  // These dilemmas resolve India effects with Events in India's own rules, including attacks on
+  // the Company and their defence decisions.
   switch (law.effectHandler) {
     case "relief-demanded-for-indian-famine":
-      for (const regionId of ["bombay", "madras", "bengal"]) current = turmoil(current, regionId, collector);
-      current = addUnrestToCompanyRegions(current, collector);
-      break;
+      return {
+        state: current,
+        replaceWith: [
+          {
+            kind: "indiaEffects",
+            label: "relief-demanded-for-indian-famine",
+            work: [
+              { kind: "turmoilAt", regionId: "bombay" },
+              { kind: "turmoilAt", regionId: "madras" },
+              { kind: "turmoilAt", regionId: "bengal" },
+              { kind: "unrestInCompanyRegions" },
+            ],
+          },
+        ],
+      };
     case "war-against-france":
-      current = warAgainstFranceInvasions(current, collector);
-      break;
+      return {
+        state: current,
+        replaceWith: [{ kind: "indiaEffects", label: "war-against-france", work: [{ kind: "foreignInvasionStorm" }] }],
+      };
     default:
-      break;
+      return { state: current };
   }
-
-  return { state: current };
 }
 
 /** Army Spending: regiments to every Army; Foundry pays £1 per regiment added (prestige #24). */
@@ -428,52 +467,19 @@ function placeRegiments(state: GameState, perArmy: number, collector: Collector)
  * Governor General. TODO(FH): the Governor General hires Presidents and is hired like the Director.
  */
 function enactGovernorGeneral(state: GameState, collector: Collector): GameState {
-  let current = state;
-  const governorIds = Object.keys(current.company.offices).filter((officeId) => officeId.startsWith("governor-") && officeId !== "governor-general");
-  for (const officeId of governorIds) {
-    const result = vacateOffice(current, officeId, "pensioners");
-    if (result.holder) collector.notes.push(`${playerName(current, result.holder)}'s ${officeLabel(officeId)} became a pensioner.`);
-    current = returnOfficeToBox(result.state, officeId);
+  for (const office of Object.values(state.company.offices)) {
+    if (officeCategory(office.id) === "governor" && office.holder && !office.vacant) {
+      collector.notes.push(`${playerName(state, office.holder)}'s ${officeLabel(office.id)} became a pensioner.`);
+    }
   }
-
-  const director = current.company.offices["director-of-trade"];
-  const governorGeneral = {
-    id: "governor-general",
-    holder: director?.vacant ? undefined : director?.holder,
-    familyMemberId: director?.familyMemberId,
-    treasury: director?.treasury ?? 0,
-    fatigue: director?.fatigue ?? 0,
-    vacant: director ? director.vacant : true,
-    created: true,
-    actedThisTurn: director?.actedThisTurn ?? false,
-  };
-  const directorWasVacant = current.company.vacantOffices.includes("director-of-trade");
-  current = returnOfficeToBox(current, "director-of-trade");
-  current = {
-    ...current,
-    company: {
-      ...current.company,
-      governorGeneralInPlay: true,
-      offices: { ...current.company.offices, "governor-general": governorGeneral },
-      unusedOffices: current.company.unusedOffices.filter((officeId) => officeId !== "governor-general"),
-      vacantOffices:
-        directorWasVacant || governorGeneral.vacant
-          ? [...current.company.vacantOffices.filter((officeId) => officeId !== "governor-general"), "governor-general"]
-          : current.company.vacantOffices,
-    },
-    india: {
-      ...current.india,
-      regions: Object.fromEntries(
-        Object.entries(current.india.regions).map(([regionId, region]) => [regionId, { ...region, partialCompanyShip: false }]),
-      ),
-    },
-  };
+  const next = installGovernorGeneral(state);
+  const holder = next.company.offices["governor-general"]?.holder;
   collector.notes.push(
-    governorGeneral.holder
-      ? `${playerName(current, governorGeneral.holder)}'s Director of Trade became the Governor General.`
+    holder
+      ? `${playerName(next, holder)}'s Director of Trade became the Governor General.`
       : "The Governor General office was created and is vacant.",
   );
-  return current;
+  return next;
 }
 
 function warShipCandidates(state: GameState) {

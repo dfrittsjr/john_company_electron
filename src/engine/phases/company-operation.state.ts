@@ -105,8 +105,6 @@ export type OperationInterrupt =
       check: PendingCheck;
     }
   | { kind: "allianceConsent"; presidency: PresidencyId; allianceId: string }
-  | { kind: "chinaHire"; selfRefused?: boolean }
-  | { kind: "chinaHireConsent"; candidate: { playerId: PlayerId; presidency: PresidencyId } }
   | { kind: "boardOfControl"; officeId: OfficeId }
   | { kind: "militaryOversight"; stage: "demote" }
   | { kind: "militaryOversight"; stage: "appoint"; army: ArmyId; selfRefused?: boolean }

@@ -127,3 +127,49 @@ export function returnOfficeToBox(state: GameState, officeId: OfficeId): GameSta
     },
   };
 }
+
+/**
+ * The Governor General law (p.26): every Governor becomes a pensioner and its card returns to the
+ * box, unfinished Company ships are removed, and the Director of Trade's card, holder, fatigue and
+ * treasury pass to the Governor General, who is hired like the Director of Trade when vacant.
+ */
+export function installGovernorGeneral(state: GameState): GameState {
+  let current = state;
+  const governorIds = Object.keys(current.company.offices).filter((officeId) => officeCategory(officeId) === "governor");
+  for (const officeId of governorIds) {
+    current = returnOfficeToBox(vacateOffice(current, officeId, "pensioners").state, officeId);
+  }
+
+  const director = current.company.offices["director-of-trade"];
+  const directorHeld = Boolean(director && !director.vacant && director.holder);
+  const governorGeneral = {
+    id: "governor-general",
+    holder: directorHeld ? director.holder : undefined,
+    familyMemberId: directorHeld ? director.familyMemberId : undefined,
+    treasury: director?.treasury ?? 0,
+    fatigue: directorHeld ? director.fatigue : 0,
+    vacant: !directorHeld,
+    created: true,
+    actedThisTurn: director?.actedThisTurn ?? false,
+  };
+  current = returnOfficeToBox(current, "director-of-trade");
+
+  return {
+    ...current,
+    company: {
+      ...current.company,
+      governorGeneralInPlay: true,
+      offices: { ...current.company.offices, "governor-general": governorGeneral },
+      unusedOffices: current.company.unusedOffices.filter((officeId) => officeId !== "governor-general"),
+      vacantOffices: directorHeld
+        ? current.company.vacantOffices.filter((officeId) => officeId !== "governor-general")
+        : [...new Set([...current.company.vacantOffices, "governor-general"])],
+    },
+    india: {
+      ...current.india,
+      regions: Object.fromEntries(
+        Object.entries(current.india.regions).map(([regionId, region]) => [regionId, { ...region, partialCompanyShip: false }]),
+      ),
+    },
+  };
+}

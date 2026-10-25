@@ -234,26 +234,29 @@ function initialWork(state: GameState, tile: IndiaEventTile): TileWorkItem[] {
 }
 
 function finishTile(ctx: ResolutionContext, tile: ActiveTile): void {
-  if (!tile.returnedToStack) ctx.draft.eventsInIndia.discards.push(tile.tileId);
+  if (!tile.returnedToStack && !tile.tileId.startsWith(NESTED_TILE_PREFIX)) ctx.draft.eventsInIndia.discards.push(tile.tileId);
   progress(ctx).tile = undefined;
 }
 
+/** Tiles started by another phase are not real event tiles and never reach the discards. */
+export const NESTED_TILE_PREFIX = "nested:";
+
 function runWorkItem(ctx: ResolutionContext, tile: ActiveTile, item: TileWorkItem): void {
-  const definition = eventTile(tile.tileId);
+  const definition = () => eventTile(tile.tileId);
   switch (item.kind) {
     case "resolve":
-      resolveTile(ctx, tile, definition);
+      resolveTile(ctx, tile, definition());
       return;
     case "march":
       elephantMarch(ctx, item.shape);
       return;
     case "crisisMarch":
-      elephantMarch(ctx, definition.marchShape!, tile.imperialCapitalId);
+      elephantMarch(ctx, definition().marchShape!, tile.imperialCapitalId);
       return;
     case "leaderRedirect":
       // Leader moves the Elephant only if it stood in a Company region that rebelled successfully (p.31).
       if (tile.elephantCenteredRegionId && tile.rebelledRegionIds.includes(tile.elephantCenteredRegionId)) {
-        elephantMarch(ctx, definition.marchShape!);
+        elephantMarch(ctx, definition().marchShape!);
       }
       return;
     case "foreignInvasionTarget":
@@ -264,6 +267,18 @@ function runWorkItem(ctx: ResolutionContext, tile: ActiveTile, item: TileWorkIte
       return;
     case "shuffleIntoStack":
       shuffleIntoStack(ctx, tile);
+      return;
+    case "turmoilAt":
+      closeNorthernmostOrCascade(ctx, item.regionId, tile.cascaded);
+      return;
+    case "unrestInCompanyRegions":
+      for (const target of Object.values(ctx.draft.india.regions).filter((candidate) => candidate.companyControlled)) {
+        target.unrest += 1;
+        log(ctx, "eventsInIndia.unrestAdded", `${target.name} gains 1 unrest.`, { regionId: target.id });
+      }
+      return;
+    case "foreignInvasionStorm":
+      foreignInvasionFromStormDie(ctx, tile);
       return;
   }
 }
@@ -510,6 +525,21 @@ function foreignInvasion(ctx: ResolutionContext, tile: ActiveTile): void {
   );
 }
 
+/** War Against France! (failed): roll the storm die and invade each home region linked to a storm; none if no storm (law card). */
+function foreignInvasionFromStormDie(ctx: ResolutionContext, tile: ActiveTile): void {
+  const face = stormDieFaces[roll(ctx, 6, "eventsInIndia.foreignInvasion.stormDie") - 1];
+  const targets = face.storms.map((zone) => stormSeaZoneRegion[zone] as RegionId);
+  log(
+    ctx,
+    "eventsInIndia.foreignInvasion",
+    targets.length > 0
+      ? `Foreign Invasion: the storm die shows ${face.label}, so invaders land in ${targets.map((regionId) => regionName(ctx, regionId)).join(", ")}.`
+      : `Foreign Invasion: the storm die shows ${face.label}; no invasion.`,
+    { face, targets },
+  );
+  tile.work.unshift(...targets.map((regionId) => ({ kind: "foreignInvasionTarget" as const, regionId })));
+}
+
 function foreignInvasionAt(ctx: ResolutionContext, tile: ActiveTile, regionId: RegionId): void {
   const strength = roll(ctx, 6, `eventsInIndia.foreignInvasion.${regionId}`);
   const target = region(ctx.draft, regionId);
@@ -575,20 +605,27 @@ function elephantMarch(ctx: ResolutionContext, shape: ElephantShape, imperialCap
 }
 
 function finishPhase(ctx: ResolutionContext): PendingDecision {
+  const nested = ctx.draft.eventsInIndia.progress?.nested;
   ctx.draft.eventsInIndia.progress = undefined;
+
+  if (nested) {
+    // Effects started by another phase are done: return to it (events-in-india.ts applies the resume).
+    ctx.draft.phase = nested.returnPhase;
+    ctx.nestedResume = nested.resumeKey;
+    return ctx.draft.pendingDecision;
+  }
 
   // A Company that failed during Region Loss finishes the phase, then goes to Final Scoring (p.29).
   const next = ctx.draft.company.failed
     ? createFinalScoringDecision(ctx.draft)
-    : // TODO(PA): replace with the real Parliament Meets entry decision.
-      createSystemDecision({
+    : createSystemDecision({
         id: `decision-parliament-confirm-turn-${ctx.draft.turn}`,
         phase: "parliament",
         step: "parliament.confirm",
-        prompt: "Confirm starter Parliament Meets.",
+        prompt: "Parliament meets: the Prime Minister brings a law before Parliament (p.34).",
         commandType: "parliament.confirm",
-        label: "Confirm Parliament",
-        description: "Starter scaffold: records that Parliament was confirmed.",
+        label: "Parliament meets",
+        description: "The Prime Minister draws up to three laws and chooses one.",
       });
   log(
     ctx,

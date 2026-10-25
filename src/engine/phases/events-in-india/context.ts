@@ -13,6 +13,8 @@ export type ResolutionContext = {
   now: string;
   pendingRolls: RngRollRecord[];
   lastEntry?: GameLogEntry;
+  /** A nested resolution (see startNestedIndiaResolution) finished; its resume key. */
+  nestedResume?: string;
 };
 
 export function createContext(state: GameState, command: GameCommand): ResolutionContext {

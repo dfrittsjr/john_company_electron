@@ -4,7 +4,8 @@ import { chairmanStep, debtConsentStep } from "./company-operation/chairman";
 import { chinaStep } from "./company-operation/china";
 import { isListedCommand, officeLabel } from "./company-operation/context";
 import { decideOperation, type SkipOfficePayload } from "./company-operation/decide";
-import { directorStep } from "./company-operation/director-of-trade";
+import { CHINA_HIRE_RESUME, directorStep } from "./company-operation/director-of-trade";
+import { registerHiringResume } from "./hiring-resume";
 import { governorGeneralStep } from "./company-operation/governor-general";
 import { interruptStep } from "./company-operation/interrupts";
 import { militaryStep } from "./company-operation/military-affairs";
@@ -93,12 +94,19 @@ function operationCommand(step: OperationStep): CommandHandler {
       rngRolls: result.rngRolls,
     });
     const logged: GameState = { ...result.state, updatedAt: now, log: [...result.state.log, logEntry] };
-    // A Negotiation interrupt (e.g. Man on the Inside answering a blackmail) keeps its own decision.
-    const pendingDecision = activeInterrupt(logged) ? logged.pendingDecision : decideOperation(logged);
+    // A Negotiation interrupt (e.g. Man on the Inside answering a blackmail) or an office being hired
+    // at once (China, p.25) keeps its own decision.
+    const pendingDecision =
+      activeInterrupt(logged) || logged.hiring.immediate ? logged.pendingDecision : decideOperation(logged);
 
     return { ok: true, logEntry, state: { ...logged, phase: pendingDecision.phase, pendingDecision } };
   };
 }
+
+registerHiringResume(CHINA_HIRE_RESUME, (state) => {
+  const decision = decideOperation(state);
+  return { ...state, phase: decision.phase, pendingDecision: decision };
+});
 
 /** Commands this phase answers; composed by the dispatcher in ../commands.ts. */
 export const companyOperationCommandHandlers: Record<string, CommandHandler> = {

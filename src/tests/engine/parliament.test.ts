@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { GameState } from "../../engine";
 import { grantEnterpriseVotes } from "../../engine/phases/parliament";
 import { calculateCompanyExpenses } from "../../engine/phases/revenue";
-import { withCourtShares, withOffice, withOfficers, withRegiments } from "../fixtures/builders";
+import { createRngState } from "../../engine/rng";
+import { withCommander, withCourtShares, withOffice, withOfficers, withRegiments } from "../fixtures/builders";
 import { expectSaveRoundTripPreservesPendingDecision } from "../fixtures/game";
 import {
   choose,
@@ -437,6 +438,36 @@ describe("Law and dilemma effects", () => {
     expect(order("bengal", "bengal-home-6").closed).toBe(false);
   });
 
+  it("War Against France! failed: an invaded Company region is defended through Events in India, then the vote finishes", () => {
+    const build = (seed: string) => {
+      let state = parliamentState({ drawPile: ["war-against-france"], cash: { "player-blue": 2 } });
+      state = { ...state, rng: createRngState(seed) };
+      state = withRegiments(state, { Bengal: { ready: 2, exhausted: 0 } });
+      state = withOfficers(withCommander(state, "Bengal", "player-red"), "player-yellow", "Bengal", { ready: 2, exhausted: 0 });
+      const bengal = state.india.regions.bengal;
+      state = { ...state, india: { ...state.india, regions: { ...state.india.regions, bengal: { ...bengal, companyControlled: true, associatedPresidency: "Bengal", hasDome: false, towerLevels: 0 } } } };
+      state = choose(choose(start(state), "parliament.selectLaw"), "parliament.choosePolicy");
+      return resolveVote(castCash(state, "against", 2));
+    };
+    // Find a seed whose storm die strikes the East Indian zone and whose invasion needs a defence choice.
+    let state: GameState | undefined;
+    for (let index = 0; index < 400 && !state; index += 1) {
+      const candidate = build(`war-${index}`);
+      if (candidate.pendingDecision.step === "eventsInIndia.defend") state = candidate;
+    }
+    expect(state, "no seed produced a defence decision").toBeDefined();
+    expect(state!.phase).toBe("eventsInIndia");
+    expect(state!.pendingDecision.actor).toBe("player-red");
+    expectSaveRoundTripPreservesPendingDecision(state!);
+
+    let current = state!;
+    while (current.phase === "eventsInIndia") current = choose(current, current.pendingDecision.legalCommands[0].type);
+    while (current.phase === "parliament") current = choose(current, current.pendingDecision.legalCommands[0].type);
+    expect(current.parliament.session).toBeUndefined();
+    expect(passedLawIds(current)).not.toContain("war-against-france");
+    expect(current.phase).toBe("upkeep");
+  });
+
   it("War Against France! passed: the Prime Minister returns ships and officers/regiments", () => {
     let state = parliamentState({ drawPile: ["war-against-france"] });
     state = withEnterprises(state, "player-blue", [{ type: "shipyard", cardId: "shipyard-02" }]);
@@ -598,5 +629,27 @@ describe("Revenue law and card effects (p.27)", () => {
     expect(state.players["player-red"].familyMembers.supply).toBe(supplyBefore + 1);
     expect(state.players["player-red"].familyMembers.pensioners).toBe(0);
     expect(state.phase).toBe("eventsInIndia");
+  });
+});
+
+describe("Offices created by laws (p.25)", () => {
+  it("Envoy to China: the Chairman hires the new Superintendent at once, then the vote resolves", () => {
+    let state = withOffice(parliamentState({ drawPile: ["envoy-to-china"], cash: { "player-red": 5 } }), "chairman", "player-blue");
+    state = { ...state, india: { ...state.india, presidencies: { ...state.india.presidencies, Bengal: { ...state.india.presidencies.Bengal, writers: { "player-yellow": 1 } } } } };
+    state = { ...state, players: { ...state.players, "player-yellow": { ...state.players["player-yellow"], familyMembers: { ...state.players["player-yellow"].familyMembers, supply: state.players["player-yellow"].familyMembers.supply - 1 } } } };
+    state = choose(choose(start(state), "parliament.selectLaw"), "parliament.choosePolicy");
+    state = castCash(state, "for", 5);
+    while (state.pendingDecision.step === "parliament.vote") state = pass(state);
+    if (state.pendingDecision.step === "parliament.continueVoting") state = resolveVote(state);
+
+    expect(passedLawIds(state)).toContain("envoy-to-china");
+    expect(state.pendingDecision).toEqual(expect.objectContaining({ step: "hiring.hireOffice", actor: "player-blue", phase: "parliament" }));
+    expectSaveRoundTripPreservesPendingDecision(state);
+
+    state = choose(state, "hiring.hireOffice");
+    expect(state.company.offices["superintendent-of-trade-in-china"]).toEqual(
+      expect.objectContaining({ holder: "player-yellow", vacant: false, created: true }),
+    );
+    expect(state.phase).toBe("upkeep");
   });
 });

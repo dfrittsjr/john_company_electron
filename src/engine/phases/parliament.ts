@@ -7,6 +7,7 @@ import type { ApplyCommandResult, GameCommand, GameState, LegalCommand, PendingD
 import type { ParliamentSession, PolicyTarget } from "./parliament.state";
 import { createFinalScoringDecision } from "./revenue";
 import { createCommandLogEntry, createSystemDecision, wrongPhase } from "./shared";
+import { registerHiringResume } from "./hiring-resume";
 import { registerStateRefresher } from "./negotiation";
 import { newCollector, nextDecisionId, playerName, primeMinisterOrder, updatePlayer, type Collector } from "./parliament/common";
 import { prestigeCardOwners } from "./parliament/holdings";
@@ -28,7 +29,10 @@ import {
   primeMinister,
   runQueue,
   withSession,
+  PARLIAMENT_HIRE_RESUME,
+  PARLIAMENT_INDIA_RESUME,
 } from "./parliament/resolution";
+import { registerNestedIndiaResume } from "./events-in-india";
 import { availableVoteCards, ownedVoteCards } from "./parliament/votes";
 
 export { isLawPassed } from "./parliament/laws";
@@ -189,6 +193,22 @@ export function refreshParliamentDecision(state: GameState): GameState {
 registerStateRefresher("parliament.vote", refreshParliamentDecision);
 // A player returning taxed items may borrow first (p.8); re-settling the tax lets them pay instead.
 registerStateRefresher("parliament.surrender", refreshParliamentDecision);
+
+// Law effects resolved through Events in India (Relief Demanded, War Against France) that waited
+// for a Commander's defence continue Parliament's resolution afterwards.
+registerNestedIndiaResume(PARLIAMENT_INDIA_RESUME, (state) =>
+  state.parliament.session?.awaitingIndia
+    ? refreshParliamentDecision(withSession({ ...state, phase: "parliament" }, { awaitingIndia: false }))
+    : state,
+);
+
+// An office created by a law is hired at once (p.25); when that hire had to wait for a player,
+// Parliament's resolution continues afterwards.
+registerHiringResume(PARLIAMENT_HIRE_RESUME, (state) =>
+  state.parliament.session?.awaitingHire
+    ? refreshParliamentDecision(withSession(state, { awaitingHire: false }))
+    : state,
+);
 
 function complete(
   before: GameState,

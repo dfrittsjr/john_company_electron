@@ -1,6 +1,6 @@
 import { rollCheck } from "../../checks";
-import { PRESIDENCY_IDS, chairmanHolder, commanderOf, officeHolder, presidentOf } from "../../selectors";
-import type { ArmyId, GameState, LegalCommand, PendingDecision, PlayerId, PresidencyId, RngRollRecord } from "../../types";
+import { PRESIDENCY_IDS, commanderOf, officeHolder, presidentOf } from "../../selectors";
+import type { ArmyId, GameState, LegalCommand, PendingDecision, PlayerId, RngRollRecord } from "../../types";
 import { appendLog } from "../negotiation";
 import {
   facedownBlackmailInstance,
@@ -12,7 +12,6 @@ import { decideOperation } from "./decide";
 import type { OperationInterrupt, PendingCheck } from "../company-operation.state";
 import { buyAlliance, resolveDeployCheck } from "./commander";
 import {
-  CHINA_OFFICE_ID,
   coState,
   decisionId,
   officeLabel,
@@ -21,7 +20,6 @@ import {
   vacateOffice,
   withCo,
 } from "./context";
-import { writerCandidates } from "./director-of-trade";
 import { localAlliances } from "../../../data";
 import { withBoardOfControlOffer, type OperationStep, type StepResult } from "./step";
 import { resolveTradeCheck } from "./trade";
@@ -34,8 +32,6 @@ export type InterruptPayload =
   | { action: "declineConnection" }
   | { action: "approveAlliance" }
   | { action: "refuseAlliance" }
-  | { action: "hireChina"; playerId: PlayerId; presidency: PresidencyId }
-  | { action: "chinaConsent"; accepted: boolean }
   | { action: "boardOfControl"; remove: boolean }
   | { action: "oversightDemote"; army: ArmyId }
   | { action: "oversightDecline" }
@@ -80,28 +76,6 @@ export function interruptDecision(state: GameState, interrupt: OperationInterrup
         command("Refuse", { action: "refuseAlliance" }),
       ]);
     }
-    case "chinaHire": {
-      const chairman = chairmanHolder(state);
-      const candidates = writerCandidates(state).filter((candidate) => !(interrupt.selfRefused && candidate.playerId === chairman));
-      return decision(
-        state,
-        "chinaHire",
-        chairman ?? "system",
-        "Hire the new Superintendent of Trade in China from any writer.",
-        candidates.map((candidate) =>
-          command(`Hire a ${playerName(state, candidate.playerId)} writer from ${candidate.presidency}`, {
-            action: "hireChina",
-            playerId: candidate.playerId,
-            presidency: candidate.presidency,
-          }),
-        ),
-      );
-    }
-    case "chinaHireConsent":
-      return decision(state, "chinaHireConsent", "system", `Nepotism (p.14): do the other families with writers consent to the Chairman hiring their own writer?`, [
-        command("Everyone consents", { action: "chinaConsent", accepted: true }),
-        command("Someone refuses", { action: "chinaConsent", accepted: false }),
-      ]);
     case "boardOfControl": {
       const holder = officeHolder(state, interrupt.officeId);
       return decision(state, "boardOfControl", primeMinister(state) ?? "system", `Board of Control: remove ${playerName(state, holder)} from ${officeLabel(interrupt.officeId)}?`, [
@@ -188,26 +162,6 @@ export const interruptStep: OperationStep = (state, cmd) => {
       return payload.action === "approveAlliance"
         ? { state: buyAlliance(cleared, interrupt.presidency, interrupt.allianceId), summary: `The President approved buying ${name}.` }
         : { state: cleared, summary: `The President refused to pay for ${name}.` };
-    }
-    case "hireChina": {
-      if (interrupt.kind !== "chinaHire") break;
-      const chairman = chairmanHolder(state);
-      const otherCandidates = writerCandidates(state).some((candidate) => candidate.playerId !== chairman);
-      if (payload.playerId === chairman && otherCandidates) {
-        return {
-          state: withCo(state, { interrupt: { kind: "chinaHireConsent", candidate: { playerId: payload.playerId, presidency: payload.presidency } } }),
-          summary: "The Chairman proposed their own writer as Superintendent of Trade in China.",
-        };
-      }
-      return hireChinaWriter(state, payload.playerId, payload.presidency);
-    }
-    case "chinaConsent": {
-      if (interrupt.kind !== "chinaHireConsent") break;
-      if (payload.accepted) return hireChinaWriter(state, interrupt.candidate.playerId, interrupt.candidate.presidency);
-      return {
-        state: withCo(state, { interrupt: { kind: "chinaHire", selfRefused: true } }),
-        summary: "Nepotism consent refused; the Chairman must hire another family's writer.",
-      };
     }
     case "boardOfControl": {
       if (interrupt.kind !== "boardOfControl") break;
@@ -325,32 +279,5 @@ function appointByOversight(state: GameState, armyId: ArmyId, playerId: PlayerId
   return {
     state: withBoardOfControlOffer(withCo(next, { interrupt: undefined }), "military-affairs"),
     summary: `Military Oversight: ${playerName(state, playerId)} is now Commander of the Army of ${armyId}.`,
-  };
-}
-
-function hireChinaWriter(state: GameState, playerId: PlayerId, presidency: PresidencyId): StepResult {
-  const box = state.india.presidencies[presidency];
-  const office = state.company.offices[CHINA_OFFICE_ID];
-  const next: GameState = {
-    ...state,
-    india: {
-      ...state.india,
-      presidencies: {
-        ...state.india.presidencies,
-        [presidency]: { ...box, writers: { ...box.writers, [playerId]: (box.writers[playerId] ?? 0) - 1 } },
-      },
-    },
-    company: {
-      ...state.company,
-      offices: {
-        ...state.company.offices,
-        [CHINA_OFFICE_ID]: { ...office, holder: playerId, familyMemberId: `china-writer-${playerId}-t${state.turn}`, vacant: false, created: true },
-      },
-      vacantOffices: state.company.vacantOffices.filter((officeId) => officeId !== CHINA_OFFICE_ID),
-    },
-  };
-  return {
-    state: withCo(next, { interrupt: undefined }),
-    summary: `${playerName(state, playerId)} became Superintendent of Trade in China.`,
   };
 }

@@ -2,7 +2,8 @@ import type { CommandHandler } from "../command-handler";
 import type { ApplyCommandResult, GameCommand, GameState, PlayerId } from "../types";
 import { applyDefenceChoice, chooseNextRebellion, type DefenceChoice } from "./events-in-india/attacks";
 import { createContext, log, playerName, type ResolutionContext } from "./events-in-india/context";
-import { ENVOY_TO_THE_MUGHALS, advance, beginEventsInIndia, markEnvoyOffered, type EnvoyChoice } from "./events-in-india/resolve";
+import { ENVOY_TO_THE_MUGHALS, NESTED_TILE_PREFIX, advance, beginEventsInIndia, markEnvoyOffered, type EnvoyChoice } from "./events-in-india/resolve";
+import type { TileWorkItem } from "./events-in-india.state";
 import { facedownBlackmailInstance, registerBlackmailResume, startBlackmailPlay } from "./negotiation-blackmail";
 import type { GovernorLossRecord } from "./events-in-india.state";
 import { wrongPhase } from "./shared";
@@ -96,12 +97,61 @@ function describeDefenceChoice(ctx: ResolutionContext, choice: DefenceChoice): s
 function finish(ctx: ResolutionContext): ApplyCommandResult {
   const pendingDecision = advance(ctx);
   const logEntry = ctx.lastEntry ?? log(ctx, "eventsInIndia.continued", "Events in India continues.");
+  const state: GameState = { ...ctx.draft, updatedAt: ctx.now, pendingDecision };
 
-  return {
-    ok: true,
-    logEntry,
-    state: { ...ctx.draft, updatedAt: ctx.now, pendingDecision },
+  if (ctx.nestedResume) {
+    const resume = nestedResumes.get(ctx.nestedResume);
+    if (!resume) throw new Error(`No nested India resume registered for "${ctx.nestedResume}".`);
+    return { ok: true, logEntry, state: resume(state) };
+  }
+  return { ok: true, logEntry, state };
+}
+
+// --- Nested resolutions: India effects started by another phase (law effects) ----------------
+
+const nestedResumes = new Map<string, (state: GameState) => GameState>();
+
+/** How the starting phase continues once a nested resolution that waited for players is done. */
+export function registerNestedIndiaResume(key: string, resume: (state: GameState) => GameState): void {
+  nestedResumes.set(key, resume);
+}
+
+/**
+ * Resolve India effects outside Events in India with this phase's own rules (Turmoil and Cascade,
+ * unrest, Foreign Invasion and attacks against the Company with their defence decisions), e.g. for
+ * Relief Demanded for Indian Famine! and War Against France! (law cards). The phase switches to
+ * Events in India while players decide. If nothing needed a decision, the returned state is back in
+ * the starting phase with its pending decision untouched and no resume is called; otherwise it waits,
+ * and the resume registered under `resumeKey` runs when the effects finish.
+ */
+export function startNestedIndiaResolution(state: GameState, label: string, work: TileWorkItem[], resumeKey: string): GameState {
+  const ctx = createContext(state, {
+    id: `nested-${state.log.length}`,
+    gameId: state.gameId,
+    actorId: "system",
+    decisionId: state.pendingDecision.id,
+    type: "eventsInIndia.nested",
+    payload: {},
+    clientTimestamp: state.updatedAt,
+  });
+  ctx.draft.eventsInIndia.progress = {
+    turn: state.turn,
+    envoyOffered: [...state.seatingOrder],
+    stormFaceId: "nested",
+    eventsRemaining: 0,
+    tile: {
+      tileId: `${NESTED_TILE_PREFIX}${label}`,
+      work: [...work],
+      cascaded: [],
+      rebelledRegionIds: [],
+      foreignInvasionRedirect: false,
+      returnedToStack: false,
+    },
+    nested: { resumeKey, returnPhase: state.phase },
   };
+  ctx.draft.phase = "eventsInIndia";
+  const pendingDecision = advance(ctx);
+  return { ...ctx.draft, updatedAt: ctx.now, pendingDecision };
 }
 
 /** The dispatcher checks the command type; the payload must also be one of the offered choices. */

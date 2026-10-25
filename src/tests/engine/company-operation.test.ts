@@ -31,7 +31,7 @@ import {
   withShips,
   withTreasury,
 } from "../fixtures/company-operation";
-import { expectGameInvariants, expectSaveRoundTripPreservesPendingDecision } from "../fixtures/game";
+import { applyCommandOrThrow, expectGameInvariants, expectSaveRoundTripPreservesPendingDecision } from "../fixtures/game";
 
 const BEFORE_MADRAS = [...OFFICES_BEFORE_PRESIDENCIES, "president-bombay"];
 const BEFORE_CHINA = [...OFFICES_BEFORE_PRESIDENCIES, "president-bombay", "president-madras", "president-bengal"];
@@ -410,10 +410,13 @@ describe("Director of Trade (p.18)", () => {
     // Only orders outside Company-controlled regions may be opened.
     expect(payloads(succeeded)).toContainEqual({ action: "openChina" });
     const opened = choose(succeeded, { action: "openChina" });
-    expect(opened.pendingDecision.step).toBe("companyOperation.chinaHire");
+    // Hired through the shared immediate-hire flow (p.25), with per-player Nepotism consent.
+    expect(opened.pendingDecision.step).toBe("hiring.hireOffice");
     expect(opened.pendingDecision.actor).toBe(RED);
-
-    const hired = choose(opened, { action: "hireChina", playerId: YELLOW, presidency: "Bengal" });
+    const hire = opened.pendingDecision.legalCommands.find(
+      (command) => (command.payload as { candidateId?: string }).candidateId === YELLOW,
+    )!;
+    const hired = applyCommandOrThrow(opened, { id: "hire-china", actorId: RED, type: hire.type, payload: hire.payload });
     expect(hired.company.offices["superintendent-of-trade-in-china"]).toEqual(
       expect.objectContaining({ holder: YELLOW, created: true, vacant: false }),
     );

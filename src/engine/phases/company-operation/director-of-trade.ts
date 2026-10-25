@@ -1,5 +1,6 @@
+import { beginImmediateHire } from "../hiring";
 import { rollCheck } from "../../checks";
-import { PRESIDENCY_IDS, chairmanHolder, officeHolder } from "../../selectors";
+import { PRESIDENCY_IDS, officeHolder } from "../../selectors";
 import type { GameState, LegalCommand, PendingDecision, PlayerId, PresidencyId, ShipState } from "../../types";
 import type { OfficeProgress, ShipDestination } from "../company-operation.state";
 import {
@@ -198,13 +199,12 @@ export const directorStep: OperationStep = (state, command) => {
         state: withCo(state, { current: { ...current, stage: "transfers" } }),
         summary: "The Director of Trade stopped sending envoys.",
       };
-    case "openChina": {
-      const opened = openChinaOffice(state);
+    case "openChina":
+      // The new office "should be hired immediately" by the Chairman from any writer (p.18, p.25).
       return {
-        state: withCo(opened, { current: { ...current, stage: "envoy" }, interrupt: chinaHireInterrupt(opened) }),
+        state: beginImmediateHire(withCo(state, { current: { ...current, stage: "envoy" } }), CHINA_OFFICE_ID, CHINA_HIRE_RESUME),
         summary: "The Special Envoy opened trade with China: the Superintendent of Trade in China office is created.",
       };
-    }
     case "openOrder":
       return {
         state: withCo(openOrder(state, payload.orderId), { current: { ...current, stage: "envoy" } }),
@@ -231,37 +231,7 @@ export const directorStep: OperationStep = (state, command) => {
   }
 };
 
-/** Creating the China office (p.25): the overlay goes beside Bengal and the card leaves the unused stack. */
-export function openChinaOffice(state: GameState): GameState {
-  const office = state.company.offices[CHINA_OFFICE_ID];
-  return {
-    ...state,
-    company: {
-      ...state.company,
-      offices: {
-        ...state.company.offices,
-        [CHINA_OFFICE_ID]: {
-          id: CHINA_OFFICE_ID,
-          treasury: office?.treasury ?? 0,
-          fatigue: 0,
-          vacant: true,
-          created: true,
-          actedThisTurn: false,
-        },
-      },
-      unusedOffices: state.company.unusedOffices.filter((officeId) => officeId !== CHINA_OFFICE_ID),
-      vacantOffices: [...new Set([...state.company.vacantOffices, CHINA_OFFICE_ID])],
-    },
-  };
-}
-
-/**
- * The new office "should be hired immediately" by the Chairman from any writer (p.18, p.25).
- * TODO(FH): replace this local hire with the shared Hiring helper once one exists.
- */
-export function chinaHireInterrupt(state: GameState) {
-  return chairmanHolder(state) && writerCandidates(state).length > 0 ? ({ kind: "chinaHire" } as const) : undefined;
-}
+export const CHINA_HIRE_RESUME = "companyOperation.chinaHire";
 
 export function writerCandidates(state: GameState): Array<{ playerId: PlayerId; presidency: PresidencyId }> {
   return PRESIDENCY_IDS.flatMap((presidency) =>

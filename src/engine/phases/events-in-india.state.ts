@@ -2,7 +2,7 @@ import { indiaEventTiles } from "../../data";
 import type { ElephantShape } from "../../data/india-events";
 import { shuffle } from "../rng";
 import type { SubsystemInitInput, SubsystemInitResult } from "../subsystem";
-import type { ArmyId, OfficeId, PlayerId, RegionId } from "../types";
+import type { ArmyId, OfficeId, PhaseId, PlayerId, RegionId } from "../types";
 
 /** An attack against the Company (rulebook p.32). */
 export type CompanyAttack = {
@@ -44,7 +44,11 @@ export type TileWorkItem =
   | { kind: "leaderRedirect" }
   | { kind: "foreignInvasionTarget"; regionId: RegionId }
   | { kind: "foreignInvasionRedirect" }
-  | { kind: "shuffleIntoStack" };
+  | { kind: "shuffleIntoStack" }
+  // Work started from outside the phase (law effects resolved through Events in India's rules):
+  | { kind: "turmoilAt"; regionId: RegionId }
+  | { kind: "unrestInCompanyRegions" }
+  | { kind: "foreignInvasionStorm" };
 
 export type ActiveTile = {
   tileId: string;
@@ -73,6 +77,8 @@ export type EventsInIndiaProgress = {
   eventsRemaining: number;
   tile?: ActiveTile;
   attacks?: AttackSequence;
+  /** Set when another phase (a law) runs India effects through this phase's rules; see startNestedIndiaResolution. */
+  nested?: { resumeKey: string; returnPhase: PhaseId };
 };
 
 export type GovernorLossRecord = {

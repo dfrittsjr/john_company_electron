@@ -1,3 +1,4 @@
+import type { TileWorkItem } from "./events-in-india.state";
 import { lawDeckForScenario, policyDial, powerTrack, startingPassedLaws } from "../../data";
 import { shuffle } from "../rng";
 import type { SubsystemInitInput, SubsystemInitResult } from "../subsystem";
@@ -23,6 +24,8 @@ export type ParliamentResolutionStep =
   | { kind: "warPieces"; remaining: number }
   | { kind: "changePrimeMinister" }
   | { kind: "movePolicyAfterFailure"; taxCollectorsMayAdd: boolean }
+  | { kind: "hireImmediately"; officeId: string }
+  | { kind: "indiaEffects"; label: string; work: TileWorkItem[] }
   | { kind: "finish" };
 
 export type ParliamentStage =
@@ -75,6 +78,10 @@ export type ParliamentSession = {
   usedCards: string[];
   outcome?: "passed" | "failed";
   queue: ParliamentResolutionStep[];
+  /** An office a law created is being hired at once; resume the queue when it is filled (p.25). */
+  awaitingHire?: boolean;
+  /** A law's India effects are being resolved through Events in India; resume the queue after. */
+  awaitingIndia?: boolean;
 };
 
 export type RevenueStage = "companyFraud" | "royalProtection" | "dividends" | "scandal";
@@ -107,7 +114,6 @@ export type ParliamentState = {
    * Foreign Invasions from War Against France! that hit Company-controlled regions. They are attacks
    * against the Company and need the Events in India defence flow. TODO(EV): resolve these.
    */
-  pendingCompanyAttacks: Array<{ regionId: string; strength: number }>;
 };
 
 export function lawInstance(lawId: string): LawInstance {
@@ -143,7 +149,6 @@ export function createInitialParliamentState(
       votesByPlayer: {},
       passedLaws: startingPassedLaws(input.scenario.id).map(lawInstance),
       deregulated: input.scenario.startsDeregulated,
-      pendingCompanyAttacks: [],
     },
     rng: deck.rng,
   };

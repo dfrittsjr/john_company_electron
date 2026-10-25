@@ -912,76 +912,7 @@ export function skipHiringVacancy(state: GameState, command: GameCommand): Apply
 // Governor General (p.26)
 // ---------------------------------------------------------------------------------------------
 
-/**
- * The office changes when the Governor General law passes (p.26): every Governor becomes a
- * pensioner and their cards leave play; the Director of Trade's holder becomes Governor General,
- * keeping fatigue and the treasury; if the Director of Trade was vacant, the Governor General is
- * hired by the Chairman in the next Hiring phase. Partly built Company ships are removed.
- * TODO(PA): call this from the Governor General law's pass effect.
- */
-export function installGovernorGeneral(state: GameState): GameState {
-  let players = state.players;
-  const companyOffices = { ...state.company.offices };
-  const removedOffices = new Set<OfficeId>();
-
-  for (const definition of offices.filter((office) => office.category === "governor")) {
-    const office = companyOffices[definition.id];
-    if (office?.holder && !office.vacant) {
-      const holder = players[office.holder];
-      players = {
-        ...players,
-        [holder.id]: { ...holder, familyMembers: { ...holder.familyMembers, pensioners: holder.familyMembers.pensioners + 1 } },
-      };
-    }
-    companyOffices[definition.id] = { id: definition.id, treasury: 0, fatigue: 0, vacant: true, created: false, actedThisTurn: false };
-    removedOffices.add(definition.id);
-  }
-
-  const directorOfTrade = companyOffices["director-of-trade"];
-  const heldByDirector = directorOfTrade && !directorOfTrade.vacant && directorOfTrade.holder;
-  companyOffices["governor-general"] = {
-    id: "governor-general",
-    holder: heldByDirector ? directorOfTrade.holder : undefined,
-    familyMemberId: heldByDirector ? directorOfTrade.familyMemberId : undefined,
-    treasury: directorOfTrade?.treasury ?? 0,
-    fatigue: heldByDirector ? directorOfTrade.fatigue : 0,
-    vacant: !heldByDirector,
-    created: true,
-    actedThisTurn: directorOfTrade?.actedThisTurn ?? false,
-  };
-  companyOffices["director-of-trade"] = {
-    id: "director-of-trade",
-    treasury: 0,
-    fatigue: 0,
-    vacant: true,
-    created: false,
-    actedThisTurn: false,
-  };
-  removedOffices.add("director-of-trade");
-
-  const vacantOffices = state.company.vacantOffices.filter((officeId) => !removedOffices.has(officeId));
-  if (!heldByDirector) vacantOffices.push("governor-general");
-
-  return {
-    ...state,
-    players,
-    company: {
-      ...state.company,
-      offices: companyOffices,
-      vacantOffices: [...new Set(vacantOffices)],
-      unusedOffices: state.company.unusedOffices.filter(
-        (officeId) => officeId !== "governor-general" && !removedOffices.has(officeId),
-      ),
-      governorGeneralInPlay: true,
-    },
-    india: {
-      ...state.india,
-      regions: Object.fromEntries(
-        Object.entries(state.india.regions).map(([regionId, region]) => [regionId, { ...region, partialCompanyShip: false }]),
-      ),
-    },
-  };
-}
+export { installGovernorGeneral } from "../offices";
 
 // ---------------------------------------------------------------------------------------------
 // Candidate pools (card backs and pp.16-17)
