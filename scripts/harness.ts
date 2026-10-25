@@ -14,7 +14,8 @@
 //       prefers productive moves (trade with full dice, little debt, no envoys) so games last longer.
 //       --fund N is a test aid, not a rule: it adds £N to the Company Balance at the start of each
 //       Revenue phase so the Company survives long enough to exercise the later turns.
-//       --until <step prefix> stops when a decision whose step starts with it comes up.
+//       --until <step prefix>[@turn] stops when a decision whose step starts with it comes up
+//       (on that turn, if given).
 
 import { readFileSync, writeFileSync } from "node:fs";
 import {
@@ -348,8 +349,10 @@ function main(): void {
       let rng = createRngState(flags.seed ?? "harness-random");
       let current = state;
       for (let step = 0; step < steps; step += 1) {
-        // --until <step prefix>: stop when that decision comes up (e.g. firms.chooseStrategy).
-        if (flags.until && current.pendingDecision.step.startsWith(flags.until)) {
+        // --until <step prefix>[@turn]: stop when that decision comes up (on that turn, if given),
+        // e.g. firms.strategy or londonSeason.confirm@5.
+        const [untilStep, untilTurn] = (flags.until ?? "").split("@");
+        if (untilStep && current.pendingDecision.step.startsWith(untilStep) && (!untilTurn || current.turn === Number(untilTurn))) {
           console.log(`Stopped after ${step} moves at ${current.pendingDecision.step} (--until).`);
           break;
         }
