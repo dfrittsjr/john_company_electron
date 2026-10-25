@@ -15,6 +15,7 @@ import {
   closeAllOrdersOrCascade,
   closeNorthernmostOrCascade,
   describeElephant,
+  highestOpenOrderValue,
   elephantPosition,
   empireStrength,
   findOrder,
@@ -96,11 +97,6 @@ function nextEnvoyHolder(state: GameState): PlayerId | undefined {
   );
 }
 
-function highestOpenOrder(state: GameState, regionId: RegionId | undefined): number {
-  if (!regionId) return 0;
-  return Math.max(0, ...region(state, regionId).orders.filter((order) => !order.closed).map((order) => order.value));
-}
-
 function envoyDecision(state: GameState, playerId: PlayerId): PendingDecision {
   return {
     id: `decision-events-envoy-${state.turn}-${playerId}-${state.log.length}`,
@@ -114,7 +110,7 @@ function envoyDecision(state: GameState, playerId: PlayerId): PendingDecision {
       { type: "eventsInIndia.envoyToTheMughals", label: "Don't play Envoy to the Mughals", payload: { play: false } },
       ...legalElephantPositions(state).map((position) => ({
         type: "eventsInIndia.envoyToTheMughals",
-        label: `Play: Elephant ${describeElephant(state, position)} (take £${highestOpenOrder(state, position.regionId)})`,
+        label: `Play: Elephant ${describeElephant(state, position)} (take £${highestOpenOrderValue(state, position.regionId)})`,
         payload: { play: true, regionId: position.regionId, facing: position.facing ?? null },
       })),
     ],
@@ -124,38 +120,9 @@ function envoyDecision(state: GameState, playerId: PlayerId): PendingDecision {
 
 export type EnvoyChoice = { play: false } | { play: true; regionId: RegionId; facing: RegionId | null };
 
-/**
- * Envoy to the Mughals: "Move the Elephant to any legal position and then take £ equal to the
- * highest open order in the region with the Elephant's tail." Exported so the anytime framework
- * can offer it earlier in the turn.
- * TODO(NG): offer this card anytime earlier in the turn, and let Man on the Inside cancel it.
- */
-export function playEnvoyToTheMughals(ctx: ResolutionContext, playerId: PlayerId, position: ElephantState): void {
-  const player = ctx.draft.players[playerId];
-  const card = player.blackmailCards.find((candidate) => candidate.cardId === ENVOY_TO_THE_MUGHALS && candidate.facedown !== false);
-  if (!card) throw new Error(`${player.name} has no unplayed Envoy to the Mughals.`);
-
-  // Played blackmail cards stay faceup in the player's area (p.12).
-  card.facedown = false;
-  for (const hiddenCard of ctx.draft.hidden.privateCards[playerId] ?? []) {
-    if (hiddenCard.id === card.id) hiddenCard.facedown = false;
-  }
-
-  ctx.draft.india.elephant = { regionId: position.regionId, facing: position.facing };
-  const payout = highestOpenOrder(ctx.draft, position.regionId);
-  player.cash += payout;
-  log(
-    ctx,
-    "eventsInIndia.envoyToTheMughals",
-    `${player.name} plays Envoy to the Mughals: the Elephant moves ${describeElephant(ctx.draft, ctx.draft.india.elephant)} and they take £${payout}.`,
-    { playerId, elephant: ctx.draft.india.elephant, payout },
-  );
-}
-
-export function resolveEnvoyChoice(ctx: ResolutionContext, playerId: PlayerId, choice: EnvoyChoice): void {
+/** Mark this player as having been offered Envoy to the Mughals this phase. */
+export function markEnvoyOffered(ctx: ResolutionContext, playerId: PlayerId): void {
   progress(ctx).envoyOffered.push(playerId);
-  if (!choice.play) return;
-  playEnvoyToTheMughals(ctx, playerId, { regionId: choice.regionId, facing: choice.facing ?? undefined });
 }
 
 // --- Storm die (p.28) -----------------------------------------------------------------------

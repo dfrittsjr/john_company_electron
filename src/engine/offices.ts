@@ -1,6 +1,12 @@
-import { offices } from "../../../data";
-import type { GameState, OfficeId, PlayerId } from "../../types";
-import { updatePlayer } from "./common";
+import { offices } from "../data";
+import type { GameState, OfficeId, PlayerId } from "./types";
+
+// Office cards moving between the Vacant Offices box, the unused stack, and officeholders. Every
+// phase that removes or creates an office goes through these helpers.
+
+function updatePlayer(state: GameState, playerId: PlayerId, update: (player: GameState["players"][string]) => GameState["players"][string]): GameState {
+  return { ...state, players: { ...state.players, [playerId]: update(state.players[playerId]) } };
+}
 
 /**
  * Removes an officeholder: their piece goes to their supply ("without retirement") or to the
@@ -47,6 +53,14 @@ export function vacateOffice(
       },
     },
   };
+}
+
+/**
+ * "Vacate their office without retirement" (Scandal cards, p.12) and catastrophic failure (p.17):
+ * the officeholder returns to its family's supply rather than the Pensioners box.
+ */
+export function vacateOfficeWithoutRetirement(state: GameState, officeId: OfficeId): GameState {
+  return vacateOffice(state, officeId, "supply").state;
 }
 
 export function officeLabel(officeId: OfficeId): string {

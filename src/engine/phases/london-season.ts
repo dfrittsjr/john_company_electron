@@ -16,6 +16,14 @@ import type {
   RngRollRecord,
 } from "../types";
 import { startFamilyPhase } from "./family";
+import { okResult } from "./negotiation";
+import {
+  blackmailOptionsForCard,
+  facedownBlackmailInstance,
+  registerBlackmailResume,
+  registerInFlowBlackmail,
+  startBlackmailPlay,
+} from "./negotiation-blackmail";
 import { finishFinalScoringAfterRetirements } from "./final-scoring";
 import {
   advanceRetirements,
@@ -23,8 +31,8 @@ import {
   beginRetirements,
   findLegalCommand,
   illegal,
+  LETTERS_OF_INTRODUCTION,
   prestigeCardName,
-  recordFormerChairman,
   resolveOfficeAttrition,
   returnPensionersToSupply,
 } from "./retirements";
@@ -129,7 +137,7 @@ export function confirmLondonSeason(state: GameState, command: GameCommand): App
       now,
       "londonSeason.skipped",
       {
-        state: startFamilyPhase(recordFormerChairman(state)),
+        state: startFamilyPhase(state),
         summary: `London Season skipped on the scenario's first turn (turn ${state.turn}).`,
         details: { note: "Rules skip London Season on the game's first turn (p.11)." },
       },
@@ -137,7 +145,7 @@ export function confirmLondonSeason(state: GameState, command: GameCommand): App
   }
 
   // The display was built during setup (setup.confirmStart); states that skipped setup have none.
-  let next = recordFormerChairman(state);
+  let next = state;
   const attrition = resolveOfficeAttrition(next, "londonSeason.attrition");
   next = beginRetirements(attrition.state, "londonSeason");
   const advanced = continueLondonSeason(next);
@@ -495,26 +503,13 @@ function resolveRestriction(state: GameState, command: GameCommand): ApplyComman
 
 // --- Scandal blackmail played when taken ---
 
-/** Offices each Scandal may vacate: Leadenhall Street hits Company offices, India hits Presidents, Governors, and the Governor General. */
-function scandalTargets(state: GameState, cardId: string): OfficeId[] {
-  const india = cardId === "scandal-in-india";
-  return Object.values(state.company.offices)
-    .filter((office) => !office.vacant && office.holder)
-    .map((office) => office.id)
-    .filter((officeId) => {
-      const category = officeDefinition(officeId)?.category;
-      const isIndiaOffice = category === "presidency" || category === "governor" || category === "governorGeneral";
-      return india ? isIndiaOffice : !isIndiaOffice;
-    });
-}
-
 function scandalDecision(state: GameState): PendingDecision {
   const scandal = state.londonSeason.scandal!;
   const name = blackmailById.get(scandal.cardId)?.name ?? scandal.cardId;
-  const legalCommands: LegalCommand[] = scandalTargets(state, scandal.cardId).map((officeId) => ({
+  const legalCommands: LegalCommand[] = blackmailOptionsForCard(state, scandal.playerId, scandal.cardId).map((option) => ({
     type: "londonSeason.resolveScandal",
-    label: `Play ${name}: ${officeDefinition(officeId)?.label ?? officeId} (${state.players[state.company.offices[officeId].holder as PlayerId]?.name}) vacates without retirement`,
-    payload: { action: "play", officeId },
+    label: `Play ${name}: ${option.label}`,
+    payload: { action: "play", params: option.params },
   }));
   legalCommands.push({
     type: "londonSeason.resolveScandal",
@@ -541,46 +536,34 @@ function resolveScandal(state: GameState, command: GameCommand): ApplyCommandRes
   }
   if (!findLegalCommand(state, command)) return illegal("That choice is not one of the listed choices.");
 
-  const payload = command.payload as { action: "play" | "keep"; officeId?: OfficeId };
-  let next: GameState = { ...state, londonSeason: { ...state.londonSeason, scandal: undefined } };
-  let summary = `${state.players[scandal.playerId].name} kept a blackmail card.`;
+  const payload = command.payload as { action: "play" | "keep"; params?: Record<string, unknown> };
+  const next: GameState = { ...state, londonSeason: { ...state.londonSeason, scandal: undefined } };
 
   if (payload.action === "play") {
-    // TODO(NG): route through the shared blackmail-play path so Man on the Inside can cancel it.
-    next = vacateOfficeWithoutRetirement(next, payload.officeId as OfficeId);
-    const player = next.players[scandal.playerId];
-    next = updatePlayer(next, scandal.playerId, {
-      blackmailCards: player.blackmailCards.map((card) => (card.id === scandal.cardInstanceId ? { ...card, facedown: false } : card)),
-    });
-    summary = `${player.name} played ${blackmailById.get(scandal.cardId)?.name}: ${officeDefinition(payload.officeId as OfficeId)?.label} vacated.`;
+    // Played through the shared blackmail path, so Man on the Inside may cancel it (p.12).
+    return okResult(
+      startBlackmailPlay(
+        { ...next, updatedAt: command.clientTimestamp },
+        {
+          playerId: scandal.playerId,
+          cardInstanceId: scandal.cardInstanceId,
+          params: payload.params ?? {},
+          resumeKey: SCANDAL_RESUME,
+          timestamp: command.clientTimestamp,
+        },
+      ),
+    );
   }
 
   return finishCommand(state, command, command.clientTimestamp, "londonSeason.scandalResolved", {
     state: continueLondonSeason(next),
-    summary,
+    summary: `${state.players[scandal.playerId].name} kept a blackmail card.`,
     details: { playerId: scandal.playerId, ...payload },
   });
 }
 
-/**
- * "Vacate their office without retirement": the family member returns to supply instead of the
- * Pensioners box; the office goes to Vacant Offices and its fatigue returns to supply.
- * Assumption: a vacated Chairman's piece (also a Company share) returns to supply as well.
- */
-function vacateOfficeWithoutRetirement(state: GameState, officeId: OfficeId): GameState {
-  const office = state.company.offices[officeId];
-  const holder = office.holder as PlayerId;
-  const player = state.players[holder];
-
-  return {
-    ...updatePlayer(state, holder, { familyMembers: { ...player.familyMembers, supply: player.familyMembers.supply + 1 } }),
-    company: {
-      ...state.company,
-      offices: { ...state.company.offices, [officeId]: { ...office, holder: undefined, vacant: true, fatigue: 0 } },
-      vacantOffices: [...new Set([...state.company.vacantOffices, officeId])],
-    },
-  };
-}
+const SCANDAL_RESUME = "londonSeason.scandal";
+registerBlackmailResume(SCANDAL_RESUME, (state) => continueLondonSeason(state));
 
 // --- End of season ---
 
@@ -607,24 +590,57 @@ function finishLondonSeason(state: GameState): GameState {
 
 // --- Retirement commands (London Season and Final Scoring) ---
 
+/** After any retirement choice: the next retirement decision, or the end of the step. */
+function continueRetirements(state: GameState): GameState {
+  if (state.londonSeason.retirement?.context === "finalScoring") {
+    const advanced = advanceRetirements(state);
+    return advanced.decision
+      ? { ...advanced.state, pendingDecision: advanced.decision }
+      : finishFinalScoringAfterRetirements(advanced.state);
+  }
+  return continueLondonSeason(state);
+}
+
+const LETTERS_RESUME = "retirement.lettersOfIntroduction";
+registerInFlowBlackmail("blackmail.borrow-all-spouse-discounts", "while retiring a pensioner");
+
+// Letters of Introduction lets its player use every other player's spouse discounts this step;
+// cancelled by Man on the Inside, it does nothing (p.12).
+registerBlackmailResume(LETTERS_RESUME, (state, play, outcome) => {
+  const progress = state.londonSeason.retirement;
+  const next =
+    outcome === "resolved" && progress
+      ? {
+          ...state,
+          londonSeason: {
+            ...state.londonSeason,
+            retirement: { ...progress, lettersOfIntroduction: [...progress.lettersOfIntroduction, play.playerId] },
+          },
+        }
+      : state;
+  return continueRetirements(next);
+});
+
 function retirementCommand(state: GameState, command: GameCommand): ApplyCommandResult {
   if (state.pendingDecision.step !== "retirement.retirePensioner") {
     return wrongPhase("No retirement decision is pending.");
   }
 
+  if (command.type === "retirement.playLettersOfIntroduction") {
+    const playerId = state.pendingDecision.actor as PlayerId;
+    const cardInstanceId = facedownBlackmailInstance(state, playerId, LETTERS_OF_INTRODUCTION);
+    if (!cardInstanceId) return illegal("You hold no face-down Letters of Introduction.");
+    return okResult(
+      startBlackmailPlay(
+        { ...state, updatedAt: command.clientTimestamp },
+        { playerId, cardInstanceId, params: {}, resumeKey: LETTERS_RESUME, timestamp: command.clientTimestamp },
+      ),
+    );
+  }
+
   const applied = applyRetirementCommand(state, command);
   if (!applied.ok) return applied;
-
-  const context = state.londonSeason.retirement?.context;
-  let next = applied.state;
-  if (context === "finalScoring") {
-    const advanced = advanceRetirements(next);
-    next = advanced.decision
-      ? { ...advanced.state, pendingDecision: advanced.decision }
-      : finishFinalScoringAfterRetirements(advanced.state);
-  } else {
-    next = continueLondonSeason(next);
-  }
+  const next = continueRetirements(applied.state);
 
   return finishCommand(state, command, command.clientTimestamp, "retirement.resolved", {
     state: next,

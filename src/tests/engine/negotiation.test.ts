@@ -448,7 +448,7 @@ describe("blackmail plays (p.12)", () => {
   test("cards played inside another step are not offered as anytime plays", () => {
     const state = withBlackmail(negotiationGame("companyOperation"), RED, "mercantile-connection", { instanceId: "merc" });
     expect(blackmailPlayChoices(state, RED)[0].unavailableReason).toBe(
-      "Mercantile Connection is played during another step of the game.",
+      "This card is played after a Trade check.",
     );
   });
 

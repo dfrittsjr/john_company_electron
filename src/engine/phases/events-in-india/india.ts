@@ -316,6 +316,12 @@ export function legalElephantPositions(state: GameState): ElephantState[] {
   return [...positions.values()];
 }
 
+/** The highest open order in a region (Envoy to the Mughals pays this). */
+export function highestOpenOrderValue(state: GameState, regionId: RegionId | undefined): number {
+  if (!regionId) return 0;
+  return Math.max(0, ...state.india.regions[regionId].orders.filter((order) => !order.closed).map((order) => order.value));
+}
+
 export function describeElephant(state: GameState, elephant: ElephantState): string {
   if (!elephant.regionId) return "off the map";
   const name = state.india.regions[elephant.regionId]?.name ?? elephant.regionId;

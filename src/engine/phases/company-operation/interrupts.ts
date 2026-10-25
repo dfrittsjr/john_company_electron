@@ -1,13 +1,20 @@
 import { rollCheck } from "../../checks";
 import { PRESIDENCY_IDS, chairmanHolder, commanderOf, officeHolder, presidentOf } from "../../selectors";
-import type { ArmyId, GameState, LegalCommand, PendingDecision, PlayerId, PresidencyId } from "../../types";
+import type { ArmyId, GameState, LegalCommand, PendingDecision, PlayerId, PresidencyId, RngRollRecord } from "../../types";
+import { appendLog } from "../negotiation";
+import {
+  facedownBlackmailInstance,
+  registerBlackmailResume,
+  registerInFlowBlackmail,
+  startBlackmailPlay,
+} from "../negotiation-blackmail";
+import { decideOperation } from "./decide";
 import type { OperationInterrupt, PendingCheck } from "../company-operation.state";
 import { buyAlliance, resolveDeployCheck } from "./commander";
 import {
   CHINA_OFFICE_ID,
   coState,
   decisionId,
-  markBlackmailPlayed,
   officeLabel,
   playerName,
   primeMinister,
@@ -146,26 +153,32 @@ export const interruptStep: OperationStep = (state, cmd) => {
     case "declineConnection":
     case "playConnection": {
       if (interrupt.kind !== "connection") break;
-      let next = withCo(state, { interrupt: undefined });
-      let check = interrupt.check;
-      const rolls = [];
-      let summary = `${playerName(state, interrupt.holder)} did not play the card.`;
+      const cardName = interrupt.cardId === "mercantile-connection" ? "Mercantile Connection" : "Diplomatic Connection";
       if (payload.action === "playConnection") {
-        // TODO(NG): Man on the Inside may cancel this blackmail when played.
-        next = markBlackmailPlayed(next, interrupt.holder, interrupt.cardId);
-        const dice = Math.floor(check.dice / 2);
-        const reroll = rollCheck(next.rng, dice, `companyOperation.${interrupt.cardId}`);
-        next = { ...next, rng: reroll.rng };
-        if (reroll.roll) rolls.push(reroll.roll);
-        check = { ...check, dice, values: reroll.values, outcome: reroll.outcome } as PendingCheck;
-        summary = `${playerName(state, interrupt.holder)} played ${interrupt.cardId === "mercantile-connection" ? "Mercantile Connection" : "Diplomatic Connection"}: reroll with ${dice} ${dice === 1 ? "die" : "dice"} [${reroll.values.join(", ")}], ${reroll.outcome}.`;
+        const cardInstanceId = facedownBlackmailInstance(state, interrupt.holder, interrupt.cardId);
+        if (cardInstanceId) {
+          // Played through the shared blackmail path so Man on the Inside may cancel it (p.12);
+          // the reroll happens in the resume below.
+          const playing = withCo(state, {
+            interrupt: undefined,
+            pendingConnection: { cardId: interrupt.cardId, holder: interrupt.holder, check: interrupt.check },
+          });
+          return {
+            state: startBlackmailPlay(playing, {
+              playerId: interrupt.holder,
+              cardInstanceId,
+              params: {},
+              resumeKey: CONNECTION_RESUME,
+              timestamp: cmd.clientTimestamp,
+            }),
+            summary: `${playerName(state, interrupt.holder)} played ${cardName}.`,
+          };
+        }
       }
-      if (check.context === "trade") {
-        const resolved = resolveTradeCheck(next, check);
-        return { state: resolved.state, summary: `${summary} ${resolved.note}`, rngRolls: rolls };
-      }
-      const resolved = resolveDeployCheck(next, check);
-      return { state: resolved.state, summary: `${summary} ${resolved.summary}`, details: resolved.details, rngRolls: [...rolls, ...resolved.rolls] };
+      const next = withCo(state, { interrupt: undefined });
+      const summary = `${playerName(state, interrupt.holder)} did not play ${cardName}.`;
+      const resolved = resolveCheck(next, interrupt.check);
+      return { state: resolved.state, summary: `${summary} ${resolved.summary}`, details: resolved.details, rngRolls: resolved.rolls };
     }
     case "approveAlliance":
     case "refuseAlliance": {
@@ -252,6 +265,51 @@ export const interruptStep: OperationStep = (state, cmd) => {
   }
   throw new Error(`Interrupt command ${payload.action} does not match the pending interrupt.`);
 };
+
+function resolveCheck(state: GameState, check: PendingCheck): { state: GameState; summary: string; details?: unknown; rolls: RngRollRecord[] } {
+  if (check.context === "trade") {
+    const resolved = resolveTradeCheck(state, check);
+    return { state: resolved.state, summary: resolved.note, rolls: [] };
+  }
+  const resolved = resolveDeployCheck(state, check);
+  return { state: resolved.state, summary: resolved.summary, details: resolved.details, rolls: resolved.rolls };
+}
+
+const CONNECTION_RESUME = "companyOperation.connection";
+
+registerInFlowBlackmail("blackmail.force-half-dice-reroll.trade", "after a Trade check");
+registerInFlowBlackmail("blackmail.force-half-dice-reroll.deploy", "after a Deploy check");
+
+// Mercantile and Diplomatic Connection: "force a reroll with half the dice, rounded down"; zero
+// dice is a failure. If Man on the Inside cancelled the card, the original roll stands.
+registerBlackmailResume(CONNECTION_RESUME, (state, _play, outcome) => {
+  const pending = coState(state).pendingConnection;
+  let next = withCo(state, { pendingConnection: undefined });
+  if (!pending) return { ...next, pendingDecision: decideOperation(next) };
+
+  let check = pending.check;
+  const rolls: RngRollRecord[] = [];
+  let summary = "The original roll stands.";
+  if (outcome === "resolved") {
+    const dice = Math.floor(check.dice / 2);
+    const reroll = rollCheck(next.rng, dice, `companyOperation.${pending.cardId}`);
+    next = { ...next, rng: reroll.rng };
+    if (reroll.roll) rolls.push(reroll.roll);
+    check = { ...check, dice, values: reroll.values, outcome: reroll.outcome } as PendingCheck;
+    summary = `Reroll with ${dice} ${dice === 1 ? "die" : "dice"} [${reroll.values.join(", ")}]: ${reroll.outcome}.`;
+  }
+  const resolved = resolveCheck(next, check);
+  const logged = appendLog(resolved.state, {
+    actor: pending.holder,
+    type: "companyOperation.connection",
+    summary: `${summary} ${resolved.summary}`,
+    details: resolved.details,
+    rngRolls: [...rolls, ...resolved.rolls],
+    timestamp: state.updatedAt,
+  });
+  const decision = decideOperation(logged);
+  return { ...logged, phase: decision.phase, pendingDecision: decision };
+});
 
 function appointByOversight(state: GameState, armyId: ArmyId, playerId: PlayerId): StepResult {
   const army = state.company.armies[armyId];

@@ -48,6 +48,8 @@ export type HiringState = {
   hiringPreferenceOffered: OfficeId[];
   /** Hiring Preference played for this office: the hirer must choose this player. */
   hiringPreference?: { officeId: OfficeId; playerId: PlayerId };
+  /** Hiring Preference was played for this office and waits for Man on the Inside to answer. */
+  pendingPreferenceOffice?: OfficeId;
   election?: ChairmanElectionState;
   nepotism?: NepotismConsentState;
   /** An office created outside the Hiring phase and hired at once (p.18, p.25). */

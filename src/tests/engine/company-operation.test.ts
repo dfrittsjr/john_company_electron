@@ -159,7 +159,7 @@ describe("Trade (pp.20-21)", () => {
     expectSaveRoundTripPreservesPendingDecision(state);
 
     const played = choose(state, { action: "playConnection" });
-    expect(played.log.at(-1)?.summary).toContain("reroll with 2 dice");
+    expect(played.log.some((entry) => entry.summary.includes("Reroll with 2 dice"))).toBe(true);
     expect(played.players[BLUE].blackmailCards[0].facedown).toBe(false);
     expect(played.companyOperation.interrupt).toBeUndefined();
   });

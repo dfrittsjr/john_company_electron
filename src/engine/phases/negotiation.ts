@@ -40,6 +40,7 @@ type LogInput = {
   details?: unknown;
   timestamp: string;
   commandId?: string;
+  rngRolls?: GameLogEntry["rngRolls"];
 };
 
 export function appendLog(state: GameState, input: LogInput): GameState {
@@ -54,6 +55,7 @@ export function appendLog(state: GameState, input: LogInput): GameState {
     summary: input.summary,
     details: input.details,
     commandId: input.commandId,
+    rngRolls: input.rngRolls && input.rngRolls.length > 0 ? input.rngRolls : undefined,
   };
 
   return { ...state, updatedAt: input.timestamp, log: [...state.log, entry] };

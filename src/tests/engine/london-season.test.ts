@@ -89,7 +89,7 @@ describe("London Season (pp.11-12)", () => {
     state = withCash(state, { [RED]: 0, [BLUE]: 8, [YELLOW]: 4 });
     state = withDisplay(state, ["company-fraud", "lord-highgate", "foundry"], ["stock-broker", "rotten-borough-1", "shipbuilders", "tax-collectors"]);
     // The Chairman office is vacant, so the former Chairman (Yellow) leads retirements (p.11).
-    state = { ...state, rng: createRngState(seed), londonSeason: { ...state.londonSeason, formerChairman: YELLOW } };
+    state = { ...state, rng: createRngState(seed), company: { ...state.company, chairmanMarker: YELLOW } };
 
     state = confirm(state);
 

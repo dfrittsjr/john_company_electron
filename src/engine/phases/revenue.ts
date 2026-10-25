@@ -21,7 +21,14 @@ import type {
 import type { RevenueProgress } from "./parliament.state";
 import { newCollector, nextDecisionId, playerName, primeMinisterOrder, updatePlayer, type Collector } from "./parliament/common";
 import { discardPassedLaw, isLawPassed } from "./parliament/laws";
-import { officeCategory, officeLabel, vacateOffice } from "./parliament/offices";
+import { appendLog } from "./negotiation";
+import {
+  blackmailCardName,
+  blackmailOptionsForCard,
+  registerBlackmailResume,
+  registerInFlowBlackmail,
+  startBlackmailPlay,
+} from "./negotiation-blackmail";
 import { createCommandLogEntry, createSystemDecision, wrongPhase } from "./shared";
 
 const EMERGENCY_LOAN = 5;
@@ -68,15 +75,6 @@ function unplayedBlackmail(state: GameState, playerId: PlayerId, cardId: string)
 /** Company Fraud needs at least one officeholder to roll for. */
 function companyFraudCard(state: GameState, playerId: PlayerId): CardInstance | undefined {
   return playerOffices(state, playerId).length > 0 ? unplayedBlackmail(state, playerId, "company-fraud") : undefined;
-}
-
-/** Blackmail is placed faceup once played and cannot be transferred (p.12). */
-function markBlackmailPlayed(state: GameState, playerId: PlayerId, instanceId: string): GameState {
-  // TODO(NG): offer Man on the Inside holders the chance to cancel this card when it is played.
-  return updatePlayer(state, playerId, (player) => ({
-    ...player,
-    blackmailCards: player.blackmailCards.map((card) => (card.id === instanceId ? { ...card, facedown: false } : card)),
-  }));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -299,20 +297,17 @@ const companyFraud: CommandHandler = (state, command) => {
   }
 
   const collector = newCollector();
-  let next = patchRevenue(state, { fraudCandidates: state.parliament.revenue!.fraudCandidates.slice(1) });
+  const next = patchRevenue(state, { fraudCandidates: state.parliament.revenue!.fraudCandidates.slice(1) });
   if (payload.play) {
-    const dice = rollDice(next.rng, playerOffices(next, playerId).length, 6, "revenue.companyFraud");
-    collector.rolls.push(dice.roll);
-    const amount = 2 * Math.max(...dice.values);
-    next = markBlackmailPlayed({ ...next, rng: dice.rng }, playerId, card.id);
-    next = updatePlayer(next, playerId, (player) => ({ ...player, cash: player.cash + amount }));
-    next = { ...next, company: { ...next.company, balance: Math.max(0, next.company.balance - amount) } };
-    collector.notes.push(
-      `${playerName(state, playerId)} played Company Fraud, rolled ${dice.values.join(", ")} and took £${amount}; the Company Balance is now £${next.company.balance}.`,
+    // Played through the shared blackmail path so Man on the Inside may cancel it (p.12); the
+    // effect is applied in the resume below.
+    const played = startBlackmailPlay(
+      { ...next, updatedAt: command.clientTimestamp },
+      { playerId, cardInstanceId: card.id, params: {}, resumeKey: COMPANY_FRAUD_RESUME, timestamp: command.clientTimestamp },
     );
-  } else {
-    collector.notes.push(`${playerName(state, playerId)} kept their blackmail card.`);
+    return { ok: true, state: played, logEntry: played.log[played.log.length - 1] };
   }
+  collector.notes.push(`${playerName(state, playerId)} kept their blackmail card.`);
   return complete(state, next, command, collector, "revenue.companyFraud");
 };
 
@@ -438,35 +433,18 @@ export function chooseRevenueDividends(state: GameState, command: GameCommand): 
 // ---------------------------------------------------------------------------------------------
 // The Scandal blackmails (#4, #5): "anytime after the Revenue phase" (and when taken, see LS).
 
-const SCANDAL_CARDS: Record<string, { label: string; india: boolean }> = {
-  "scandal-on-leadenhall-street": { label: "Scandal on Leadenhall Street", india: false },
-  "scandal-in-india": { label: "Scandal in India", india: true },
-};
-
-/** Presidents, Governors and the Governor General are "India" offices for the Scandal cards. */
-export function scandalTargets(state: GameState, cardId: string): string[] {
-  const india = SCANDAL_CARDS[cardId]?.india;
-  if (india === undefined) return [];
-  return Object.values(state.company.offices)
-    .filter((office) => !office.vacant && office.holder)
-    .filter((office) => {
-      const category = officeCategory(office.id);
-      const isIndiaOffice = category === "presidency" || category === "governor" || category === "governorGeneral";
-      return india ? isIndiaOffice : !isIndiaOffice;
-    })
-    .map((office) => office.id);
-}
+const SCANDAL_CARD_IDS = ["scandal-on-leadenhall-street", "scandal-in-india"];
 
 function scandalCommands(state: GameState, playerId: PlayerId): LegalCommand[] {
   const commands: LegalCommand[] = [];
-  for (const [cardId, { label }] of Object.entries(SCANDAL_CARDS)) {
+  for (const cardId of SCANDAL_CARD_IDS) {
     const card = unplayedBlackmail(state, playerId, cardId);
     if (!card) continue;
-    for (const officeId of scandalTargets(state, cardId)) {
+    for (const option of blackmailOptionsForCard(state, playerId, cardId)) {
       commands.push({
         type: "revenue.playScandal",
-        label: `Play ${label}: ${officeLabel(officeId)} (${playerName(state, state.company.offices[officeId].holder)}) vacates without retirement`,
-        payload: { cardInstanceId: card.id, officeId },
+        label: `Play ${blackmailCardName(cardId)}: ${option.label}`,
+        payload: { cardInstanceId: card.id, params: option.params },
       });
     }
   }
@@ -486,20 +464,12 @@ function scandalDecision(state: GameState, playerId: PlayerId, options: LegalCom
   };
 }
 
-/**
- * Forces an officeholder out "without retirement": the piece returns to its supply rather than the
- * Pensioners box. Exported for the "when taken from the display" timing (LS) and anytime play (NG).
- */
-export function vacateOfficeWithoutRetirement(state: GameState, officeId: string): GameState {
-  return vacateOffice(state, officeId, "supply").state;
-}
-
 const playScandal: CommandHandler = (state, command) => {
   if (state.phase !== "revenue" || state.pendingDecision.step !== "revenue.playScandal") {
     return wrongPhase("Scandal cards are offered at the end of Revenue.");
   }
   const playerId = state.pendingDecision.actor as PlayerId;
-  const payload = command.payload as { cardInstanceId?: string; officeId?: string };
+  const payload = command.payload as { cardInstanceId?: string; params?: Record<string, unknown> };
   const collector = newCollector();
   const progress = state.parliament.revenue!;
 
@@ -508,21 +478,56 @@ const playScandal: CommandHandler = (state, command) => {
     return complete(state, patchRevenue(state, { scandalCandidates: progress.scandalCandidates.slice(1) }), command, collector, "revenue.scandal");
   }
 
-  const legal = scandalCommands(state, playerId).some((candidate) => {
-    const option = candidate.payload as { cardInstanceId: string; officeId: string };
-    return option.cardInstanceId === payload.cardInstanceId && option.officeId === payload.officeId;
-  });
-  if (!legal) return illegal("That Scandal cannot be played on that office.");
-
-  const holder = state.company.offices[payload.officeId!].holder;
-  let next = markBlackmailPlayed(state, playerId, payload.cardInstanceId);
-  next = vacateOfficeWithoutRetirement(next, payload.officeId!);
-  collector.notes.push(
-    `${playerName(state, playerId)} played a Scandal: ${playerName(state, holder)} left ${officeLabel(payload.officeId!)} without retirement.`,
-  );
-  // The same player may still hold the other Scandal card; they are offered again.
-  return complete(state, next, command, collector, "revenue.scandal");
+  // Played through the shared blackmail path so Man on the Inside may cancel it (p.12). The same
+  // player stays first in line: they may still hold the other Scandal card.
+  return {
+    ok: true,
+    ...(() => {
+      const next = startBlackmailPlay(
+        { ...state, updatedAt: command.clientTimestamp },
+        {
+          playerId,
+          cardInstanceId: payload.cardInstanceId,
+          params: payload.params ?? {},
+          resumeKey: SCANDAL_RESUME,
+          timestamp: command.clientTimestamp,
+        },
+      );
+      return { state: next, logEntry: next.log[next.log.length - 1] };
+    })(),
+  };
 };
+
+/** Continue Revenue after an in-flow blackmail play resolves or is cancelled. */
+function continueRevenue(state: GameState): GameState {
+  const progressed = progressRevenue(state, newCollector());
+  return { ...progressed.state, phase: progressed.decision.phase, pendingDecision: progressed.decision };
+}
+
+const COMPANY_FRAUD_RESUME = "revenue.companyFraud";
+registerInFlowBlackmail("blackmail.company-fraud", "at the start of the Revenue phase");
+
+// Company Fraud: roll a die per officeholder, lower the Company Balance by twice the highest roll,
+// and take that much. Cancelled by Man on the Inside, it does nothing.
+registerBlackmailResume(COMPANY_FRAUD_RESUME, (state, play, outcome) => {
+  if (outcome !== "resolved") return continueRevenue(state);
+  const playerId = play.playerId;
+  const dice = rollDice(state.rng, Math.max(1, playerOffices(state, playerId).length), 6, "revenue.companyFraud");
+  const amount = 2 * Math.max(...dice.values);
+  let next = updatePlayer({ ...state, rng: dice.rng }, playerId, (player) => ({ ...player, cash: player.cash + amount }));
+  next = { ...next, company: { ...next.company, balance: Math.max(0, next.company.balance - amount) } };
+  next = appendLog(next, {
+    actor: playerId,
+    type: "revenue.companyFraud",
+    summary: `${playerName(state, playerId)} played Company Fraud, rolled ${dice.values.join(", ")} and took £${amount}; the Company Balance is now £${next.company.balance}.`,
+    rngRolls: [dice.roll],
+    timestamp: state.updatedAt,
+  });
+  return continueRevenue(next);
+});
+
+const SCANDAL_RESUME = "revenue.scandal";
+registerBlackmailResume(SCANDAL_RESUME, (state) => continueRevenue(state));
 
 function illegal(message: string): ApplyCommandResult {
   return { ok: false, errors: [{ code: "ILLEGAL_REVENUE_COMMAND", message, field: "payload" }] };

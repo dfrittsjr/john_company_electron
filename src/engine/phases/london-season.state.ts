@@ -62,8 +62,6 @@ export type LondonSeasonState = {
   display: string[];
   /** False until setup has dealt its blackmail cards and built the display (setup steps 10-12). */
   displayBuilt: boolean;
-  /** Last known Chairman, so a vacant Chairman's predecessor can lead retirements (p.11). */
-  formerChairman?: PlayerId;
   retirement?: RetirementProgress;
   prestige?: PrestigeProgress;
   restriction?: RestrictionProgress;

@@ -29,12 +29,12 @@ export {
 export {
   blackmailCardName,
   blackmailPlayChoices,
-  legalElephantPositions,
   registerBlackmailHandler,
   registerBlackmailResume,
   startBlackmailPlay,
-  vacateOfficeWithoutRetirement,
 } from "./phases/negotiation-blackmail";
+export { legalElephantPositions } from "./phases/events-in-india/india";
+export { createOffice, returnOfficeToBox, vacateOffice, vacateOfficeWithoutRetirement } from "./offices";
 export type {
   NegotiationState,
   PromiseCardState,

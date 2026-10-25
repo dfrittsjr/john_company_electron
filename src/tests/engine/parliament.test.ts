@@ -567,6 +567,23 @@ describe("Revenue law and card effects (p.27)", () => {
     expect(state.log.at(-1)?.rngRolls).toHaveLength(1);
   });
 
+  it("Company Fraud goes through the shared blackmail path: Man on the Inside can cancel it (p.12)", () => {
+    let state = withBlackmail(revenueState({ balance: 20 }), "player-blue", "company-fraud");
+    state = withBlackmail(state, "player-yellow", "man-on-the-inside");
+    state = withOffice(state, "military-affairs", "player-blue");
+    state = choose(state, "revenue.confirm");
+    state = choose(state, "revenue.companyFraud", (payload) => payload.play === true);
+
+    expect(state.pendingDecision).toEqual(expect.objectContaining({ step: "negotiation.blackmailReaction", actor: "player-yellow" }));
+    expectSaveRoundTripPreservesPendingDecision(state);
+    state = choose(state, "negotiation.respondToBlackmail", (payload) => payload.cancel === true);
+
+    expect(state.players["player-blue"].cash).toBe(0);
+    expect(state.company.balance).toBe(20);
+    expect(state.players["player-yellow"].blackmailCards.map((card) => card.cardId).sort()).toEqual(["company-fraud", "man-on-the-inside"]);
+    expect(state.phase).toBe("revenue");
+  });
+
   it("offers Scandal blackmail after Revenue to force an officeholder out without retirement", () => {
     let state = withBlackmail(revenueState({ balance: 0 }), "player-blue", "scandal-on-leadenhall-street");
     state = withOffice(state, "manager-of-shipping", "player-red");
@@ -575,7 +592,7 @@ describe("Revenue law and card effects (p.27)", () => {
 
     expect(state.pendingDecision.step).toBe("revenue.playScandal");
     const supplyBefore = state.players["player-red"].familyMembers.supply;
-    state = choose(state, "revenue.playScandal", (payload) => payload.officeId === "manager-of-shipping");
+    state = choose(state, "revenue.playScandal", (payload) => (payload.params as { officeId?: string } | undefined)?.officeId === "manager-of-shipping");
 
     expect(state.company.offices["manager-of-shipping"].vacant).toBe(true);
     expect(state.players["player-red"].familyMembers.supply).toBe(supplyBefore + 1);

@@ -23,6 +23,12 @@ import { createNextCompanyOperationDecision } from "./company-operation";
 import { takeFamilyPiece } from "./family";
 import { hiringResumeHandler } from "./hiring-resume";
 import type { ChairmanElectionState, HireOfficePayload, HireSource, HiringState } from "./hiring.state";
+import {
+  facedownBlackmailInstance,
+  registerBlackmailResume,
+  registerInFlowBlackmail,
+  startBlackmailPlay,
+} from "./negotiation-blackmail";
 import { createCommandLogEntry } from "./shared";
 
 // Hiring (rulebook pp.14-17). Vacant offices are hired in ascending order of the number on the
@@ -840,30 +846,35 @@ function resolveHiringPreference(state: GameState, command: GameCommand, play: b
     return { ok: true, logEntry, state: presentOfficeHire(next, officeId) };
   }
 
-  let played = false;
-  const blackmailCards = player.blackmailCards.map((card) => {
-    if (played || card.cardId !== HIRING_PREFERENCE_CARD_ID || card.facedown === false) return card;
-    played = true;
-    return { ...card, facedown: false };
-  });
-  const logEntry = createCommandLogEntry({
-    state,
-    command,
-    now,
-    type: "hiring.hiringPreferencePlayed",
-    summary: `${player.name} played Hiring Preference: they must be hired as ${officeLabel(officeId)}.`,
-    details: { officeId },
-  });
-  const next: GameState = {
-    ...state,
-    updatedAt: now,
-    log: [...state.log, logEntry],
-    players: { ...state.players, [playerId]: { ...player, blackmailCards } },
-    hiring: { ...offered, hiringPreference: { officeId, playerId } },
-  };
+  const cardInstanceId = facedownBlackmailInstance(state, playerId, HIRING_PREFERENCE_CARD_ID);
+  if (!cardInstanceId) return hiringError("ILLEGAL_HIRING_CHOICE", "You hold no face-down Hiring Preference.", "payload");
 
-  return { ok: true, logEntry, state: presentOfficeHire(next, officeId) };
+  // Played through the shared blackmail path so Man on the Inside may cancel it (p.12).
+  const playing: GameState = { ...state, updatedAt: now, hiring: { ...offered, pendingPreferenceOffice: officeId } };
+  const next = startBlackmailPlay(playing, {
+    playerId,
+    cardInstanceId,
+    params: { officeId },
+    resumeKey: HIRING_PREFERENCE_RESUME,
+    timestamp: now,
+  });
+  return { ok: true, logEntry: next.log[next.log.length - 1], state: next };
 }
+
+const HIRING_PREFERENCE_RESUME = "hiring.hiringPreference";
+registerInFlowBlackmail("blackmail.force-hire-self", "while an office you are a candidate for is being hired");
+
+// Hiring Preference: its holder must be hired for the office, ignoring Nepotism. If Man on the
+// Inside cancels it, the office is hired normally.
+registerBlackmailResume(HIRING_PREFERENCE_RESUME, (state, play, outcome) => {
+  const officeId = state.hiring.pendingPreferenceOffice ?? (play.params.officeId as OfficeId);
+  const hiring: HiringState = {
+    ...state.hiring,
+    pendingPreferenceOffice: undefined,
+    hiringPreference: outcome === "resolved" ? { officeId, playerId: play.playerId } : state.hiring.hiringPreference,
+  };
+  return presentOfficeHire({ ...state, hiring }, officeId);
+});
 
 export function skipHiringVacancy(state: GameState, command: GameCommand): ApplyCommandResult {
   if (!isHiringStep(state, "hiring.skipVacancy")) {

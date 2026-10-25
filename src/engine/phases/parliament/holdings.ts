@@ -4,7 +4,7 @@ import { chairmanHolder } from "../../selectors";
 import type { EnterpriseInstance, GameState, PlayerId } from "../../types";
 import type { PolicyTarget } from "../parliament.state";
 import { updatePlayer } from "./common";
-import { vacateOffice } from "./offices";
+import { vacateOffice } from "../../offices";
 
 /** Something a policy taxes: an enterprise, a Company share, or a family member on a prize. */
 export type TaxedItem = {

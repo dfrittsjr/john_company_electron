@@ -2,7 +2,8 @@ import type { CommandHandler } from "../command-handler";
 import type { ApplyCommandResult, GameCommand, GameState, PlayerId } from "../types";
 import { applyDefenceChoice, chooseNextRebellion, type DefenceChoice } from "./events-in-india/attacks";
 import { createContext, log, playerName, type ResolutionContext } from "./events-in-india/context";
-import { advance, beginEventsInIndia, resolveEnvoyChoice, type EnvoyChoice } from "./events-in-india/resolve";
+import { ENVOY_TO_THE_MUGHALS, advance, beginEventsInIndia, markEnvoyOffered, type EnvoyChoice } from "./events-in-india/resolve";
+import { facedownBlackmailInstance, registerBlackmailResume, startBlackmailPlay } from "./negotiation-blackmail";
 import type { GovernorLossRecord } from "./events-in-india.state";
 import { wrongPhase } from "./shared";
 
@@ -26,11 +27,45 @@ export function chooseEnvoyToTheMughals(state: GameState, command: GameCommand):
   if (invalid) return invalid;
 
   const ctx = createContext(state, command);
+  const playerId = command.actorId as PlayerId;
   const choice = command.payload as EnvoyChoice;
-  if (!choice.play) log(ctx, "eventsInIndia.envoyDeclined", `${playerName(ctx, command.actorId)} does not play Envoy to the Mughals.`);
-  resolveEnvoyChoice(ctx, command.actorId as PlayerId, choice);
-  return finish(ctx);
+  markEnvoyOffered(ctx, playerId);
+  if (!choice.play) {
+    log(ctx, "eventsInIndia.envoyDeclined", `${playerName(ctx, playerId)} does not play Envoy to the Mughals.`);
+    return finish(ctx);
+  }
+
+  // Played through the shared blackmail path (its handler moves the Elephant and pays), so Man on
+  // the Inside may cancel it (p.12); the phase continues in the resume below.
+  const cardInstanceId = facedownBlackmailInstance(ctx.draft, playerId, ENVOY_TO_THE_MUGHALS)!;
+  const played = startBlackmailPlay(
+    { ...ctx.draft, updatedAt: command.clientTimestamp },
+    {
+      playerId,
+      cardInstanceId,
+      params: choice.facing ? { regionId: choice.regionId, facing: choice.facing } : { regionId: choice.regionId },
+      resumeKey: ENVOY_RESUME,
+      timestamp: command.clientTimestamp,
+    },
+  );
+  return { ok: true, state: played, logEntry: played.log[played.log.length - 1] };
 }
+
+const ENVOY_RESUME = "eventsInIndia.envoyToTheMughals";
+
+registerBlackmailResume(ENVOY_RESUME, (state) => {
+  const ctx = createContext(state, {
+    id: `resume-${state.log.length}`,
+    gameId: state.gameId,
+    actorId: "system",
+    decisionId: state.pendingDecision.id,
+    type: ENVOY_RESUME,
+    payload: {},
+    clientTimestamp: state.updatedAt,
+  });
+  const pendingDecision = advance(ctx);
+  return { ...ctx.draft, updatedAt: ctx.now, pendingDecision };
+});
 
 export function chooseCompanyAttack(state: GameState, command: GameCommand): ApplyCommandResult {
   const invalid = validateChoice(state, command, "eventsInIndia.chooseAttack");

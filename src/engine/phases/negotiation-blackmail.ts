@@ -1,5 +1,7 @@
 import { blackmailCards, offices, powerTrack, type PowerTargetId } from "../../data";
 import type { CommandHandler } from "../command-handler";
+import { officeLabel, vacateOfficeWithoutRetirement } from "../offices";
+import { describeElephant, highestOpenOrderValue, legalElephantPositions } from "./events-in-india/india";
 import { powerMarkerPositions, withPowerMarkerPositions } from "../selectors";
 import type { GameState, OfficeId, PendingDecision, PhaseId, PlayerId, RegionId } from "../types";
 import {
@@ -42,6 +44,24 @@ const blackmailHandlers = new Map<string, BlackmailHandler>();
 /** Register the effect for a blackmail card's effectHandler id (see src/data/cards.ts). */
 export function registerBlackmailHandler(effectHandler: string, handler: BlackmailHandler): void {
   blackmailHandlers.set(effectHandler, handler);
+}
+
+/**
+ * A card played only inside another area's flow (after a check, while hiring, when retiring, ...).
+ * The owning area offers it, calls startBlackmailPlay with a resume key, and applies the effect in
+ * its BlackmailResume when the outcome is "resolved" (Man on the Inside may cancel it first).
+ */
+export function registerInFlowBlackmail(effectHandler: string, when: string): void {
+  registerBlackmailHandler(effectHandler, {
+    anytimeUnavailableReason: () => `This card is played ${when}.`,
+    options: () => [],
+    resolve: (state, playerId) => ({ state, summary: `${playerName(state, playerId)}'s blackmail takes effect.` }),
+  });
+}
+
+/** The face-down instance of a blackmail card in a player's area, if they hold one. */
+export function facedownBlackmailInstance(state: GameState, playerId: PlayerId, cardId: string): string | undefined {
+  return state.players[playerId]?.blackmailCards.find((card) => card.facedown !== false && card.cardId === cardId)?.id;
 }
 
 /** What happens after an in-flow play resolves or is cancelled; the owning area registers it. */
@@ -99,6 +119,15 @@ export function blackmailPlayChoices(state: GameState, playerId: PlayerId): Blac
         options,
       };
     });
+}
+
+/**
+ * The concrete ways a blackmail card could be played right now, for areas that offer a card inside
+ * their own flow (e.g. a Scandal when taken from the display, or after Revenue). Timing is the
+ * caller's responsibility; the effect and its options come from the card's registered handler.
+ */
+export function blackmailOptionsForCard(state: GameState, playerId: PlayerId, cardId: string): BlackmailOption[] {
+  return handlerFor(cardId)?.options(state, playerId) ?? [];
 }
 
 function holderOfFacedown(state: GameState, cardId: string): { playerId: PlayerId; cardInstanceId: string } | undefined {
@@ -249,37 +278,9 @@ export const respondToBlackmailCommand: CommandHandler = (state, command) => {
 // ---------------------------------------------------------------------------------------------
 // Effects owned by Negotiation: the cards played "anytime".
 
+export { vacateOfficeWithoutRetirement };
+
 const officeCategory = new Map(offices.map((office) => [office.id, office.category]));
-
-/**
- * Scandal cards (p.12): the officeholder goes back to its family's supply without retiring (no
- * pensioner, so no prize). Fatigue returns to the supply and the office waits in the Vacant Offices
- * box for the next Hiring phase. A vacated Chairman's piece is also a Company share, which is lost.
- * TODO(LS): offer the Scandal cards "when taken from the display" via startBlackmailPlay.
- */
-export function vacateOfficeWithoutRetirement(state: GameState, officeId: OfficeId): GameState {
-  const office = state.company.offices[officeId];
-  if (!office || office.vacant || !office.holder) return state;
-  const holder = state.players[office.holder];
-
-  return {
-    ...state,
-    players: {
-      ...state.players,
-      [holder.id]: { ...holder, familyMembers: { ...holder.familyMembers, supply: holder.familyMembers.supply + 1 } },
-    },
-    company: {
-      ...state.company,
-      offices: {
-        ...state.company.offices,
-        [officeId]: { ...office, holder: undefined, familyMemberId: undefined, vacant: true, fatigue: 0 },
-      },
-      vacantOffices: state.company.vacantOffices.includes(officeId)
-        ? state.company.vacantOffices
-        : [...state.company.vacantOffices, officeId],
-    },
-  };
-}
 
 const AFTER_REVENUE: PhaseId[] = ["eventsInIndia", "parliament", "upkeep"];
 
@@ -293,7 +294,7 @@ function scandalHandler(categories: string[]): BlackmailHandler {
       Object.values(state.company.offices)
         .filter((office) => !office.vacant && office.holder && categories.includes(officeCategory.get(office.id) ?? ""))
         .map((office) => ({
-          label: `Vacate ${office.id} (${playerName(state, office.holder!)})`,
+          label: `${officeLabel(office.id)} (${playerName(state, office.holder!)}) vacates without retirement`,
           params: { officeId: office.id },
         })),
     resolve: (state, playerId, params) => {
@@ -344,46 +345,18 @@ registerBlackmailHandler("blackmail.swap-adjacent-power-markers", {
 // open order in the region with the Elephant's tail.
 const BEFORE_EVENTS: PhaseId[] = ["londonSeason", "family", "hiring", "companyOperation", "bonuses", "revenue"];
 
-/**
- * Positions the Elephant may stand in, following the Elephant's March placement (p.30):
- * Company-controlled regions hold it in the centre, dominated regions face their capital, and
- * sovereign regions face a neighbour they do not already dominate.
- * TODO(EV): replace with the Events in India placement helper once it exists.
- */
-export function legalElephantPositions(state: GameState): Array<{ regionId: RegionId; facing?: RegionId }> {
-  const regions = Object.values(state.india.regions);
-  return regions.flatMap((region) => {
-    if (region.companyControlled) return [{ regionId: region.id }];
-    if (region.empireFlag && !region.isCapital) {
-      const capital = regions.find((candidate) => candidate.isCapital && candidate.empireFlag === region.empireFlag);
-      return capital && region.adjacent.includes(capital.id) ? [{ regionId: region.id, facing: capital.id }] : [{ regionId: region.id }];
-    }
-    const targets = region.adjacent.filter((neighbour) => {
-      const other = state.india.regions[neighbour];
-      return !(region.empireFlag && other?.empireFlag === region.empireFlag);
-    });
-    return targets.length > 0 ? targets.map((facing) => ({ regionId: region.id, facing })) : [{ regionId: region.id }];
-  });
-}
-
-function highestOpenOrder(state: GameState, regionId: RegionId): number {
-  return Math.max(0, ...state.india.regions[regionId].orders.filter((order) => !order.closed).map((order) => order.value));
-}
-
 registerBlackmailHandler("blackmail.move-elephant-and-take-order-value", {
   anytimeUnavailableReason: (state) =>
     BEFORE_EVENTS.includes(state.phase) ? undefined : "Play this on a turn before the Events in India phase.",
   options: (state) =>
     legalElephantPositions(state).map((position) => ({
-      label: position.facing
-        ? `Elephant in ${position.regionId} facing ${position.facing} (take £${highestOpenOrder(state, position.regionId)})`
-        : `Elephant in the centre of ${position.regionId} (take £${highestOpenOrder(state, position.regionId)})`,
-      params: position.facing ? { regionId: position.regionId, facing: position.facing } : { regionId: position.regionId },
+      label: `Elephant ${describeElephant(state, position)} (take £${highestOpenOrderValue(state, position.regionId)})`,
+      params: position.facing ? { regionId: position.regionId!, facing: position.facing } : { regionId: position.regionId! },
     })),
   resolve: (state, playerId, params) => {
     const regionId = String(params.regionId);
     const facing = typeof params.facing === "string" ? params.facing : undefined;
-    const amount = highestOpenOrder(state, regionId);
+    const amount = highestOpenOrderValue(state, regionId);
     const player = state.players[playerId];
     return {
       state: {

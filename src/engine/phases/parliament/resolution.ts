@@ -14,7 +14,7 @@ import {
   isLawPassed,
   lawCard,
 } from "./laws";
-import { createOffice, officeLabel, returnOfficeToBox, vacateOffice } from "./offices";
+import { createOffice, officeLabel, returnOfficeToBox, vacateOffice } from "../../offices";
 
 type StepOutcome =
   | { state: GameState; decision?: undefined; replaceWith?: ParliamentResolutionStep[] }

@@ -19,7 +19,7 @@ import {
   policyRotationOptions,
   voteCost,
 } from "./parliament/laws";
-import { officeLabel } from "./parliament/offices";
+import { officeLabel } from "../offices";
 import {
   applyPowerSwapChoice,
   applySurrender,
@@ -33,7 +33,7 @@ import { availableVoteCards, ownedVoteCards } from "./parliament/votes";
 
 export { isLawPassed } from "./parliament/laws";
 export { playerWindowIcons } from "./parliament/holdings";
-export { vacateOffice } from "./parliament/offices";
+export { vacateOffice } from "../offices";
 
 const MAX_LAWS_DRAWN = 3;
 

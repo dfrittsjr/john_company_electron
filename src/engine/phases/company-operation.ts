@@ -16,6 +16,7 @@ import {
 } from "./company-operation/presidency";
 import { shippingStep } from "./company-operation/shipping";
 import { finishOffice, type OperationStep } from "./company-operation/step";
+import { activeInterrupt } from "./negotiation";
 import { createCommandLogEntry, wrongPhase } from "./shared";
 
 // Company Operation (rulebook pp.17-26): each office acts in red-ribbon order. The office modules in
@@ -92,7 +93,8 @@ function operationCommand(step: OperationStep): CommandHandler {
       rngRolls: result.rngRolls,
     });
     const logged: GameState = { ...result.state, updatedAt: now, log: [...result.state.log, logEntry] };
-    const pendingDecision = decideOperation(logged);
+    // A Negotiation interrupt (e.g. Man on the Inside answering a blackmail) keeps its own decision.
+    const pendingDecision = activeInterrupt(logged) ? logged.pendingDecision : decideOperation(logged);
 
     return { ok: true, logEntry, state: { ...logged, phase: pendingDecision.phase, pendingDecision } };
   };

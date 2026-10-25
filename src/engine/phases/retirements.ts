@@ -1,7 +1,8 @@
 import { blackmailCards, offices, prestigeCards, prizes } from "../../data";
 import type { PrizeDefinition } from "../../data";
+import { vacateOffice } from "../offices";
 import { rollDie } from "../rng";
-import { chairmanHolder, clockwiseFrom, playerSpouses } from "../selectors";
+import { chairmanTitleHolder, clockwiseFrom, playerSpouses } from "../selectors";
 import type {
   ApplyCommandResult,
   GameCommand,
@@ -82,7 +83,7 @@ export function resolveOfficeAttrition(
 
     if (outcome === "retired") {
       retiredOffices.push(record);
-      nextState = retireOfficeholder(nextState, office.id, holder);
+      nextState = retireOfficeholder(nextState, office.id);
     } else if (outcome === "fatigued") {
       nextState = {
         ...nextState,
@@ -103,35 +104,8 @@ export function resolveOfficeAttrition(
 // The retiring family member moves to the Pensioners box; the office card goes to the Vacant
 // Offices box and its fatigue returns to supply (p.11). A retiring Chairman takes the Chairman
 // slot's Company share with them.
-function retireOfficeholder(state: GameState, officeId: OfficeId, holder: PlayerId): GameState {
-  const office = state.company.offices[officeId];
-  const player = state.players[holder];
-
-  return {
-    ...state,
-    players: {
-      ...state.players,
-      [holder]: {
-        ...player,
-        familyMembers: { ...player.familyMembers, pensioners: player.familyMembers.pensioners + 1 },
-      },
-    },
-    company: {
-      ...state.company,
-      offices: {
-        ...state.company.offices,
-        [officeId]: {
-          id: officeId,
-          treasury: office?.treasury ?? 0,
-          fatigue: 0,
-          created: office?.created ?? true,
-          vacant: true,
-          actedThisTurn: false,
-        },
-      },
-      vacantOffices: [...new Set([...state.company.vacantOffices, officeId])],
-    },
-  };
+function retireOfficeholder(state: GameState, officeId: OfficeId): GameState {
+  return vacateOffice(state, officeId, "pensioners").state;
 }
 
 function officeOrder(officeId: OfficeId): number {
@@ -139,15 +113,9 @@ function officeOrder(officeId: OfficeId): number {
 }
 
 /** Remember the sitting Chairman so a later vacancy still knows who leads retirements (p.11). */
-export function recordFormerChairman(state: GameState): GameState {
-  const chairman = chairmanHolder(state);
-  if (!chairman || chairman === state.londonSeason.formerChairman) return state;
-  return { ...state, londonSeason: { ...state.londonSeason, formerChairman: chairman } };
-}
-
 /** "Starting with the Chairman (or former Chairman if the office is vacant) and going clockwise" (p.11). */
 export function beginRetirements(state: GameState, context: RetirementContext): GameState {
-  const leader = chairmanHolder(state) ?? state.londonSeason.formerChairman;
+  const leader = chairmanTitleHolder(state);
   const progress: RetirementProgress = {
     context,
     order: clockwiseFrom(state, leader),
@@ -347,30 +315,7 @@ export function applyRetirementCommand(
     };
   }
 
-  if (command.type === "retirement.playLettersOfIntroduction") {
-    // TODO(NG): offer Man on the Inside holders a chance to cancel this blackmail when played.
-    return {
-      ok: true,
-      state: {
-        ...state,
-        players: {
-          ...state.players,
-          [playerId]: {
-            ...player,
-            blackmailCards: player.blackmailCards.map((card) =>
-              card.cardId === LETTERS_OF_INTRODUCTION ? { ...card, facedown: false } : card,
-            ),
-          },
-        },
-        londonSeason: {
-          ...state.londonSeason,
-          retirement: { ...progress, lettersOfIntroduction: [...progress.lettersOfIntroduction, playerId] },
-        },
-      },
-      summary: `${player.name} played Letters of Introduction.`,
-      details: { playerId, cardId: LETTERS_OF_INTRODUCTION },
-    };
-  }
+
 
   const payload = command.payload as { prizeId: string; discounts: DiscountKey[] };
   const prize = prizeById.get(payload.prizeId) as PrizeDefinition;

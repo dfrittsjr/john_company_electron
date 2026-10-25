@@ -22,6 +22,8 @@ export type CompanyOperationState = {
   governorGeneralGoverned?: boolean;
   /** Board of Control may be used once per turn (law #34). */
   boardOfControlUsed?: boolean;
+  /** A Connection blackmail was played on this check and waits for Man on the Inside to answer. */
+  pendingConnection?: { cardId: "mercantile-connection" | "diplomatic-connection"; holder: PlayerId; check: PendingCheck };
 };
 
 export type ShipDestination = SeaZoneId | "china";

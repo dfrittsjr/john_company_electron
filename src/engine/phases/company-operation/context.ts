@@ -1,4 +1,5 @@
 import { offices, punchboardPieces } from "../../../data";
+import { vacateOfficeWithoutRetirement } from "../../offices";
 import { chairmanHolder, officeHolder } from "../../selectors";
 import type {
   ArmyId,
@@ -182,28 +183,7 @@ export function payOfficeholderBonus(
  * card goes to Vacant Offices, and any fatigue returns to the supply. The treasury stays with the office.
  */
 export function vacateOffice(state: GameState, officeId: OfficeId): GameState {
-  const office = state.company.offices[officeId];
-  if (!office || office.vacant || !office.holder) return state;
-  const holder = state.players[office.holder];
-
-  return {
-    ...state,
-    players: {
-      ...state.players,
-      [holder.id]: {
-        ...holder,
-        familyMembers: { ...holder.familyMembers, supply: holder.familyMembers.supply + 1 },
-      },
-    },
-    company: {
-      ...state.company,
-      offices: {
-        ...state.company.offices,
-        [officeId]: { ...office, holder: undefined, familyMemberId: undefined, vacant: true, fatigue: 0 },
-      },
-      vacantOffices: [...new Set([...state.company.vacantOffices, officeId])],
-    },
-  };
+  return vacateOfficeWithoutRetirement(state, officeId);
 }
 
 export function regimentsInSupply(state: GameState): number {
