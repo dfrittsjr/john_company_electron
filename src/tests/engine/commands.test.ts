@@ -10,7 +10,6 @@ import {
   playerStockExchangeSlots,
   playerWriters,
   presidentOf,
-  rollDie,
   type GameState,
 } from "../../engine";
 import {
@@ -2177,42 +2176,6 @@ describe("command application", () => {
     }
   });
 
-  it("rolls the Events in India storm die and saves before resolving follow-up events", () => {
-    let state = createEventsInIndiaState("events-storm-roll");
-    const expectedRoll = rollDie(state.rng, 6, "eventsInIndia.stormDie");
-
-    expectSaveRoundTripPreservesPendingDecision(state);
-
-    state = applyFirstLegalCommand(state, {
-      commandId: "command-events-storm-roll",
-      actorId: "system",
-    });
-
-    expect(state.phase).toBe("eventsInIndia");
-    expect(state.pendingDecision.step).toBe("eventsInIndia.resolveRolledEvents");
-    expect(state.rng.counter).toBe(1);
-    expect(state.log.at(-1)?.type).toBe("eventsInIndia.stormDieRolled");
-    expect(state.log.at(-1)?.rngRolls).toEqual([expectedRoll.roll]);
-
-    const stormPayload = state.pendingDecision.legalCommands[0]?.payload as
-      | { stormDieRoll: number; eventTileCount: number; stormsActive: boolean }
-      | undefined;
-    expect(stormPayload).toEqual(
-      mapExpectedTemporaryStormDie(expectedRoll.value),
-    );
-    expectSaveRoundTripPreservesPendingDecision(state);
-
-    state = applyFirstLegalCommand(state, {
-      commandId: "command-events-resolve-rolled",
-      actorId: "system",
-    });
-
-    expect(state.phase).toBe("parliament");
-    expect(state.rng).toEqual(expectedRoll.rng);
-    expect(state.pendingDecision.step).toBe("parliament.confirm");
-    expect(state.log.at(-1)?.summary).toBe("Events in India resolved.");
-  });
-
   it("returns writers from filled orders and clears filled-order markers during Upkeep", () => {
     let state = createUpkeepStateWithFilledOrders();
 
@@ -2291,8 +2254,7 @@ describe("command application", () => {
       ["bonuses", "bonuses.confirm", "revenue"],
       ["revenue", "revenue.confirm", "revenue"],
       ["revenue", "revenue.chooseDividends", "eventsInIndia"],
-      ["eventsInIndia", "eventsInIndia.confirm", "eventsInIndia"],
-      ["eventsInIndia", "eventsInIndia.resolveRolledEvents", "parliament"],
+      ["eventsInIndia", "eventsInIndia.confirm", "parliament"],
       ["parliament", "parliament.confirm", "upkeep"],
       ["upkeep", "upkeep.confirm", "londonSeason"],
     ] as const;
@@ -2354,6 +2316,7 @@ describe("command application", () => {
     });
 
     expectSaveRoundTripPreservesPendingDecision(state);
+    const counterBefore = state.rng.counter;
 
     state = applyFirstLegalCommand(state, {
       commandId: "command-london-season-retirement",
@@ -2372,7 +2335,7 @@ describe("command application", () => {
       }),
     );
     expect(state.company.vacantOffices).toContain("manager-of-shipping");
-    expect(state.rng.counter).toBe(1);
+    expect(state.rng.counter).toBe(counterBefore + 1);
     expect(state.log.at(-1)?.summary).toBe("London Season retired 1 officeholder(s).");
     expect(state.log.at(-1)?.rngRolls).toHaveLength(1);
     expect(state.log.at(-1)?.details).toEqual(
@@ -2430,8 +2393,7 @@ describe("command application", () => {
       "command-bonuses",
       "command-revenue-expenses",
       "command-revenue-dividends",
-      "command-events-roll",
-      "command-events-resolve",
+      "command-events-in-india",
       "command-parliament",
     ]) {
       state = applyFirstLegalCommand(state, { commandId, actorId: "system" });
@@ -2906,42 +2868,6 @@ function createRevenueState(options: {
       debt: options.debt,
       ships: options.ships ?? [],
     },
-  };
-}
-
-function createEventsInIndiaState(seed: string): GameState {
-  const state = createHotseatGame({
-    seed,
-    gameId: `game-${seed}`,
-  });
-
-  return {
-    ...state,
-    phase: "eventsInIndia",
-    pendingDecision: {
-      id: `decision-${seed}`,
-      phase: "eventsInIndia",
-      step: "eventsInIndia.confirm",
-      actor: "system",
-      visibility: "public",
-      prompt: "Confirm Events in India.",
-      legalCommands: [
-        {
-          type: "eventsInIndia.confirm",
-          label: "Confirm Events in India",
-          payload: {},
-        },
-      ],
-      canSave: true,
-    },
-  };
-}
-
-function mapExpectedTemporaryStormDie(roll: number) {
-  return {
-    stormDieRoll: roll,
-    eventTileCount: roll <= 2 ? 1 : roll <= 4 ? 2 : 3,
-    stormsActive: roll >= 5,
   };
 }
 
