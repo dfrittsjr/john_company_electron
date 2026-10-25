@@ -351,6 +351,8 @@ describe("Final Scoring (p.9)", () => {
       ...base,
       company: { ...base.company, failed: options.failed ?? false },
       parliament: { ...base.parliament, primeMinister: YELLOW },
+      // Setup consumes random numbers (setup cards, event tiles), so pin the RNG the scoring rolls use.
+      rng: options.seed ? createRngState(options.seed) : base.rng,
     };
     return atConfirmation(state, "finalScoring", "finalScoring.confirm", options.turn ?? 5);
   }
