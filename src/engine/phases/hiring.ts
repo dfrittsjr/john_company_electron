@@ -2,6 +2,7 @@ import type { CommandHandler } from "../command-handler";
 import { offices, prizes } from "../../data";
 import type { OfficeDefinition } from "../../data/types";
 import {
+  playerForbidsHolding,
   presidentOf,
   regionPresidency,
   toEnginePresidency,
@@ -352,7 +353,8 @@ function presentEmptyCourt(state: GameState, formerChairman: PlayerId | undefine
   // that, from a prize. If neither is possible, there is no Chairman (p.15).
   const player = formerChairman ? state.players[formerChairman] : undefined;
   const sources =
-    !player || player.isCrown
+    // Joseph Sedley (#15): a holder may not own a Company share, so cannot continue as Chairman.
+    !player || player.isCrown || playerForbidsHolding(state, player.id, "companyShare")
       ? []
       : player.familyMembers.supply > 0
         ? [undefined]

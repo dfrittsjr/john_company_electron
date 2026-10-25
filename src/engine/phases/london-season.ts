@@ -376,6 +376,23 @@ function applySpouseEffect(state: GameState, playerId: PlayerId, _spouse: Presti
 
 /** Joseph Sedley: "If you are Chairman, move your family member back into the Court as a share and vacate the office." */
 function sedleyLeavesChairman(state: GameState, playerId: PlayerId): GameState {
+  // "Any shares you have must be traded or removed": pieces waiting on the Stock Exchange return
+  // to supply (Court shares are handled by the restriction step).
+  const waiting = state.company.stockExchange.filter((slot) => slot.share?.owner === playerId);
+  if (waiting.length > 0) {
+    const owner = state.players[playerId];
+    state = {
+      ...updatePlayer(state, playerId, {
+        familyMembers: { ...owner.familyMembers, supply: owner.familyMembers.supply + waiting.length },
+      }),
+      company: {
+        ...state.company,
+        stockExchange: state.company.stockExchange.map((slot) =>
+          slot.share?.owner === playerId ? { id: slot.id, cost: slot.cost } : slot,
+        ),
+      },
+    };
+  }
   if (chairmanHolder(state) !== playerId) return state;
 
   const office = state.company.offices.chairman;

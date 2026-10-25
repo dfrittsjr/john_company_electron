@@ -260,6 +260,17 @@ export function playerSpouses(state: GameState, playerId: PlayerId): PrestigeCar
     .filter((card): card is PrestigeCard => card?.prestigeType === "spouse");
 }
 
+/** True when one of the player's spouses forbids holding this kind of card or piece (e.g. Joseph Sedley and shares). */
+export function playerForbidsHolding(
+  state: GameState,
+  playerId: PlayerId,
+  holding: "blackmail" | "workshop" | "shipyard" | "companyShare",
+): boolean {
+  return playerSpouses(state, playerId).some((spouse) =>
+    spouse.effects.some((effect) => effect.type === "forbidHolding" && effect.holding === holding),
+  );
+}
+
 export function playerHasPrestigeCard(state: GameState, playerId: PlayerId, cardId: string): boolean {
   return (state.players[playerId]?.prestigeCards ?? []).some((card) => card.cardId === cardId);
 }

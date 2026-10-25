@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { GameState } from "../../engine";
-import { createNewGame } from "../../engine";
+import { createNewGame, chairmanHolder } from "../../engine";
+import { resolveNewCompanyShares, startFamilyPhase } from "../../engine/phases/family";
+import { startHiringPhase } from "../../engine/phases/hiring";
+import { withChairmanMarker, withDebt, withPrestigeCard, withStockExchangePiece } from "../fixtures/family-hiring";
+import { withHiringQueue } from "../fixtures/builders";
 import { createRngState, rollDie } from "../../engine/rng";
 import { atConfirmation, withDisplay, withPensioners, withPrestigeCards } from "../fixtures/london-season";
 import { withCash } from "../fixtures/builders";
@@ -125,5 +129,48 @@ describe("Esther Summerson (card #12)", () => {
   it("Becky Sharp's top-of-deck option is still offered when the top card is a prestige card", () => {
     const state = beckyState("labour-newspaper");
     expect(hasCommand(state, "londonSeason.choosePrestigeCard", (payload) => payload.action === "takeTopOfDeck")).toBe(true);
+  });
+});
+
+describe("Joseph Sedley (card #15)", () => {
+  it("a holder's Stock Exchange piece does not become a Court share at the end of Family", () => {
+    let state = withStockExchangePiece(createHotseatGame({ seed: "sd2" }), "stock-exchange-5", RED);
+    state = withPrestigeCard(state, RED, "joseph-sedley");
+    state = withDebt(state, 1);
+    const supplyBefore = state.players[RED].familyMembers.supply;
+    const next = resolveNewCompanyShares(state);
+    expect(next.company.court.filter((share) => share.owner === RED)).toHaveLength(0);
+    expect(next.company.stockExchange.every((slot) => !slot.share)).toBe(true);
+    expect(next.players[RED].familyMembers.supply).toBe(supplyBefore + 1);
+  });
+
+  it("without Sedley the same piece does become a Court share", () => {
+    let state = withStockExchangePiece(createHotseatGame({ seed: "sd2" }), "stock-exchange-5", RED);
+    state = withDebt(state, 1);
+    expect(resolveNewCompanyShares(state).company.court.filter((share) => share.owner === RED)).toHaveLength(1);
+  });
+
+  it("taking Sedley returns the holder's Stock Exchange pieces to supply", () => {
+    let state = createHotseatGame({ seed: "sd3" });
+    state = withStockExchangePiece(state, "stock-exchange-5", RED);
+    state = atConfirmation({ ...state, turn: 2 }, "londonSeason", "londonSeason.confirm");
+    state = withPensioners(state, RED, 1);
+    state = withCash(state, { [RED]: 5 });
+    state = withDisplay(state, ["joseph-sedley", "foundry", "social-magazine"], ["labour-newspaper"]);
+    state = applyCommandOrThrow(state, { id: "sd-1", actorId: "system", type: "londonSeason.confirm", payload: {} });
+    const retire = state.pendingDecision.legalCommands.find((command) => command.label.includes("£2 prize"))!;
+    state = applyCommandOrThrow(state, { id: "sd-2", actorId: RED, type: retire.type, payload: retire.payload });
+    const take = state.pendingDecision.legalCommands.find((command) => command.label.includes("Joseph Sedley"))!;
+    const supplyBefore = state.players[RED].familyMembers.supply;
+    state = applyCommandOrThrow(state, { id: "sd-3", actorId: RED, type: take.type, payload: take.payload });
+    expect(state.company.stockExchange.every((slot) => !slot.share)).toBe(true);
+    expect(state.players[RED].familyMembers.supply).toBe(supplyBefore + 1);
+  });
+
+  it("in an empty Court (p.15) a Sedley holder cannot continue as Chairman: there is no Chairman", () => {
+    let state = withPrestigeCard(withChairmanMarker(createHotseatGame({ seed: "sd4" }), BLUE), BLUE, "joseph-sedley");
+    state = startHiringPhase(withHiringQueue(state, ["chairman"]));
+    expect(state.pendingDecision.step).not.toBe("hiring.emptyCourtChairman");
+    expect(chairmanHolder(state)).toBeUndefined();
   });
 });

@@ -1,7 +1,7 @@
 import type { CommandHandler } from "../command-handler";
 import { enterpriseDecks, familyActions, lawsById, prizes } from "../../data";
 import type { EnterpriseCardDefinition, LawExtraAction } from "../../data";
-import { chairmanTitleHolder } from "../selectors";
+import { chairmanTitleHolder, playerForbidsHolding } from "../selectors";
 import type {
   ActorId,
   ApplyCommandResult,
@@ -439,6 +439,8 @@ function createSeekShareOptions(
   sources: Array<string | undefined>,
 ): LegalCommand[] {
   const commands: LegalCommand[] = [];
+  // Joseph Sedley (#15): "You may no longer seek ... Company shares."
+  if (playerForbidsHolding(state, player.id, "companyShare")) return commands;
   const ownsStockBroker = ownsPrestigeCard(player, "stock-broker");
   const brokerOwner = prestigeCardOwner(state, "stock-broker");
   const canRequestBroker =
@@ -1154,10 +1156,21 @@ export function resolveNewCompanyShares(state: GameState): GameState {
   let debt = state.company.debt;
   let court = state.company.court;
   const converted = new Set<string>();
+  // Joseph Sedley (#15): "You may no longer seek or own Company shares." A forbidden holder's
+  // piece never becomes a Court share; it returns to supply.
+  const forbidden = state.company.stockExchange.filter(
+    (slot) => slot.share?.owner && playerForbidsHolding(state, slot.share.owner, "companyShare"),
+  );
+  let players = state.players;
+  for (const slot of forbidden) {
+    const owner = players[slot.share!.owner as string];
+    players = { ...players, [owner.id]: { ...owner, familyMembers: { ...owner.familyMembers, supply: owner.familyMembers.supply + 1 } } };
+  }
+  const forbiddenSlots = new Set(forbidden.map((slot) => slot.id));
 
   for (const slot of [...state.company.stockExchange].reverse()) {
     if (debt <= 0) break;
-    if (!slot.share?.owner) continue;
+    if (!slot.share?.owner || forbiddenSlots.has(slot.id)) continue;
 
     converted.add(slot.id);
     debt -= 1;
@@ -1165,7 +1178,7 @@ export function resolveNewCompanyShares(state: GameState): GameState {
   }
 
   const remaining = state.company.stockExchange
-    .filter((slot) => slot.share?.owner && !converted.has(slot.id))
+    .filter((slot) => slot.share?.owner && !converted.has(slot.id) && !forbiddenSlots.has(slot.id))
     .map((slot) => slot.share as ShareInstance);
   const stockExchange: StockExchangeSlot[] = state.company.stockExchange.map((slot) => ({ id: slot.id, cost: slot.cost }));
   const firstTarget = stockExchange.length - remaining.length;
@@ -1173,7 +1186,7 @@ export function resolveNewCompanyShares(state: GameState): GameState {
     stockExchange[firstTarget + index] = { ...stockExchange[firstTarget + index], share };
   });
 
-  return { ...state, company: { ...state.company, debt, court, stockExchange } };
+  return { ...state, players, company: { ...state.company, debt, court, stockExchange } };
 }
 
 // ---------------------------------------------------------------------------------------------
