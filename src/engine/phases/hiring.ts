@@ -653,7 +653,7 @@ function completeHire(
 /**
  * Nepotism (p.14): hiring your own family member needs the consent of every other player in that
  * office's candidate pool. It does not apply when Hiring Preference was played for the hirer.
- * TODO(NG): let the hirer call in a guarantor's "My consent for nepotism" promise instead of asking.
+ * A called-in "My consent for nepotism" promise counts as that guarantor's consent.
  */
 function nepotismConsentNeededFrom(state: GameState, payload: HireOfficePayload, hirer: PlayerId): PlayerId[] {
   if (payload.candidateId !== hirer) return [];
@@ -808,7 +808,7 @@ function createHiringPreferenceDecision(state: GameState, officeId: OfficeId, ho
 
 // Hiring Preference (blackmail #6): "Play during hiring if you are a candidate. The hiring player
 // must choose you. You may use this to ignore the Nepotism rule."
-// TODO(NG): offer Man on the Inside to its holder when this card is played.
+// It is played through Negotiation's blackmail path, so Man on the Inside may cancel it.
 export function playHiringPreference(state: GameState, command: GameCommand): ApplyCommandResult {
   return resolveHiringPreference(state, command, true);
 }

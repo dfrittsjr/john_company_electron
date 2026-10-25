@@ -464,7 +464,7 @@ function placeRegiments(state: GameState, perArmy: number, collector: Collector)
 /**
  * Governor General (p.26): Governors become pensioners, Governor overlays and unfinished Company
  * ships are removed, and the Director of Trade's card, holder, fatigue and treasury pass to the
- * Governor General. TODO(FH): the Governor General hires Presidents and is hired like the Director.
+ * Governor General, who is then hired like the Director and hires Presidents (Hiring, p.26).
  */
 function enactGovernorGeneral(state: GameState, collector: Collector): GameState {
   for (const office of Object.values(state.company.offices)) {

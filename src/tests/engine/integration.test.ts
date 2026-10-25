@@ -6,7 +6,7 @@ import { withCash } from "../fixtures/builders";
 import { applyCommandOrThrow, createHotseatGame } from "../fixtures/game";
 import { atConfirmation, withDisplay, withPensioners } from "../fixtures/london-season";
 import { act } from "../fixtures/negotiation";
-import { choose, hasCommand, parliamentState, withEnterprises } from "../fixtures/parliament";
+import { choose, hasCommand, parliamentState, withEnterprises, withPrestigeCards } from "../fixtures/parliament";
 
 // Cross-phase behaviour: anytime commands (p.8) can change cash and holdings under any pending
 // decision, so options must be rebuilt and nothing may be spent that isn't there.
@@ -285,6 +285,21 @@ describe("golden rule (p.8)", () => {
 
     expect(state.pendingDecision.actor).toBe(YELLOW);
     expect(hasCommand(state, "parliament.castVotes", (payload) => payload.source === "card")).toBe(false);
+  });
+});
+
+describe("returned cards", () => {
+  it("sends a prestige enterprise returned for unpaid tax to the London Season discards (p.34)", () => {
+    let state = withPrestigeCards(parliamentState({ drawPile: ["masses-demand-franchise"], dial: 2 }), BLUE, ["stock-broker"]);
+    state = choose(state, "parliament.confirm");
+    state = choose(state, "parliament.selectLaw");
+    state = finishVoting(choose(state, "parliament.choosePolicy", (payload) => payload.space === 3));
+    while (state.pendingDecision.step === "parliament.surrender") {
+      state = choose(state, "parliament.surrender");
+    }
+
+    expect(state.players[BLUE].prestigeCards).toEqual([]);
+    expect(state.londonSeason.discard).toContain("stock-broker");
   });
 });
 

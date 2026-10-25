@@ -110,10 +110,6 @@ export type ParliamentState = {
   deregulated: boolean;
   session?: ParliamentSession;
   revenue?: RevenueProgress;
-  /**
-   * Foreign Invasions from War Against France! that hit Company-controlled regions. They are attacks
-   * against the Company and need the Events in India defence flow. TODO(EV): resolve these.
-   */
 };
 
 export function lawInstance(lawId: string): LawInstance {

@@ -171,11 +171,15 @@ export function surrenderItem(state: GameState, playerId: PlayerId, itemId: stri
 
   if (itemId.startsWith("prestige:")) {
     const instanceId = itemId.slice("prestige:".length);
-    // TODO(LS): send the returned prestige enterprise to the London Season discards.
-    return updatePlayer(state, playerId, (player) => ({
+    // A returned prestige enterprise goes to the London Season discards.
+    const cardId = state.players[playerId].prestigeCards.find((card) => card.id === instanceId)?.cardId;
+    const returned = updatePlayer(state, playerId, (player) => ({
       ...player,
       prestigeCards: player.prestigeCards.filter((card) => card.id !== instanceId),
     }));
+    return cardId
+      ? { ...returned, londonSeason: { ...returned.londonSeason, discard: [...returned.londonSeason.discard, cardId] } }
+      : returned;
   }
 
   return state;

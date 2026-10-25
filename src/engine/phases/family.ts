@@ -720,7 +720,7 @@ export function skipExtraAction(state: GameState, command: GameCommand): ApplyCo
 }
 
 // Stock Broker: "Other players may use this power with your permission." The owner answers here.
-// TODO(NG): switch to NG's shared consent helper once it exists.
+// A single owner's yes/no, so it keeps its own decision rather than Negotiation's consent queue.
 export function resolveStockBrokerConsent(state: GameState, command: GameCommand): ApplyCommandResult {
   if (state.phase !== "family" || state.pendingDecision.step !== "family.stockBrokerConsent") {
     return familyError("WRONG_PHASE", "No Stock Broker permission is being requested.", "phase");
@@ -929,7 +929,7 @@ function applyFamilyAction(
 /**
  * Take a family member to place: from supply, or, if the supply is empty, from a prize, lowering
  * victory points by that prize's printed value (p.13).
- * TODO(LS): if player.windows ever counts prize window icons, lower it here too.
+ * Window icons are counted from holdings (playerWindowIcons), so there is nothing else to adjust.
  */
 export function takeFamilyPiece(
   state: GameState,
