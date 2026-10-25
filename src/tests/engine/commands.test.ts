@@ -1761,13 +1761,12 @@ describe("command application", () => {
     });
 
     expect(state.phase).toBe("companyOperation");
-    expect(state.pendingDecision.step).toBe("companyOperation.resolveChairman");
+    expect(state.pendingDecision.step).toBe("companyOperation.chairman");
     expect(state.pendingDecision.actor).toBe("player-red");
-    expect(state.pendingDecision.legalCommands[0]).toEqual(
+    expect(state.pendingDecision.legalCommands).toContainEqual(
       expect.objectContaining({
-        type: "companyOperation.resolveChairman",
-        label: "Resolve Chairman",
-        payload: { officeId: "chairman", debtTaken: 0, allocations: {} },
+        type: "companyOperation.chairman",
+        payload: { action: "debt" },
       }),
     );
     expectSaveRoundTripPreservesPendingDecision(state);
@@ -1786,28 +1785,24 @@ describe("command application", () => {
       actorId: "player-red",
     });
 
-    state = applyCommandOrThrow(state, {
-      id: "command-resolve-chairman",
-      actorId: "player-red",
-      type: "companyOperation.resolveChairman",
-      payload: {
-        officeId: "chairman",
-        debtTaken: 1,
-        allocations: {
-          "manager-of-shipping": 4,
-          "president-bombay": 1,
-        },
-      },
-    });
-
-    expect(state.company.offices.chairman).toEqual(
-      expect.objectContaining({
-        holder: "player-red",
-        actedThisTurn: true,
-      }),
-    );
+    const chairman = (id: string, payload: unknown) =>
+      applyCommandOrThrow(state, { id, actorId: "player-red", type: "companyOperation.chairman", payload });
+    state = chairman("command-chairman-debt", { action: "debt" });
     expect(state.company.debt).toBe(1);
+    expect(state.company.balance).toBe(5);
+    // p.18: the whole Balance must be allocated before the Chairman may finish.
+    expect(state.pendingDecision.legalCommands).not.toContainEqual(
+      expect.objectContaining({ payload: { action: "finish" } }),
+    );
+    state = chairman("command-chairman-shipping", { action: "allocate", officeId: "manager-of-shipping", amount: 1 });
+    state = chairman("command-chairman-shipping-2", { action: "allocate", officeId: "manager-of-shipping", amount: 1 });
+    state = chairman("command-chairman-shipping-3", { action: "allocate", officeId: "manager-of-shipping", amount: 1 });
+    state = chairman("command-chairman-shipping-4", { action: "allocate", officeId: "manager-of-shipping", amount: 1 });
+    state = chairman("command-chairman-bombay", { action: "allocate", officeId: "president-bombay", amount: 1 });
     expect(state.company.balance).toBe(0);
+    state = chairman("command-chairman-finish", { action: "finish" });
+
+    expect(state.company.debt).toBe(1);
     // 1710 puts £3 in every Company treasury at setup.
     expect(state.company.offices["manager-of-shipping"].treasury).toBe(7);
     expect(state.company.offices["president-bombay"].treasury).toBe(4);
@@ -1815,29 +1810,18 @@ describe("command application", () => {
     expect(state.pendingDecision.legalCommands[0]?.payload).toEqual({
       officeId: "director-of-trade",
     });
-    expect(state.log.at(-1)?.summary).toBe("Red resolved Chairman debt and allocation.");
-    expect(state.log.at(-1)?.details).toEqual(
-      expect.objectContaining({
-        debtTaken: 1,
-        debtProceeds: 5,
-        allocatedTotal: 5,
-        endingBalance: 0,
-      }),
-    );
+    expect(state.log.at(-1)?.summary).toBe("The Chairman finished (1 Debt advance).");
 
     state = applyFirstLegalCommand(state, {
       commandId: "command-skip-director-company-operation",
       actorId: "system",
     });
 
-    expect(state.pendingDecision.step).toBe("companyOperation.passOffice");
+    expect(state.pendingDecision.step).toBe("companyOperation.shipping");
     expect(state.pendingDecision.actor).toBe("player-blue");
-    expect(state.pendingDecision.legalCommands[0]?.payload).toEqual({
-      officeId: "manager-of-shipping",
-    });
   });
 
-  it("rejects invalid Chairman allocation payloads", () => {
+  it("rejects Chairman choices that are not listed", () => {
     let state = advanceThroughFamilyFromSetup(
       createGameWithChairmanAndWriterVacancy("manager-of-shipping", {
         writerOwner: "player-blue",
@@ -1855,14 +1839,8 @@ describe("command application", () => {
       gameId: state.gameId,
       actorId: "player-red",
       decisionId: state.pendingDecision.id,
-      type: "companyOperation.resolveChairman",
-      payload: {
-        officeId: "chairman",
-        debtTaken: 0,
-        allocations: {
-          "manager-of-shipping": 1,
-        },
-      },
+      type: "companyOperation.chairman",
+      payload: { action: "allocate", officeId: "military-affairs", amount: 1 },
       clientTimestamp: "2026-06-13T12:04:00.000Z",
     });
 

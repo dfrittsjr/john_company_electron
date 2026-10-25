@@ -210,6 +210,11 @@ export type ArmyState = {
   officers: Record<PlayerId, PieceStack>;
   regiments: PieceStack;
   commander?: PlayerId;
+  /**
+   * Local alliances in this Army box (p.21), by alliance id. "ready" (top half) once a Commander
+   * buys it this turn; "exhausted" (bottom half) when unbought or used. Refresh exhausts ready ones.
+   */
+  localAlliances?: Record<string, "ready" | "exhausted">;
 };
 
 export type CompanyState = {
