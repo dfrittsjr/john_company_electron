@@ -14,6 +14,7 @@ import {
   investInFirm,
   mergeFirms,
   takeOverFirm,
+  weakCompanySharesReason,
   withFirm,
   type FirmInvestmentSource,
 } from "../../firms";
@@ -62,7 +63,30 @@ export type FirmAction =
 export function startFirmInvestments(state: GameState): GameState {
   const order = primeMinisterOrder(state).filter((playerId) => !state.players[playerId]?.isCrown);
   const firmsPhase: FirmsPhaseState = { step: "investments", order, index: -1, passes: 0 };
-  return nextInvestmentTurn({ ...state, phase: "firms", firmsPhase });
+  return nextInvestmentTurn(logIdlePlayers({ ...state, phase: "firms", firmsPhase }, order));
+}
+
+/**
+ * Players with nothing to do are skipped without a prompt (below), so say once, at the start, who
+ * they are and why, instead of leaving them wondering where their turn went.
+ */
+function logIdlePlayers(state: GameState, order: PlayerId[]): GameState {
+  const idle = order.filter((playerId) => investmentCommands(state, playerId).length <= 1);
+  if (idle.length === 0) return state;
+  const reasons: string[] = [];
+  const weak = weakCompanySharesReason(state);
+  if (weak) reasons.push(weak.replace(/\.$/, ""));
+  if (idle.some((playerId) => state.company.court.some((share) => share.owner === playerId && share.createdTurn === state.turn))) {
+    reasons.push("Company shares created this turn can't be used yet (p.38)");
+  }
+  reasons.push("forming or investing also needs a Company share or an uninvested workshop");
+  const who = idle.map((playerId) => nameOf(state, playerId)).join(", ");
+  return appendLog(state, {
+    actor: "system",
+    type: "firms.idle",
+    summary: `Firm Investments: ${who} ${idle.length === 1 ? "has" : "have"} nothing to do this turn and ${idle.length === 1 ? "is" : "are"} skipped (${reasons.join("; ")}).`,
+    timestamp: state.updatedAt,
+  });
 }
 
 /** Moves to the next player who has something to do; players with nothing pass automatically. */
@@ -177,9 +201,7 @@ export function investmentCommands(state: GameState, playerId: PlayerId): LegalC
       commands.push({
         type: "firms.invest",
         label: `Invest in ${firmName(state, firm)} with ${sourceLabel(source)}`,
-        description: own
-          ? "£5 from the bank goes to the London treasury and you gain a share (p.38)."
-          : `£5 from the bank goes to the London treasury and you gain a share, with ${nameOf(state, firm.manager)}'s consent (p.38).`,
+        description: `${source.kind === "companyShare" ? "You give up the Company share (it returns to your supply)" : "You flip the workshop to its invested side"}; £5 from the bank goes to the London treasury and you gain a firm share${own ? "" : `, with ${nameOf(state, firm.manager)}'s consent`} (p.38).`,
         payload: { firmId: firm.id, source },
       });
     }

@@ -115,3 +115,45 @@ describe("Company Operation warnings from the end-of-game playtest", () => {
     expect(toMadras.description).toBeUndefined();
   });
 });
+
+describe("Rough edges from the end-of-game playtest", () => {
+  test("the Manager of Shipping sees how many ships each sea zone has", async () => {
+    const { operationGame, enterOperation, BLUE: CO_BLUE } = await import("../fixtures/company-operation");
+    const { withOffice } = await import("../fixtures/builders");
+    let state = operationGame("shipping-zones");
+    state = withOffice(state, "manager-of-shipping", CO_BLUE, { treasury: 5 });
+    state = enterOperation(state, ["chairman", "director-of-trade"]);
+    expect(state.pendingDecision.step).toBe("companyOperation.shipping");
+    expect(state.pendingDecision.prompt).toMatch(/Ships at sea: West Indian \d+.*, South Indian \d+.*, East Indian \d+/);
+  });
+
+  test("investing with a Company share says the share is given up (p.38)", async () => {
+    const { withCompanyShares } = await import("../fixtures/firms");
+    let state = withFirmState(firmsGame(), BLUE, { [BLUE]: 1 });
+    state = withCompanyShares(state, [RED]);
+    state = startAt(RED, state);
+    const invest = state.pendingDecision.legalCommands.find((command) => command.type === "firms.invest")!;
+    expect(invest.description).toMatch(/^You give up the Company share/);
+  });
+
+  test("Firm Investments says who is skipped and why", async () => {
+    const { inFirmsPhase } = await import("../fixtures/firms-fp");
+    const state = inFirmsPhase(firmsGame());
+    const idle = state.log.find((entry) => entry.type === "firms.idle");
+    expect(idle?.summary).toMatch(/nothing to do this turn and are skipped \(.*Company share or an uninvested workshop\)/);
+  });
+
+  test("Board of Control doesn't ask the Prime Minister about their own officeholder", async () => {
+    const { operationGame, enterOperation, choose: coChoose, RED: CO_RED, YELLOW: CO_YELLOW } = await import("../fixtures/company-operation");
+    const { withOffice } = await import("../fixtures/builders");
+    const { withLaw } = await import("../fixtures/company-operation");
+    let state = operationGame("board-of-control-self");
+    state = withLaw(state, "board-of-control");
+    state = { ...state, parliament: { ...state.parliament, primeMinister: CO_YELLOW } };
+    state = withOffice(state, "manager-of-shipping", CO_YELLOW, { treasury: 0 });
+    state = withOffice(state, "military-affairs", CO_RED);
+    state = enterOperation(state, ["chairman", "director-of-trade"]);
+    state = coChoose(state, { action: "finish" });
+    expect(state.pendingDecision.step).not.toBe("companyOperation.boardOfControl");
+  });
+});
