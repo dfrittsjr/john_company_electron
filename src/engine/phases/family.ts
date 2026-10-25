@@ -19,6 +19,8 @@ import type {
   ValidationError,
 } from "../types";
 import type { FamilyState, FamilyTurnStage, FamilyTurnState } from "./family.state";
+import { isDeregulated } from "../firms";
+import { startFirmsPhase } from "./firms";
 import { startHiringPhase } from "./hiring";
 import { registerDecisionRefresher } from "./negotiation";
 import { createCommandLogEntry } from "./shared";
@@ -309,7 +311,9 @@ function finishFamilyTurn(state: GameState): GameState {
 }
 
 function endFamilyPhase(state: GameState): GameState {
-  return startHiringPhase(resolveNewCompanyShares(state));
+  const next = resolveNewCompanyShares(state);
+  // Once deregulated, the Firms phase comes between Family and Hiring (p.38).
+  return isDeregulated(next) ? startFirmsPhase(next) : startHiringPhase(next);
 }
 
 function withDecision(state: GameState, pendingDecision: PendingDecision): GameState {
@@ -1173,7 +1177,7 @@ export function resolveNewCompanyShares(state: GameState): GameState {
 
     converted.add(slot.id);
     debt -= 1;
-    court = [...court, { id: `company-share-${state.turn}-${slot.id}-${slot.share.owner}`, owner: slot.share.owner }];
+    court = [...court, { id: `company-share-${state.turn}-${slot.id}-${slot.share.owner}`, owner: slot.share.owner, createdTurn: state.turn }]; // FP: immature this turn (p.38)
   }
 
   const remaining = state.company.stockExchange

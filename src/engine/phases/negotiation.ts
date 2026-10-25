@@ -6,6 +6,7 @@ import {
   type PromiseCardId,
 } from "../../data";
 import type { CommandHandler } from "../command-handler";
+import { firmById, firmName, transferFirmShares } from "../firms";
 import type {
   ActorId,
   ApplyCommandResult,
@@ -420,6 +421,8 @@ function assetIdOf(item: TransferItem): string | undefined {
       return item.shareId;
     case "promise":
       return item.promiseId;
+    case "firmShare":
+      return `firm-shares:${item.firmId}`;
     default:
       return undefined;
   }
@@ -525,6 +528,15 @@ export function validateTransfer(
         } else if (lockedPromises.has(promise.id)) {
           fail("That promise card has been called in and is waiting for its guarantor.");
         }
+        break;
+      }
+      case "firmShare": {
+        // FP: firm shares trade like Company shares (p.38); they are plain family pieces.
+        const firm = firmById(state, item.firmId);
+        if (!firm) fail(`There is no firm "${item.firmId}".`);
+        else if (!Number.isInteger(item.count) || item.count < 1 || (firm.shares[from] ?? 0) < item.count) {
+          fail(`${giver.name} does not hold ${item.count} share(s) of that firm.`);
+        } else sharesNeeded += item.count; // the receiver puts their own pieces in, as for Company shares
         break;
       }
       default:
@@ -661,6 +673,12 @@ export function applyTransfer(state: GameState, from: PlayerId, to: PlayerId, it
         }
         break;
       }
+      case "firmShare":
+        next = transferFirmShares(next, item.firmId, from, to, item.count);
+        // Pieces swap, as for Company shares (p.8): the giver's come home, the receiver's go in.
+        update(from, (player) => ({ ...player, familyMembers: { ...player.familyMembers, supply: player.familyMembers.supply + item.count } }));
+        update(to, (player) => ({ ...player, familyMembers: { ...player.familyMembers, supply: player.familyMembers.supply - item.count } }));
+        break;
       case "promise":
         next = withNegotiation(next, {
           promiseCards: next.negotiation.promiseCards.map((card) =>
@@ -698,6 +716,10 @@ export function describeTransferItems(state: GameState, from: PlayerId, items: T
           return "a face-down blackmail card";
         case "share":
           return "a Company share";
+        case "firmShare": {
+          const firm = firmById(state, item.firmId);
+          return `${item.count} share${item.count === 1 ? "" : "s"} of ${firm ? firmName(state, firm) : "a firm"}`;
+        }
         case "promise": {
           const promise = state.negotiation.promiseCards.find((card) => card.id === item.promiseId);
           const type = promiseCardTypes.find((candidate) => candidate.id === promise?.type);

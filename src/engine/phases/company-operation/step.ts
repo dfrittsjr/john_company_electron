@@ -41,7 +41,9 @@ export function withBoardOfControlOffer(state: GameState, officeId: OfficeId): G
     co.boardOfControlUsed ||
     !isLawInEffect(state, "board-of-control") ||
     !primeMinister(state) ||
-    !officeHolder(state, officeId)
+    !officeHolder(state, officeId) ||
+    // Assumption: removing your own officeholder is never worth a prompt after every office.
+    officeHolder(state, officeId) === primeMinister(state)
   ) {
     return state;
   }

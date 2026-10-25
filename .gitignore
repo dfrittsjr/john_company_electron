@@ -1,4 +1,5 @@
-node_modules/
+# No trailing slash: agent worktrees link node_modules, and a link is not a directory.
+node_modules
 dist/
 .astro/
 .wrangler/

@@ -97,15 +97,28 @@ export function shippingDecision(state: GameState): PendingDecision {
     step: "companyOperation.shipping",
     actor: officeHolder(state, OFFICE_ID) ?? "system",
     visibility: "public",
-    prompt: done
-      ? `Manager of Shipping: nothing more to spend (treasury £${treasury}).`
-      : treasury > 2
-        ? `Manager of Shipping: spend until £2 or less remains (treasury £${treasury}).`
-        : `Manager of Shipping: you may spend more or finish (treasury £${treasury}).`,
+    prompt:
+      (done
+        ? `Manager of Shipping: nothing more to spend (treasury £${treasury}).`
+        : treasury > 2
+          ? `Manager of Shipping: spend until £2 or less remains (treasury £${treasury}).`
+          : `Manager of Shipping: you may spend more or finish (treasury £${treasury}).`) + ` ${shipsAtSea(state)}`,
     legalCommands: done ? [finish] : commands,
     canSave: true,
   };
 }
+
+/** "Ships at sea: West Indian 1, South Indian 0 (none: Madras can't Trade), East Indian 2." */
+function shipsAtSea(state: GameState): string {
+  const zones = (["west-indian", "south-indian", "east-indian"] as const).map((zone) => {
+    const count = state.company.ships.filter((ship) => ship.location === zone).length;
+    return `${SEA_ZONE_LABEL[zone]} ${count}${count === 0 ? ` (none: ${ZONE_PRESIDENCY[zone]} can't Trade)` : ""}`;
+  });
+  const china = state.company.ships.filter((ship) => ship.location === "china").length;
+  return `Ships at sea: ${zones.join(", ")}${china > 0 ? `, China ${china}` : ""}.`;
+}
+
+const ZONE_PRESIDENCY = { "west-indian": "Bombay", "south-indian": "Madras", "east-indian": "Bengal" } as const;
 
 export const shippingStep: OperationStep = (state, command) => {
   const payload = command.payload as ShippingPayload;

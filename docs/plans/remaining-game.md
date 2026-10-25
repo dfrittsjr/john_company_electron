@@ -1,7 +1,8 @@
 # Plan: finishing the rest of the game
 
 **Where we are.** The 1710 scenario is complete for 3-6 players: every phase, negotiation, the board
-UI, undo and the rules reference. Everything below is not built yet.
+UI, undo and the rules reference. **Deregulation and firms (1) and Long 1710 (2) are built** (see
+`docs/phases/deregulation.md`); everything else below is not built yet.
 
 | # | Piece | Unlocks | Size | Depends on |
 |---|---|---|---|---|

@@ -2,6 +2,7 @@
 // Used by people debugging rules and by AI playtesters. Games are stored as real .joco saves.
 //
 //   npm run harness -- new <file> [--scenario 1710] [--players Red,Blue,Yellow] [--seed s] [--setup random|starter]
+//       [--deregulated]   test aid: start as if the Vote to Deregulate had passed (Long 1710 by default)
 //   npm run harness -- show <file>
 //   npm run harness -- play <file> <n> [--actor id]          apply legal command n of the pending decision
 //   npm run harness -- do <file> <type> [payloadJSON] --actor id   any command, including anytime commands
@@ -13,6 +14,8 @@
 //       prefers productive moves (trade with full dice, little debt, no envoys) so games last longer.
 //       --fund N is a test aid, not a rule: it adds £N to the Company Balance at the start of each
 //       Revenue phase so the Company survives long enough to exercise the later turns.
+//       --until <step prefix>[@turn] stops when a decision whose step starts with it comes up
+//       (on that turn, if given).
 
 import { readFileSync, writeFileSync } from "node:fs";
 import {
@@ -44,8 +47,14 @@ function parseArgs(argv: string[]): { positional: string[]; flags: Flags } {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg.startsWith("--")) {
-      flags[arg.slice(2)] = argv[index + 1] ?? "true";
-      index += 1;
+      // A flag followed by another flag (or nothing) is a switch, e.g. --deregulated.
+      const value = argv[index + 1];
+      if (value === undefined || value.startsWith("--")) {
+        flags[arg.slice(2)] = "true";
+      } else {
+        flags[arg.slice(2)] = value;
+        index += 1;
+      }
     } else {
       positional.push(arg);
     }
@@ -205,6 +214,22 @@ function greedyScore(state: GameState, label: string): number {
     [/^Lease an extra ship/, 9],
     [/^Rotate .* for|^Spend .* vote/, -5],
     [/^Do not retire/, -5],
+    // Firms (Deregulation): form one, fit ships, bid a few dice, pay dividends; avoid
+    // takeovers, mergers and dissolution; agree to firm requests. (Preferring "Refuse" would make
+    // a Commander re-ask a President for alliance money forever.)
+    [/^Form a firm with/, 9],
+    [/^Fit .* to .* for £/, 8],
+    [/^Invest in .* with/, 6],
+    [/^Buy back /, 3],
+    [/^Hostile takeover|^Propose a merger/, -10],
+    [/^Dissolve /, -20],
+    [/^(West|South|East) Indian Ocean$/, 10],
+    [/^Hobnob$/, 2],
+    [/^Spend £\d+$/, 20 + (amount <= 4 ? amount : 8 - amount)],
+    [/^Spend nothing$/, 1],
+    [/^Fill \S+ in /, 15],
+    [/^Pay a dividend of/, 8],
+    [/^Consent$|^Consent to the merger/, 6],
   ];
   if (/^Advance Company Debt/.test(label)) return state.company.debt < 3 ? 8 : -5;
   // Declare another region only when the sea zone has ships to spare for its orders.
@@ -261,14 +286,18 @@ function main(): void {
   if (subcommand === "new") {
     const names = (flags.players ?? "Red,Blue,Yellow").split(",");
     const now = NOW();
-    const state = createNewGame({
+    const deregulated = flags.deregulated !== undefined;
+    const created = createNewGame({
       mode: "hotseat",
-      scenario: (flags.scenario ?? "1710") as ScenarioId,
+      scenario: (flags.scenario ?? (deregulated ? "long-1710" : "1710")) as ScenarioId,
       seed: flags.seed ?? `harness-${now}`,
       now,
       setupDistribution: (flags.setup ?? "random") as "random" | "starter",
       players: names.map((name, index) => ({ id: `player-${index + 1}`, name, color: name.toLowerCase() })),
     });
+    const state = deregulated
+      ? { ...created, parliament: { ...created.parliament, deregulated: true }, firms: created.firms ?? [] }
+      : created;
     save(file, state, null);
     console.log(show(state));
     return;
@@ -320,6 +349,13 @@ function main(): void {
       let rng = createRngState(flags.seed ?? "harness-random");
       let current = state;
       for (let step = 0; step < steps; step += 1) {
+        // --until <step prefix>[@turn]: stop when that decision comes up (on that turn, if given),
+        // e.g. firms.strategy or londonSeason.confirm@5.
+        const [untilStep, untilTurn] = (flags.until ?? "").split("@");
+        if (untilStep && current.pendingDecision.step.startsWith(untilStep) && (!untilTurn || current.turn === Number(untilTurn))) {
+          console.log(`Stopped after ${step} moves at ${current.pendingDecision.step} (--until).`);
+          break;
+        }
         if (anytimePercent > 0) {
           const roll = rollDie(rng, 100, "harness.anytime");
           rng = roll.rng;

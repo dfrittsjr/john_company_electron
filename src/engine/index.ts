@@ -3,6 +3,7 @@ export * from "./rng";
 export * from "./setup";
 export * from "./types";
 export * from "./selectors";
+export * from "./firms";
 export * from "./command-handler";
 export { undoBlockReason } from "./undo";
 export * from "./hidden";

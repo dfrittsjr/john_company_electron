@@ -14,6 +14,7 @@ import { companyOperationCommandHandlers } from "./phases/company-operation";
 import { eventsInIndiaCommandHandlers } from "./phases/events-in-india";
 import { familyCommandHandlers } from "./phases/family";
 import { finalScoringCommandHandlers } from "./phases/final-scoring";
+import { firmsCommandHandlers } from "./phases/firms";
 import { hiringCommandHandlers } from "./phases/hiring";
 import { londonSeasonCommandHandlers } from "./phases/london-season";
 import { negotiationCommandHandlers, registerCommandDryRun } from "./phases/negotiation";
@@ -28,6 +29,7 @@ const COMMAND_HANDLERS: Record<string, CommandHandler> = {
   ...setupCommandHandlers,
   ...londonSeasonCommandHandlers,
   ...familyCommandHandlers,
+  ...firmsCommandHandlers,
   ...hiringCommandHandlers,
   ...companyOperationCommandHandlers,
   ...bonusesCommandHandlers,

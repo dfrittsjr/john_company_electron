@@ -4,6 +4,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import type { GameState } from "../engine";
 import { createHotseatGame } from "../tests/fixtures/game";
 import { DecisionPanel } from "./DecisionPanel";
+import { rulesSections } from "../data/rules-text";
 import { RulesPanel } from "./RulesPanel";
 
 afterEach(cleanup);
@@ -68,3 +69,24 @@ describe("RulesPanel", () => {
     expect(screen.getByText("No section mentions that.")).toBeTruthy();
   });
 });
+
+describe("rules panel figures", () => {
+  test("shows the section's figures with alt text, captions and a full-size link", () => {
+    const section = rulesSections.find((candidate) => candidate.id === "presidency-operations")!;
+    expect(section.figures?.length).toBeGreaterThan(0);
+    render(<RulesPanel initialSectionId="presidency-operations" onClose={vi.fn()} />);
+    const figure = section.figures![0];
+    const image = screen.getByAltText(figure.alt);
+    expect(image.getAttribute("src")).toBe(figure.src);
+    expect(image.getAttribute("loading")).toBe("lazy");
+    expect(image.getAttribute("width")).toBe(String(figure.width));
+    expect(image.closest("a")?.getAttribute("href")).toBe(figure.src);
+    expect(screen.getByText(`${figure.caption} (rulebook p.${figure.page})`)).toBeTruthy();
+  });
+
+  test("a section without pictures renders no figures", () => {
+    render(<RulesPanel initialSectionId="introduction" onClose={vi.fn()} />);
+    expect(document.querySelectorAll("figure").length).toBe(0);
+  });
+});
+

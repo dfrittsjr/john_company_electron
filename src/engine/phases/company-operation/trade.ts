@@ -22,10 +22,12 @@ import {
   payPlayer,
   playerName,
   presidentOfficeId,
+  connectionCouldMatter,
   unplayedBlackmailHolder,
   vacateAfterCatastrophe,
   withCo,
 } from "./context";
+import { resumeFirmFill, startFirmFill, pendingFillers } from "./firm-trade";
 import { presidencyProgress, withActivity } from "./presidency-progress";
 import type { StepResult } from "./step";
 
@@ -44,7 +46,7 @@ export type TradePayload =
 
 type OrderNode = { order: OrderState; regionId: RegionId };
 
-function orderNodes(state: GameState): Map<string, OrderNode> {
+export function orderNodes(state: GameState): Map<string, OrderNode> {
   const nodes = new Map<string, OrderNode>();
   for (const region of Object.values(state.india.regions)) {
     for (const order of region.orders) nodes.set(order.id, { order, regionId: region.id });
@@ -52,9 +54,17 @@ function orderNodes(state: GameState): Map<string, OrderNode> {
   return nodes;
 }
 
-/** An order a writer may be placed on: open and empty (no writer, no filled token this turn). */
+/**
+ * An order the Company may fill: open and not yet filled by the Company this turn. Firms may have
+ * filled it already; the Company then earns half its value (p.40, Deregulation).
+ */
 export function isOrderAvailable(order: OrderState): boolean {
-  return !order.closed && !order.writer && order.filledThisTurnBy.length === 0;
+  return !order.closed && !order.writer && !order.filledThisTurnBy.includes("company");
+}
+
+/** What the Company earns for filling this order now: half value if a firm filled it this turn (p.40). */
+function companyFillValue(order: OrderState): number {
+  return order.filledThisTurnBy.length > 0 ? order.deregulationValue : order.value;
 }
 
 /** Home Region Privileges (p.20): never fill orders in another President's home region. */
@@ -67,7 +77,7 @@ export function homeRegionOf(state: GameState, presidency: PresidencyId): Region
   return Object.values(state.india.regions).find((region) => region.homePresidency === presidency)!.id;
 }
 
-function homePort(state: GameState, presidency: PresidencyId): OrderState | undefined {
+export function homePort(state: GameState, presidency: PresidencyId): OrderState | undefined {
   return state.india.regions[homeRegionOf(state, presidency)]?.orders.find(
     (order) => order.isHomePortFor === presidency,
   );
@@ -121,7 +131,10 @@ export function tradeUnavailableReason(state: GameState, presidency: PresidencyI
   if (!presidentOf(state, presidency)) return "the President is vacant";
   if ((coState(state).tradedPresidencies ?? []).includes(presidency)) return "this Presidency has already traded this turn (p.20)";
   const port = homePort(state, presidency);
-  if (!port || !isOrderAvailable(port)) return "its home port is closed or filled";
+  if (!port || port.closed) {
+    return `its home port (the £${port?.value ?? "?"} order in ${presidency}) is closed; the Director of Trade can reopen it with a Special Envoy (p.18)`;
+  }
+  if (!isOrderAvailable(port)) return `its home port (the £${port.value} order in ${presidency}) is already filled this turn`;
   if (shipsInPresidencyZone(state, presidency) === 0) {
     return `there are no ships in the ${SEA_ZONE_LABEL[SEA_ZONE_BY_PRESIDENCY[presidency]]} sea zone (the Manager of Shipping places them)`;
   }
@@ -296,7 +309,7 @@ export function tradeStep(state: GameState, presidency: PresidencyId, activity: 
 
       // Mercantile Connection (blackmail #8) may force a reroll after any Trade check.
       const holder = unplayedBlackmailHolder(rolled, "mercantile-connection");
-      if (holder) {
+      if (holder && connectionCouldMatter(pending, holder, presidentOf(rolled, presidency))) {
         return {
           state: withCo(rolled, { interrupt: { kind: "connection", cardId: "mercantile-connection", holder, check: pending } }),
           summary,
@@ -328,6 +341,14 @@ export function resolveTradeCheck(
       ships: shipsInPresidencyZone(state, presidency),
       placedOrderIds: [],
     };
+    const trading = pendingFillers(state, presidency);
+    if (trading.length > 0) {
+      // Firms fill with the Company in initiative order (p.40); the President's initiative is ships
+      // minus successes, like a firm's.
+      const initiative = placing.ships - check.values.filter((value) => value <= 2).length;
+      const started = startFirmFill(withActivity(state, presidency, undefined), presidency, { initiative, activity: placing }, false);
+      return { state: started.state, note: ["Orders are filled in initiative order.", ...started.notes].join(" ") };
+    }
     return { state: withActivity(state, presidency, placing), note: "Place writers on orders." };
   }
   if (check.outcome === "catastrophe") {
@@ -387,7 +408,12 @@ function placeOrder(
     };
   }
 
-  const placing: TradeActivity = { ...activity, placedOrderIds: [...activity.placedOrderIds, orderId] };
+  const placedOrder = orderNodes(state).get(orderId)!.order;
+  const placing: TradeActivity = {
+    ...activity,
+    placedOrderIds: [...activity.placedOrderIds, orderId],
+    placedValues: [...(activity.placedValues ?? activity.placedOrderIds.map((id) => orderNodes(state).get(id)!.order.value)), companyFillValue(placedOrder)],
+  };
   const summary =
     writer === "token"
       ? `Filled ${orderId} with a filled-order token.`
@@ -403,7 +429,8 @@ function placeOrder(
 function finishTrade(state: GameState, presidency: PresidencyId, activity: TradeActivity) {
   const nodes = orderNodes(state);
   const filled = activity.placedOrderIds.map((orderId) => nodes.get(orderId)!.order);
-  const revenue = filled.reduce((total, order) => total + order.value, 0);
+  const values = activity.placedValues ?? filled.map((order) => order.value);
+  const revenue = values.reduce((total, value) => total + value, 0);
   let next = addToCompanyBalance(state, revenue);
 
   const bonus = payOfficeholderBonus(next, presidentOfficeId(presidency), filled.length);
@@ -428,9 +455,13 @@ function finishTrade(state: GameState, presidency: PresidencyId, activity: Trade
     tradedPresidencies: [...(co.tradedPresidencies ?? []), presidency],
   });
 
+  // Firms still waiting for their turn in initiative order fill now (p.40).
+  const resumed = resumeFirmFill(next);
+  next = resumed.state;
+
   return {
     state: next,
-    summary: `Trade complete: ${filled.length} order${filled.length === 1 ? "" : "s"} worth £${revenue} to the Company Balance; President's bonus £${filled.length}.`,
+    summary: `${resumed.notes.length > 0 ? `${resumed.notes.join(" ")} ` : ""}Trade complete: ${filled.length} order${filled.length === 1 ? "" : "s"} worth £${revenue} to the Company Balance; President's bonus £${filled.length}.`,
     details: { orders: activity.placedOrderIds, revenue, presidentBonus: filled.length, bonusRecipient: bonus.recipient, writerBonuses },
   };
 }

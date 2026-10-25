@@ -67,7 +67,7 @@ Envoy to China (trade value), Inclosure Acts.
     any writer. Choosing their own needs one table-wide consent decision; on refusal they must pick
     another family.
 13. **Board of Control** is offered after each office finishes: red-ribbon offices, Presidents at the
-    end of their Presidency, and Governors. Commanders are not offices.
+    end of their Presidency, and Governors. Commanders are not offices. The Prime Minister isn't asked about their own officeholders (removing yourself is never useful, and the prompt came after every office).
 14. **Military Oversight**: candidates are families with officers in that Army. Appointing the
     Prime Minister's own officer asks each other family with officers there for Nepotism consent,
     one at a time from the Prime Minister's left; one refusal is enough, and a called-in "My

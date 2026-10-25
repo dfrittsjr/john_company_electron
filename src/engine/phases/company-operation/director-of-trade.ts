@@ -47,6 +47,24 @@ function envoyOrderTargets(state: GameState): string[] {
     .flatMap((region) => region.orders.filter((order) => order.closed).map((order) => order.id));
 }
 
+/** Presidencies whose home port is closed: their Presidents can't Trade until it reopens (p.20). */
+function closedHomePorts(state: GameState): PresidencyId[] {
+  return PRESIDENCY_IDS.filter((presidency) =>
+    Object.values(state.india.regions).some((region) => region.orders.some((order) => order.isHomePortFor === presidency && order.closed)),
+  );
+}
+
+function orderLabel(state: GameState, orderId: string): string {
+  for (const region of Object.values(state.india.regions)) {
+    const order = region.orders.find((candidate) => candidate.id === orderId);
+    if (!order) continue;
+    return order.isHomePortFor
+      ? `Reopen ${order.isHomePortFor}'s home port (the £${order.value} order in ${region.name}): its President can Trade again`
+      : `Open the £${order.value} order in ${region.name}`;
+  }
+  return `Open order ${orderId}`;
+}
+
 function envoyHasEffect(state: GameState): boolean {
   return !chinaOpen(state) || envoyOrderTargets(state).length > 0;
 }
@@ -58,10 +76,16 @@ export function directorDecision(state: GameState): PendingDecision {
   let prompt: string;
 
   if (current.stage === "envoy") {
-    prompt = `Director of Trade: send a Special Envoy (£1 per die, treasury £${treasury}) or move on to transfers.`;
+    const closed = closedHomePorts(state);
+    const closedNote = closed.length > 0 ? ` Closed home ports: ${closed.join(", ")}.` : "";
+    prompt = `Director of Trade: send a Special Envoy (£1 per die, treasury £${treasury}) or move on to transfers.${closedNote}`;
     commands.push({
       type: "companyOperation.directorOfTrade",
       label: "Stop sending envoys",
+      description:
+        closed.length > 0 && treasury > 0
+          ? `Warning: the home port of ${closed.join(" and ")} is still closed, so ${closed.length === 1 ? "that President" : "those Presidents"} can't Trade this turn.`
+          : undefined,
       payload: { action: "stopEnvoys" } satisfies DirectorPayload,
     });
     if (envoyHasEffect(state)) {
@@ -74,19 +98,25 @@ export function directorDecision(state: GameState): PendingDecision {
       }
     }
   } else if (current.stage === "envoyEffect") {
-    prompt = "The Special Envoy succeeded. Open trade with China or open one closed order.";
+    prompt = "The Special Envoy succeeded. Open one closed order, or open trade with China.";
+    // Home ports first: without one, a Presidency can't Trade at all.
+    const targets = envoyOrderTargets(state);
+    const homePorts = new Set(
+      Object.values(state.india.regions).flatMap((region) => region.orders.filter((order) => order.isHomePortFor).map((order) => order.id)),
+    );
+    for (const orderId of [...targets.filter((id) => homePorts.has(id)), ...targets.filter((id) => !homePorts.has(id))]) {
+      commands.push({
+        type: "companyOperation.directorOfTrade",
+        label: orderLabel(state, orderId),
+        payload: { action: "openOrder", orderId } satisfies DirectorPayload,
+      });
+    }
     if (!chinaOpen(state)) {
       commands.push({
         type: "companyOperation.directorOfTrade",
         label: "Open trade with China",
+        description: "Creates the Superintendent of Trade in China office (p.25).",
         payload: { action: "openChina" } satisfies DirectorPayload,
-      });
-    }
-    for (const orderId of envoyOrderTargets(state)) {
-      commands.push({
-        type: "companyOperation.directorOfTrade",
-        label: `Open order ${orderId}`,
-        payload: { action: "openOrder", orderId } satisfies DirectorPayload,
       });
     }
   } else {

@@ -6,8 +6,8 @@ Several agents build phases in parallel on separate branches, so the ownership r
 ## Scope
 
 The target is the **1710 scenario for 3-6 human players**, playable start to finish by passing a save
-file. Out of scope for now: Deregulation and firms (and therefore the Firms phase and the Vote to
-Deregulate), 1758/1813 setup, and the Crown (solo/two-player AI).
+file. Deregulation and Long 1710 followed (`phases/deregulation.md`). Out of scope for now: 1758/1813
+setup and the Crown (solo/two-player AI).
 
 ## Sources of truth
 

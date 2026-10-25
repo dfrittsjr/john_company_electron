@@ -158,8 +158,8 @@ describe("projectForViewer", () => {
         ...base.hidden,
         privateCards: { [ANN]: [{ id: "x-ann", cardId: "secret-ann", facedown: true }], [BEN]: [{ id: "x-ben", cardId: "secret-ben", facedown: true }] },
         firmStrategySecrets: {
-          "firm-a": { firmId: "firm-a", committedBy: ANN, commitmentHash: "hash-a", salt: "salt-a" },
-          "firm-b": { firmId: "firm-b", committedBy: BEN, revealedStrategy: "west", salt: "salt-b", commitmentHash: "hash-b" },
+          "firm-a": { firmId: "firm-a", committedBy: ANN, strategy: "south-indian", bid: 4 },
+          "firm-b": { firmId: "firm-b", committedBy: BEN, strategy: "west-indian", bid: 3, revealed: true },
         },
         crownDeck: { drawPile: ["crown-ai-03"], discardPile: [], removed: [] },
         crownBlackmail: [{ id: "crown-bm", cardId: "secret-crown", facedown: true }],
@@ -172,11 +172,13 @@ describe("projectForViewer", () => {
     expect(ben.hidden.firmStrategySecrets["firm-b"]).toEqual(state.hidden.firmStrategySecrets["firm-b"]);
     expect(ben.hidden.crownDeck).toBeUndefined();
     expect(ben.hidden.crownBlackmail).toBeUndefined();
-    expect(mentions(ben, "salt-a")).toBe(false);
+    expect(JSON.stringify(ben.hidden.firmStrategySecrets)).not.toContain("south-indian");
     expect(mentions(ben, "secret-ann")).toBe(false);
 
     const ann = projectForViewer(state, { kind: "seat", playerId: ANN });
     expect(ann.hidden.firmStrategySecrets["firm-a"]).toEqual(state.hidden.firmStrategySecrets["firm-a"]);
+    // Someone else's revealed strategy is public; its bid already is (FirmState.tradeBid).
+    expect(ann.hidden.firmStrategySecrets["firm-b"]).toEqual({ firmId: "firm-b", committedBy: BEN, strategy: "west-indian", revealed: true });
 
     const spectator = projectForViewer(state, { kind: "spectator" });
     expect(spectator.hidden.privateCards).toEqual({});

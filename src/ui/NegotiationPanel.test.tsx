@@ -1,5 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { formFirm, investInFirm } from "../engine";
+import { withWorkshop } from "../tests/fixtures/firms";
 import { BLUE, RED, negotiationGame, withBlackmail } from "../tests/fixtures/negotiation";
 import { NegotiationPanel } from "./NegotiationPanel";
 
@@ -52,6 +54,22 @@ describe("NegotiationPanel", () => {
     expect(onCommand).toHaveBeenCalledWith(RED, "negotiation.give", {
       to: BLUE,
       items: [{ kind: "cash", amount: 3 }],
+    });
+  });
+
+  test("offers firm shares and sends two of the same firm as one item (p.38)", () => {
+    let deregulated = withWorkshop(withWorkshop({ ...game, parliament: { ...game.parliament, deregulated: true }, firms: [] }, RED), RED, "workshop-2");
+    const formed = formFirm(deregulated, RED, { kind: "workshop", enterpriseId: `workshop-${RED}` });
+    deregulated = investInFirm(formed.state, formed.firmId, RED, { kind: "workshop", enterpriseId: "workshop-2" }).state;
+    const onCommand = vi.fn();
+    render(<NegotiationPanel game={deregulated} revealedPlayer={RED} onReveal={vi.fn()} onCommand={onCommand} />);
+
+    fireEvent.click(screen.getByLabelText("Benyon & Co. share (1 of 2)"));
+    fireEvent.click(screen.getByLabelText("Benyon & Co. share (2 of 2)"));
+    fireEvent.click(screen.getByRole("button", { name: "Give now" }));
+    expect(onCommand).toHaveBeenCalledWith(RED, "negotiation.give", {
+      to: BLUE,
+      items: [{ kind: "firmShare", firmId: formed.firmId, count: 2 }],
     });
   });
 });

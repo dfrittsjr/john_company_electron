@@ -9,6 +9,8 @@ import {
   prestigeCards,
 } from "../../data";
 import type { FailureCard, PowerTargetId } from "../../data";
+import { allFirms, firmName, firmShareVictoryPoints } from "../firms";
+import { firmCharter } from "../../data";
 import { rollDie } from "../rng";
 import {
   companySharesByPlayer,
@@ -51,35 +53,33 @@ export function confirmFinalScoring(state: GameState, command: GameCommand): App
     next = { ...next, rng: draw.rng };
   }
 
-  next = scoreBeforeRetirement(next, survived, failureCard);
+  // Start of Final Scoring (p.37): firm shares and Debtor's Prison, then any shareholder's special
+  // retirement, whether the Company succeeded or failed; only then the rest of Final Scoring.
+  next = { ...next, finalScoring: { ...next.finalScoring, companySurvived: survived, failureCardId: failureCard?.id } };
+  next = scoreFirms(next, failureCard);
   let summary = survived
     ? "Final Scoring: the Company survived."
     : `Final Scoring: the Company failed; drew ${failureCard?.name}.`;
 
+  next = beginRetirements(next, "finalSpecial");
+  next = {
+    ...next,
+    finalScoring: {
+      ...next.finalScoring,
+      victoryPointsBeforeSpecial: Object.fromEntries(Object.values(next.players).map((player) => [player.id, player.victoryPoints])),
+    },
+  };
   let decision: PendingDecision | undefined;
-  if (survived) {
-    // "If the Company survived, all players roll for attrition and retire any pensioners. No
-    // prestige cards are gained" (p.9).
-    const attrition = resolveOfficeAttrition(next, "finalScoring.attrition");
-    rolls.push(...attrition.rolls);
-    next = beginRetirements(attrition.state, "finalScoring");
-    next = {
-      ...next,
-      finalScoring: {
-        ...next.finalScoring,
-        victoryPointsBeforeRetirement: Object.fromEntries(
-          Object.values(next.players).map((player) => [player.id, player.victoryPoints]),
-        ),
-      },
-    };
-    const advanced = advanceRetirements(next);
-    next = advanced.state;
-    decision = advanced.decision;
-    summary += ` Final attrition retired ${attrition.retiredOffices.length} officeholder(s).`;
-  }
+  const special = advanceRetirements(next);
+  next = special.state;
+  decision = special.decision;
 
   if (!decision) {
-    next = completeFinalScoring(next);
+    const rest = finishFinalSpecial(next);
+    next = rest.state;
+    decision = rest.decision;
+    rolls.push(...rest.rolls);
+    if (survived) summary += ` Final attrition retired ${rest.retiredOffices} officeholder(s).`;
   }
 
   const logEntry = createCommandLogEntry({
@@ -108,6 +108,68 @@ export function confirmFinalScoring(state: GameState, command: GameCommand): App
   };
 }
 
+/**
+ * The opening special retirement is over: record what it earned, then the rest of Final Scoring
+ * (Power Award, shares and workshops, failure card, and for a surviving Company attrition and the
+ * final retirement of pensioners).
+ */
+export function finishFinalSpecial(state: GameState): {
+  state: GameState;
+  decision?: PendingDecision;
+  rolls: RngRollRecord[];
+  retiredOffices: number;
+} {
+  const progress = state.londonSeason.retirement;
+  const before = state.finalScoring.victoryPointsBeforeSpecial ?? {};
+  const opening = { ...(state.finalScoring.openingEntries ?? {}) };
+  for (const player of Object.values(state.players)) {
+    const gained = player.victoryPoints - (before[player.id] ?? player.victoryPoints);
+    if (gained !== 0) opening[player.id] = [...(opening[player.id] ?? []), { label: "Special retirement to prizes", victoryPoints: gained }];
+  }
+
+  const survived = !state.company.failed;
+  const failureCard = companyFailureCards.find((card) => card.id === state.finalScoring.failureCardId);
+  const rolls: RngRollRecord[] = [];
+  let next: GameState = {
+    ...state,
+    londonSeason: { ...state.londonSeason, retirement: undefined },
+    finalScoring: {
+      ...state.finalScoring,
+      openingEntries: opening,
+      specialCarry: progress
+        ? { usedDiscounts: progress.usedDiscounts, lettersOfIntroduction: progress.lettersOfIntroduction }
+        : undefined,
+    },
+  };
+  next = scoreBeforeRetirement(next, survived, failureCard);
+
+  let decision: PendingDecision | undefined;
+  let retiredOffices = 0;
+  if (survived) {
+    // "If the Company survived, all players roll for attrition and retire any pensioners. No
+    // prestige cards are gained" (p.9).
+    const attrition = resolveOfficeAttrition(next, "finalScoring.attrition");
+    rolls.push(...attrition.rolls);
+    retiredOffices = attrition.retiredOffices.length;
+    next = beginRetirements(attrition.state, "finalScoring", next.finalScoring.specialCarry);
+    next = {
+      ...next,
+      finalScoring: {
+        ...next.finalScoring,
+        victoryPointsBeforeRetirement: Object.fromEntries(
+          Object.values(next.players).map((player) => [player.id, player.victoryPoints]),
+        ),
+      },
+    };
+    const advanced = advanceRetirements(next);
+    next = advanced.state;
+    decision = advanced.decision;
+  }
+
+  if (!decision) next = completeFinalScoring(next);
+  return { state: next, decision, rolls, retiredOffices };
+}
+
 /** Called when the final retirement step has no more decisions. */
 export function finishFinalScoringAfterRetirements(state: GameState): GameState {
   const before = state.finalScoring.victoryPointsBeforeRetirement ?? {};
@@ -128,6 +190,50 @@ export function finishFinalScoringAfterRetirements(state: GameState): GameState 
     londonSeason: { ...state.londonSeason, retirement: undefined },
     finalScoring: { ...state.finalScoring, players },
   });
+}
+
+/**
+ * Firms in Final Scoring (p.37, p.41): each firm share scores its firm's Value in VP and each piece in
+ * Debtor's Prison -1. Fractions are summed across the player's shares and rounded down at the end.
+ * Industry's Greed Condemned skips both when deregulated.
+ */
+function scoreFirms(state: GameState, failureCard: FailureCard | undefined): GameState {
+  const skipShares = Boolean(
+    failureCard?.effects.some((effect) => effect.type === "skipScoring" && effect.items.includes("firmSharesIfDeregulated")),
+  );
+  const skipPrison = Boolean(
+    failureCard?.effects.some((effect) => effect.type === "skipScoring" && effect.items.includes("debtorsPrisonIfDeregulated")),
+  );
+  const openingEntries: Record<PlayerId, FinalScoringEntry[]> = {};
+  let players = state.players;
+
+  for (const playerId of state.seatingOrder) {
+    const player = state.players[playerId];
+    const entries: FinalScoringEntry[] = [];
+    let exact = 0;
+    // Work in quarter points would also do; halves are the only fractions on the Value track.
+    if (!skipShares) {
+      for (const firm of allFirms(state)) {
+        const count = firm.shares[playerId] ?? 0;
+        if (count <= 0) continue;
+        const each = firmShareVictoryPoints(firm.value);
+        exact += count * each;
+        entries.push({ label: `${firmName(state, firm)} shares: ${count} × ${each > 0 ? "+" : ""}${each} (Value ${firm.value})`, victoryPoints: count * each });
+      }
+    }
+    if (!skipPrison && player.familyMembers.debtorPrison > 0) {
+      const lost = player.familyMembers.debtorPrison * firmCharter.debtorsPrisonVictoryPoints;
+      exact += lost;
+      entries.push({ label: `Debtor's Prison: ${player.familyMembers.debtorPrison} × ${firmCharter.debtorsPrisonVictoryPoints}`, victoryPoints: lost });
+    }
+    if (entries.length === 0) continue;
+    const total = Math.floor(exact);
+    if (total !== exact) entries.push({ label: "Fractions rounded down", victoryPoints: total - exact });
+    openingEntries[playerId] = entries;
+    players = { ...players, [playerId]: { ...player, victoryPoints: player.victoryPoints + total } };
+  }
+
+  return { ...state, players, finalScoring: { ...state.finalScoring, openingEntries } };
 }
 
 /** Steps 1 and 2 of Final Scoring (and the failure card), applied to each player's VP. */
@@ -161,18 +267,22 @@ function scoreBeforeRetirement(state: GameState, survived: boolean, failureCard:
     }
 
     if (!survived && !skipWorkshops) {
-      const workshops = player.enterprises.filter((enterprise) => enterprise.type === "workshop").length;
+      // Invested workshops are not scored if the Company fails (p.38).
+      const workshops = player.enterprises.filter((enterprise) => enterprise.type === "workshop" && !enterprise.invested).length;
       if (workshops > 0) entries.push({ label: `Workshops: ${workshops} × +1`, victoryPoints: workshops });
     }
 
     if (failureCard) entries.push(...failureCardEntries(state, playerId, failureCard));
 
     const total = entries.reduce((sum, entry) => sum + entry.victoryPoints, 0);
+    // Firm shares, Debtor's Prison and the opening special retirement are already in the player's VP.
+    const opening = state.finalScoring.openingEntries?.[playerId] ?? [];
+    const alreadyScored = opening.reduce((sum, entry) => sum + entry.victoryPoints, 0);
     players[playerId] = {
       playerId,
-      victoryPointsBefore: player.victoryPoints,
+      victoryPointsBefore: player.victoryPoints - alreadyScored,
       power: powers.get(playerId) as PowerBreakdown,
-      entries,
+      entries: [...opening, ...entries],
       finalVictoryPoints: player.victoryPoints + total,
       windowIcons: playerWindowIcons(state, playerId),
       rank: 0,
@@ -377,13 +487,23 @@ function completeFinalScoring(state: GameState): GameState {
   });
 
   const winner = settled.players[ranking[0]];
+  // Say how a tie for first was broken, so the result doesn't look arbitrary.
+  const tied = ranking.filter((playerId) => settled.players[playerId].victoryPoints === winner?.victoryPoints);
+  let tieNote = "";
+  if (winner && tied.length > 1) {
+    const others = tied.slice(1).map((playerId) => settled.players[playerId].name).join(" and ");
+    const byWindows = playerWindowIcons(settled, ranking[0]) > playerWindowIcons(settled, tied[1]);
+    tieNote = byWindows
+      ? ` Tied with ${others}; ${winner.name} has the most window icons (p.9).`
+      : ` Tied with ${others} on VP and window icons; ${winner.name} comes first in Prime Minister order (p.9).`;
+  }
   const decision: PendingDecision = {
     id: `decision-final-scoring-complete-turn-${settled.turn}`,
     phase: "finalScoring",
     step: "finalScoring.complete",
     actor: "system",
     visibility: "public",
-    prompt: `Final Scoring is complete: ${winner?.name ?? "nobody"} wins with ${winner?.victoryPoints ?? 0} VP.`,
+    prompt: `Final Scoring is complete: ${winner?.name ?? "nobody"} wins with ${winner?.victoryPoints ?? 0} VP.${tieNote}`,
     legalCommands: [],
     canSave: true,
   };
