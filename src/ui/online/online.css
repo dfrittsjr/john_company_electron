@@ -26,7 +26,12 @@
 .link-list .link-owner {
   grid-column: 1 / -1;
   display: flex;
-  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.link-list .link-owner strong {
+  flex: 1;
 }
 
 .link-list input {
