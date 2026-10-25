@@ -17,6 +17,7 @@ import {
 import { installGovernorGeneral, officeCategory, officeLabel, vacateOffice } from "../../offices";
 import { beginImmediateHire } from "../hiring";
 import { enactDeregulation, failDeregulation } from "./deregulation";
+import { payWithRoyalPrivilege } from "../../crown/areas/parliament-rules";
 
 type StepOutcome =
   | { state: GameState; decision?: undefined; replaceWith?: ParliamentResolutionStep[] }
@@ -190,6 +191,14 @@ function settleTax(
       players.shift();
       continue;
     }
+    if (current.players[playerId].isCrown && cash < items.length) {
+      // Royal Privilege: the Crown uses the Company treasury, and emergency loans, rather than give anything up.
+      const paid = payWithRoyalPrivilege(current, items.length, `tax on ${items.length} ${TARGET_NAME[step.target]}(s)`);
+      current = paid.state;
+      collector.notes.push(paid.note);
+      players.shift();
+      continue;
+    }
     if (cash >= items.length) {
       current = addCash(current, playerId, -items.length);
       collector.notes.push(
@@ -233,6 +242,13 @@ function settleWindowTax(
     const due = items.reduce((total, item) => total + item.windowIcons, 0);
     const cash = current.players[playerId].cash;
     if (due === 0) {
+      players.shift();
+      continue;
+    }
+    if (current.players[playerId].isCrown && cash < due) {
+      const paid = payWithRoyalPrivilege(current, due, "window tax");
+      current = paid.state;
+      collector.notes.push(paid.note);
       players.shift();
       continue;
     }
@@ -618,6 +634,11 @@ function changePrimeMinister(state: GameState, collector: Collector): StepOutcom
     return { state };
   }
 
+  if (leader === primeMinister(state)) {
+    // The Crown can be Prime Minister and Opposition Leader at once (Handbook p.15).
+    collector.notes.push(`${playerName(state, leader)} is both Prime Minister and Opposition Leader, and remains Prime Minister.`);
+    return { state: { ...state, parliament: { ...state.parliament, oppositionLeader: undefined } } };
+  }
   collector.notes.push(`${playerName(state, leader)}, the Opposition Leader, became Prime Minister.`);
   return {
     state: { ...state, parliament: { ...state.parliament, primeMinister: leader, oppositionLeader: undefined } },
