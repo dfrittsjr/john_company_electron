@@ -12,6 +12,7 @@ import {
   type GameState,
   type PresidencyId,
 } from "../engine";
+import { describeFillers, orderFillers } from "./firm-view";
 import { cardName, humanize, isBlackmailCard, officeLabel, playerName } from "./view-model";
 
 type Props = {
@@ -59,7 +60,7 @@ function details(game: GameState, target: string): { title: string; body: ReactN
         : order.writer
           ? `Filled by a ${playerName(game, order.writer.playerId)} writer (${order.writer.presidency})`
           : order.filledThisTurnBy.length > 0
-            ? "Filled (filled-order token)"
+            ? `Filled this turn by ${describeFillers(orderFillers(game, order))} (filled-order token)`
             : "Open";
       return {
         title: `£${order.value} order in ${region.name}`,

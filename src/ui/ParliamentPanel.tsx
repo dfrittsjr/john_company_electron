@@ -1,5 +1,6 @@
 import { lawsById, policyDial } from "../data";
 import type { GameState } from "../engine";
+import { deregulationAvailable, deregulationStatus } from "./firm-view";
 import { humanize, playerName } from "./view-model";
 
 type Props = {
@@ -25,6 +26,15 @@ export function ParliamentPanel({ game }: Props) {
           <dd>{parliament.oppositionLeader ? playerName(game, parliament.oppositionLeader) : "-"}</dd>
         </div>
       </dl>
+
+      {deregulationAvailable(game) || game.parliament.deregulated ? (
+        <section className="deregulation-panel" aria-label="Deregulation">
+          <h3>Deregulation</h3>
+          <p>
+            <span className="deregulation-status">{deregulationStatus(game).summary}.</span> {deregulationStatus(game).detail}
+          </p>
+        </section>
+      ) : null}
 
       {proposal ? (
         <section aria-label="Law before Parliament">

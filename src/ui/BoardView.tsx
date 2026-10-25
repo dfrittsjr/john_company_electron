@@ -10,6 +10,7 @@ import {
   type PresidencyId,
   type ShipState,
 } from "../engine";
+import { describeFillers, orderFillers } from "./firm-view";
 import {
   ARMY_LAYOUT,
   BOARD_HEIGHT,
@@ -809,23 +810,34 @@ function India({ ctx }: { ctx: DrawContext }) {
                 </g>
               ) : null
             ) : null}
-            {region.orders.map((order) => (
-              <Target key={order.id} ctx={ctx} target={`order:${order.id}`} ring={{ cx: order.boardPosition.x, cy: order.boardPosition.y, r: 62 }} label={`Order ${order.id} (£${order.value})`}>
-                {order.closed ? (
-                  <g>
-                    <ellipse cx={order.boardPosition.x} cy={order.boardPosition.y} rx={50} ry={64} className="closed-order" />
-                    <Label x={order.boardPosition.x} y={order.boardPosition.y + 16} text="closed" size={30} className="chip-text" />
-                  </g>
-                ) : order.writer ? (
-                  <Piece x={order.boardPosition.x} y={order.boardPosition.y} color={ctx.colors[order.writer.playerId]} text={playerInitials(game, order.writer.playerId)} r={44} />
-                ) : order.filledThisTurnBy.length > 0 ? (
-                  <g>
-                    <ellipse cx={order.boardPosition.x} cy={order.boardPosition.y} rx={46} ry={58} className="filled-order" />
-                    <Label x={order.boardPosition.x} y={order.boardPosition.y + 14} text="filled" size={30} />
-                  </g>
-                ) : null}
-              </Target>
-            ))}
+            {region.orders.map((order) => {
+              const fillers = orderFillers(game, order);
+              const byFirm = fillers.firms.length > 0;
+              const label = `Order ${order.id} (£${order.value})${order.filledThisTurnBy.length > 0 ? `, filled this turn by ${describeFillers(fillers)}` : ""}`;
+              return (
+                <Target key={order.id} ctx={ctx} target={`order:${order.id}`} ring={{ cx: order.boardPosition.x, cy: order.boardPosition.y, r: 62 }} label={label}>
+                  {order.closed ? (
+                    <g>
+                      <ellipse cx={order.boardPosition.x} cy={order.boardPosition.y} rx={50} ry={64} className="closed-order" />
+                      <Label x={order.boardPosition.x} y={order.boardPosition.y + 16} text="closed" size={30} className="chip-text" />
+                    </g>
+                  ) : order.writer ? (
+                    <Piece x={order.boardPosition.x} y={order.boardPosition.y} color={ctx.colors[order.writer.playerId]} text={playerInitials(game, order.writer.playerId)} r={44} />
+                  ) : order.filledThisTurnBy.length > 0 ? (
+                    <g>
+                      <ellipse
+                        cx={order.boardPosition.x}
+                        cy={order.boardPosition.y}
+                        rx={46}
+                        ry={58}
+                        className={byFirm ? (fillers.company ? "filled-order filled-order-both" : "filled-order filled-order-firm") : "filled-order"}
+                      />
+                      <Label x={order.boardPosition.x} y={order.boardPosition.y + 14} text={byFirm ? (fillers.company ? "both" : "firm") : "filled"} size={30} />
+                    </g>
+                  ) : null}
+                </Target>
+              );
+            })}
           </g>
         );
       })}

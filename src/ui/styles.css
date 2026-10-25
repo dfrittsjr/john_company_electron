@@ -356,3 +356,7 @@ input {
   display: grid;
   gap: 8px;
 }
+
+.scenario-option-disabled {
+  opacity: 0.55;
+}

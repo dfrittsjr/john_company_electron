@@ -821,7 +821,6 @@ export const rulesSections: RuleSection[] = [
     title: "Deregulation",
     pages: "37-42",
     phase: "firms",
-    notInApp: true,
     blocks: [
       p("The next section is only used when players are playing games with Deregulation."),
       p("These rules are in play during the 1813 scenario. In addition, they may be triggered if players vote to deregulate the Company during the long 1710 scenario or the 1758 scenario."),
