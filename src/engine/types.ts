@@ -3,6 +3,7 @@ import type { EventsInIndiaState } from "./phases/events-in-india.state";
 import type { FamilyState } from "./phases/family.state";
 import type { FinalScoringState } from "./phases/final-scoring.state";
 import type { HiringState } from "./phases/hiring.state";
+import type { FirmsPhaseState } from "./phases/firms/state";
 import type { LondonSeasonState } from "./phases/london-season.state";
 import type { NegotiationState } from "./phases/negotiation.state";
 import type { ParliamentState } from "./phases/parliament.state";
@@ -447,6 +448,8 @@ export type GameState = {
   hiring: HiringState;
   decks: Record<string, DeckState>;
   firms?: FirmState[];
+  /** Round and merger bookkeeping while the Firms phase runs (phases/firms/state.ts). */
+  firmsPhase?: FirmsPhaseState;
   crown?: CrownState;
   rng: RngState;
   log: GameLogEntry[];

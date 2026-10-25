@@ -402,7 +402,7 @@ function sedleyLeavesChairman(state: GameState, playerId: PlayerId): GameState {
     ...state,
     company: {
       ...state.company,
-      court: [...state.company.court, { id: `company-share-sedley-${state.turn}-${playerId}`, owner: playerId }],
+      court: [...state.company.court, { id: `company-share-sedley-${state.turn}-${playerId}`, owner: playerId, createdTurn: state.turn }], // FP: immature (p.38)
       offices: { ...state.company.offices, chairman: { ...office, holder: undefined, vacant: true, fatigue: 0 } },
       vacantOffices: [...new Set([...state.company.vacantOffices, "chairman"])],
     },
