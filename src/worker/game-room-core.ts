@@ -7,6 +7,7 @@ import {
   applyCommand,
   createNewGame,
   createRngState,
+  identifiableFaceDownCards,
   isAnytimeCommandType,
   projectForViewer,
   resolveHiddenIds,
@@ -580,7 +581,8 @@ export class GameRoomCore {
     const restored: GameState = { ...before, rng: state.rng };
     const version = meta.version + 1;
     const at = this.timestamp();
-    this.commit(meta, restored, { history: meta.history.slice(0, -1) }, [
+    const recent = meta.recentCommands.filter((key) => key !== `${seat.id} ${entry.commandId}`);
+    this.commit({ ...meta, recentCommands: recent }, restored, { history: meta.history.slice(0, -1) }, [
       { version, seatId: seat.id, kind: "undo", commandId: entry.commandId, at },
     ]);
     return ok({ ok: true, view: this.viewFor(seat) }, true);
@@ -597,8 +599,21 @@ export class GameRoomCore {
     if (entry.afterVersion !== meta.version) return { available: false, reason: "The game has changed since your last move." };
     const before = this.snapshot(entry.beforeVersion);
     if (!before) return { available: false, reason: "That move is too far back to undo." };
-    const blocked = undoBlockReason(before, state);
+    const blocked = undoBlockReason(before, state) ?? this.newlySeenCard(before, state);
     return blocked ? { available: false, reason: blocked } : { available: true };
+  }
+
+  /** Online only: nobody may take back a move after which a seat could identify a new face-down card. */
+  private newlySeenCard(before: GameState, after: GameState): string | undefined {
+    for (const seat of this.seats()) {
+      if (seat.role !== "seat") continue;
+      const viewer = viewerOf(seat);
+      const known = identifiableFaceDownCards(before, viewer);
+      if ([...identifiableFaceDownCards(after, viewer)].some((cardId) => !known.has(cardId))) {
+        return "Someone has seen a face-down card since.";
+      }
+    }
+    return undefined;
   }
 
   // --- export ----------------------------------------------------------------------------------------

@@ -12,7 +12,7 @@ import {
 import type { CommandResponse, CreateGameResponse, GameView } from "../../online/protocol";
 import { deserializeSave, serializeSave } from "../../save";
 import { GameRoomCore, MemoryRoomStorage, sha256Hex, type CoreResult, type RoomOptions } from "../../worker/game-room-core";
-import { negotiationGame, RED } from "../fixtures/negotiation";
+import { BLUE, negotiationGame, RED, withBlackmail } from "../fixtures/negotiation";
 
 const ORIGIN = "https://jc.example";
 const PLAYERS = [{ name: "Ann" }, { name: "Ben", color: "blue" }, { name: "Cat" }];
@@ -355,6 +355,26 @@ describe("undo", () => {
     const response = body(await table.core.undo(table.tokens[rolled!.playerId]));
     expect(response.ok).toBe(false);
     if (!response.ok) expect(response.errors[0].code).toBe("UNDO_UNAVAILABLE");
+  });
+
+  it("is refused once someone could identify a face-down card they couldn't before", async () => {
+    const start = withBlackmail(negotiationGame("family"), RED, "company-fraud", { instanceId: "blackmail-company-fraud" });
+    const core = new GameRoomCore(new MemoryRoomStorage());
+    const imported = body(await core.importSave({ gameId: "g", origin: ORIGIN, body: { saveText: serializeSave(start, { saveId: "u" }) } }));
+    const red = tokenOf(imported.seats.find((seat) => seat.playerId === RED)!.url);
+    const give = (id: string, items: unknown[]) =>
+      core.command(red, { command: { id, decisionId: "anytime", type: "negotiation.give", payload: { to: BLUE, items } } });
+
+    expect(body(await give("cash", [{ kind: "cash", amount: 1 }])).ok).toBe(true);
+    expect(body(await core.view(red)).undo).toEqual({ available: true });
+    expect(body(await core.undo(red)).ok).toBe(true);
+    // The undone command's id may be used again.
+    expect(body(await give("cash", [{ kind: "cash", amount: 1 }])).view.version).toBe(4);
+
+    expect(body(await give("card", [{ kind: "blackmail", cardInstanceId: "blackmail-company-fraud" }])).ok).toBe(true);
+    const view = body(await core.view(red));
+    expect(view.undo.available).toBe(false);
+    expect(view.undo.reason).toMatch(/face-down card/);
   });
 
   it("keeps only a short history of snapshots", async () => {

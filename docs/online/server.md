@@ -136,7 +136,10 @@ authenticates.
 
 A seat may undo when all of these hold:
 - the game's most recent change is that seat's own command (with the automatic steps after it);
-- `undoBlockReason(before, after)` allows it: no dice, shuffle, draw, blackmail reveal or game end.
+- `undoBlockReason(before, after)` allows it: no dice, shuffle, draw, blackmail reveal or game end;
+- no seat can identify a face-down card it couldn't before (`identifiableFaceDownCards`): for
+  example after giving someone a face-down blackmail card, or when the next decision lets a player
+  look at the London Season Display's face-down blackmail. This rule is online only.
 
 Undo restores the state from before the command and takes back that command's automatic steps.
 Repeating undo walks back through the seat's own earlier commands, as long as nobody else acted

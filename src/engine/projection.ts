@@ -210,6 +210,23 @@ function secretIdMap(state: GameState, me: PlayerId | undefined, choosingFromDis
   return secrets;
 }
 
+/**
+ * Face-down blackmail cards this viewer can identify: their own, plus the display's while they
+ * choose from it. Online undo uses it: a move after which someone could identify a card they
+ * couldn't before (a gift, a peek at the display) can't be taken back.
+ */
+export function identifiableFaceDownCards(state: GameState, viewer: ProjectionViewer): Set<string> {
+  const me = viewerPlayerId(state, viewer);
+  const known = new Set<string>();
+  if (!me) return known;
+  for (const card of state.players[me].blackmailCards.filter(isFaceDown)) known.add(card.cardId);
+  const actor = effectiveDecisionActor(state);
+  if ((actor === me || actor === "simultaneous") && state.pendingDecision.step === PRESTIGE_PICK_STEP) {
+    for (const cardId of state.londonSeason.display) if (BLACKMAIL_CARD_IDS.has(cardId)) known.add(cardId);
+  }
+  return known;
+}
+
 /** Instance ids ("blackmail-<cardId>") are distinctive enough to replace inside longer strings too. */
 function replaceSecretStrings(value: unknown, secrets: Map<string, string>): unknown {
   if (secrets.size === 0) return value;
