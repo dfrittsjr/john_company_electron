@@ -1,0 +1,150 @@
+import { lawDeckForScenario, policyDial, powerTrack, startingPassedLaws } from "../../data";
+import { shuffle } from "../rng";
+import type { SubsystemInitInput, SubsystemInitResult } from "../subsystem";
+import type { LawInstance, PlayerId } from "../types";
+
+/** A Power track marker or Policy target (board-components PowerTargetId). */
+export type PolicyTarget = "social" | "companyShare" | "shipping" | "manufacturing";
+
+/**
+ * One step of resolving a vote (rulebook pp.34-36). Steps run in order; a step that needs a
+ * player's choice stays at the head of the queue until that choice is made.
+ */
+export type ParliamentResolutionStep =
+  | { kind: "policy"; space: number; actor?: PlayerId; extraWindowTax: boolean }
+  | { kind: "tax"; target: PolicyTarget; players: PlayerId[] }
+  | { kind: "windowTax"; players: PlayerId[]; exemptFromRepeal: boolean }
+  | { kind: "bonus"; target: PolicyTarget }
+  | { kind: "power"; target: PolicyTarget; actor?: PlayerId }
+  | { kind: "lawPassed"; lawId: string }
+  | { kind: "lawFailed"; lawId: string }
+  | { kind: "impeach"; officeId: string }
+  | { kind: "warShips"; remaining: number }
+  | { kind: "warPieces"; remaining: number }
+  | { kind: "changePrimeMinister" }
+  | { kind: "movePolicyAfterFailure"; taxCollectorsMayAdd: boolean }
+  | { kind: "finish" };
+
+export type ParliamentStage =
+  | "chooseLaw"
+  | "chooseFromDiscard"
+  | "choosePolicy"
+  | "chooseImpeachmentTarget"
+  | "taxCollectorsOffer"
+  | "taxCollectorsConsent"
+  | "voting"
+  | "continueVoting"
+  | "resolving";
+
+export type ParliamentVoteTally = {
+  for: number;
+  against: number;
+  /** Votes against credited to this player for the Opposition Leader, including coalition votes. */
+  credited: number;
+};
+
+/** In-flight Parliament Meets session; cleared when the phase ends. */
+export type ParliamentSession = {
+  stage: ParliamentStage;
+  /** Laws revealed this session, in draw order. */
+  drawn: string[];
+  /** Old Ideas Made New! was drawn: drawn cards stay aside and everything is reshuffled at the end. */
+  oldIdeasMadeNew: boolean;
+  /** The law being voted on. */
+  lawId?: string;
+  policySpace?: number;
+  startingSupport: number;
+  impeachmentOfficeId?: string;
+  /** Tax Collectors added a window tax to the proposed policy (with the Prime Minister's consent). */
+  extraWindowTax: boolean;
+  /** Tax Collectors owners who have already been offered the chance to add a window tax. */
+  taxCollectorsOffered: PlayerId[];
+  taxCollectorsProposer?: PlayerId;
+  votingOrder: PlayerId[];
+  voterIndex: number;
+  round: number;
+  votesThisRound: number;
+  votes: Record<PlayerId, ParliamentVoteTally>;
+  /** Players who have voted against (or committed to); they may not vote for this law. */
+  opposition: PlayerId[];
+  /** Coalitions: whom a voter's votes against are credited to (p.35). */
+  creditTo: Record<PlayerId, PlayerId>;
+  /** "Vote with my enterprises as if you owned them": beneficiary -> guarantors. */
+  borrowedEnterprises: Record<PlayerId, PlayerId[]>;
+  /** Cards rotated to vote this session, as `${ownerId}:${cardInstanceId}`. */
+  usedCards: string[];
+  outcome?: "passed" | "failed";
+  queue: ParliamentResolutionStep[];
+};
+
+export type RevenueStage = "companyFraud" | "royalProtection" | "dividends" | "scandal";
+
+/** In-flight Revenue phase choices (Revenue's rules live with the Parliament area). */
+export type RevenueProgress = {
+  stage: RevenueStage;
+  /** Players still to be offered a start-of-Revenue blackmail (Company Fraud). */
+  fraudCandidates: PlayerId[];
+  /** Players still to be offered an after-Revenue blackmail (the Scandal cards). */
+  scandalCandidates: PlayerId[];
+};
+
+export type ParliamentState = {
+  primeMinister?: PlayerId;
+  /** Index into policyDial.spaces: where the Prime Minister dial's arm points. */
+  policyDialPosition: number;
+  lawDeck: { drawPile: string[]; discardPile: string[] };
+  /** Support for the current law (the Votes marker); may run past either end of the track. */
+  voteMarker: number;
+  currentVotingRound: number;
+  /** Holder of the Opposition Leader marker; it persists between votes until used (p.35-36). */
+  oppositionLeader?: PlayerId;
+  votesByPlayer: Record<PlayerId, { for: number; against: number }>;
+  passedLaws: LawInstance[];
+  deregulated: boolean;
+  session?: ParliamentSession;
+  revenue?: RevenueProgress;
+  /**
+   * Foreign Invasions from War Against France! that hit Company-controlled regions. They are attacks
+   * against the Company and need the Events in India defence flow. TODO(EV): resolve these.
+   */
+  pendingCompanyAttacks: Array<{ regionId: string; strength: number }>;
+};
+
+export function lawInstance(lawId: string): LawInstance {
+  return { id: `law-${lawId}`, lawId };
+}
+
+/** Power values per marker at setup (rulebook p.4 step 5; board Power track). */
+export function initialPowerTrack(): Record<PolicyTarget, number> {
+  const powerAt = (position: string) =>
+    powerTrack.positions.find((candidate) => candidate.id === position)?.power ?? 0;
+
+  return {
+    social: powerAt(powerTrack.startingPositions.social),
+    companyShare: powerAt(powerTrack.startingPositions.companyShare),
+    shipping: powerAt(powerTrack.startingPositions.shipping),
+    manufacturing: powerAt(powerTrack.startingPositions.manufacturing),
+  };
+}
+
+export function createInitialParliamentState(
+  input: SubsystemInitInput,
+): SubsystemInitResult<ParliamentState> {
+  const deck = shuffle(input.rng, lawDeckForScenario(input.scenario.id));
+
+  return {
+    state: {
+      // Setup cards assign the Prime Minister (p.5); until then the first seat holds the dial.
+      primeMinister: input.seatingOrder[0],
+      policyDialPosition: policyDial.startingSpaceByScenario[input.scenario.id] ?? 0,
+      lawDeck: { drawPile: deck.items, discardPile: [] },
+      voteMarker: 0,
+      currentVotingRound: 0,
+      votesByPlayer: {},
+      passedLaws: startingPassedLaws(input.scenario.id).map(lawInstance),
+      deregulated: input.scenario.startsDeregulated,
+      pendingCompanyAttacks: [],
+    },
+    rng: deck.rng,
+  };
+}

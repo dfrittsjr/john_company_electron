@@ -7,6 +7,10 @@ import { createInitialFinalScoringState } from "./phases/final-scoring.state";
 import { createInitialHiringState } from "./phases/hiring.state";
 import { createInitialLondonSeasonState } from "./phases/london-season.state";
 import { createInitialNegotiationState } from "./phases/negotiation.state";
+import {
+  createInitialParliamentState,
+  initialPowerTrack,
+} from "./phases/parliament.state";
 import { createRngState, shuffle } from "./rng";
 import { COMPANY_TREASURY_OFFICE_IDS, scenarioDefinition, toEnginePresidency } from "./selectors";
 import {
@@ -121,7 +125,8 @@ export function createNewGame(options: NewGameOptions): GameState {
   const negotiation = createInitialNegotiationState({ scenario, seatingOrder, rng: finalScoring.rng });
   const family = createInitialFamilyState({ scenario, seatingOrder, rng: negotiation.rng });
   const hiring = createInitialHiringState({ scenario, seatingOrder, rng: family.rng });
-  rng = hiring.rng;
+  const parliament = createInitialParliamentState({ scenario, seatingOrder, rng: hiring.rng });
+  rng = parliament.rng;
 
   const pendingDecision = createInitialPendingDecision(
     options.mode,
@@ -144,7 +149,7 @@ export function createNewGame(options: NewGameOptions): GameState {
     seatingOrder,
     company: createInitialCompanyState(scenario),
     india: createInitialIndiaState(scenario),
-    parliament: createInitialParliamentState(seatingOrder[0]),
+    parliament: parliament.state,
     londonSeason: londonSeason.state,
     companyOperation: companyOperation.state,
     eventsInIndia: eventsInIndia.state,
@@ -377,9 +382,10 @@ function createInitialCompanyState(scenario: ScenarioDefinition): CompanyState {
     standing: tracks.standingSpace ?? 4,
     debt: tracks.debt ?? 0,
     balance: 0,
-    shareValue: 0,
+    // Company share value magnitude: 1 from the Court's printed +1/-1; 1813 starts with the +2/-2 token.
+    shareValue: scenario.id === "1813" ? 2 : 1,
     failed: false,
-    powerTrack: {},
+    powerTrack: initialPowerTrack(),
     offices: Object.fromEntries(
       STARTING_OFFICE_IDS.map((officeId) => [
         officeId,
@@ -500,18 +506,6 @@ function createPresidency(id: PresidencyId) {
     army: id,
     writers: {},
     seaZone: SEA_ZONE_BY_PRESIDENCY[id],
-  };
-}
-
-function createInitialParliamentState(firstPlayer: PlayerId): ParliamentState {
-  return {
-    primeMinister: firstPlayer,
-    policyDialPosition: "initial",
-    voteMarker: 0,
-    currentVotingRound: 0,
-    votesByPlayer: {},
-    passedLaws: [],
-    deregulated: false,
   };
 }
 
