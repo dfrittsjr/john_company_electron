@@ -12,7 +12,7 @@ import {
   initialPowerTrack,
 } from "./phases/parliament.state";
 import { crownStartDecision } from "./crown/setup";
-import { CROWN_PLAYER_ID } from "./crown/state";
+import { aiCard, climateFromCard, CROWN_PLAYER_ID } from "./crown/state";
 import { createRngState, shuffle } from "./rng";
 import { COMPANY_TREASURY_OFFICE_IDS, scenarioDefinition, toEnginePresidency } from "./selectors";
 import {
@@ -165,8 +165,14 @@ export function createNewGame(options: NewGameOptions): GameState {
     hidden,
   };
 
+  // Until the setup cards are placed, show the climate the face-up card gives now (crown/setup.ts
+  // sets it again once they are).
+  const withClimate: GameState = state.crown
+    ? { ...state, crown: { ...state.crown, climate: climateFromCard(state, aiCard(state.crown.faceupAiCard)) } }
+    : state;
+
   return {
-    ...state,
+    ...withClimate,
     log: [
       createLogEntry({
         state,
@@ -273,7 +279,7 @@ function createCrownState(input: {
 
   const crown: CrownState = {
     difficulty: input.difficulty,
-    // Set from the face-up card once setup cards are placed (crown/setup.ts).
+    // Replaced from the face-up card in createNewGame, and again once setup cards are placed.
     climate: "lion",
     aiDeck: {
       drawPile,

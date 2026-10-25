@@ -166,8 +166,8 @@ function draftDecision(state: GameState): PendingDecision {
     actor: draft.picker,
     visibility: "private",
     prompt: solo
-      ? `Setup cards, draw ${picks} of 4: keep one; the Crown takes the other two.`
-      : `Setup cards, draw ${picks} of 4: give one to the Crown and keep the other two.`,
+      ? `Setup cards, round ${picks} of 4: you drew three. Keep one; the Crown takes the other two.`
+      : `Setup cards, round ${Math.ceil(picks / 2)} of 2: you drew three. Give one to the Crown and keep the other two.`,
     legalCommands: draft.hand.map((cardId) => ({
       type: "setup.crownDraftPick",
       label: solo ? `Keep: ${setupCardLabel(cardId)}` : `Give the Crown: ${setupCardLabel(cardId)}`,

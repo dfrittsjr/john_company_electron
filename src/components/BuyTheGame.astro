@@ -42,6 +42,10 @@ const PRODUCT_URL = "https://wehrlegig.com/products/john-company-second-edition"
 </script>
 
 <style>
+  /* Room under the page so the last content can scroll clear of the fixed link. */
+  :global(body) {
+    padding-bottom: 76px;
+  }
   .buy-the-game {
     position: fixed;
     z-index: 5;

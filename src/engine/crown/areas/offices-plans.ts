@@ -857,32 +857,41 @@ const ASSIGN_STEPS: Record<"early" | "late", AssignStep[]> = {
  * The Army for one officer-in-training: each step that applies narrows the candidates, until one
  * remains; a tie left at the end goes to the AI card's arrows.
  */
-export function chooseAssignmentArmy(state: GameState, owner: PlayerId, armies: ArmyId[]): { army: ArmyId; steps: string[] } {
+export function chooseAssignmentArmy(
+  state: GameState,
+  owner: PlayerId,
+  armies: ArmyId[],
+): { army: ArmyId; steps: string[]; skipped: number } {
   const climate = crownClimate(state);
   let candidates = armies;
   const used: string[] = [];
+  let skipped = 0;
   for (const step of ASSIGN_STEPS[climate === "bear" || climate === "peacock" ? "late" : "early"]) {
     if (candidates.length === 1) break;
     const hit = step.apply(state, owner, candidates);
     if (hit.length > 0 && hit.length < candidates.length) {
       candidates = hit;
       used.push(step.text);
+    } else if (used.length === 0) {
+      skipped += 1;
     }
   }
-  return { army: aiOrder(state, candidates)[0], steps: used };
+  return { army: aiOrder(state, candidates)[0], steps: used, skipped };
 }
 
 function militaryAssignPolicy(state: GameState, decision: PendingDecision): CrownChoice | undefined {
   const next = nextOfficerToAssign(state, decision);
   if (!next) return undefined;
   const armies = [...new Set(decision.legalCommands.map((command) => (payloadOf<MilitaryPayload>(command) as { army: ArmyId }).army))];
-  const { army, steps } = chooseAssignmentArmy(state, next.owner, armies);
+  const { army, steps, skipped } = chooseAssignmentArmy(state, next.owner, armies);
   const command = decision.legalCommands.find((candidate) => {
     const payload = payloadOf<MilitaryPayload>(candidate) as { playerId: PlayerId; army: ArmyId };
     return payload.playerId === next.owner && payload.army === army;
   });
   const who = next.owner === CROWN ? "a Crown officer" : `${state.players[next.owner]?.name ?? next.owner}'s officer`;
-  const how = steps.length > 0 ? `the Army that ${steps.join(", then ")}` : "the Army the AI card's arrows pick";
+  // Each step only counts if it separates the Armies, so say when the first ones didn't.
+  const passed = skipped > 0 ? ` (step${skipped === 1 ? "" : "s"} 1${skipped > 1 ? `-${skipped}` : ""} left them tied)` : "";
+  const how = steps.length > 0 ? `the Army that ${steps.join(", then ")}${passed}` : "the Army the AI card's arrows pick (no step separated them)";
   return command ? { commands: [command], reason: why(state, `Assign ${who} to ${how}: the Army of ${army}.`), ...(next.passButton ? { passButton: true } : {}) } : undefined;
 }
 
