@@ -1,7 +1,7 @@
 # Developer Notes
 
 How the game is put together, and where to look. Current status and what's left: `status.md`.
-Rules coverage and assumptions per phase: `phases/*.md`. Conventions for adding rules:
+Rules coverage and assumptions per phase: `phases/*.md`. Plans for what's left: `plans/*.md`. Conventions for adding rules:
 `phase-build-guide.md`.
 
 ## Layout

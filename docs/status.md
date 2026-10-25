@@ -18,15 +18,19 @@ Current state of the 1710 build. Details live in the phase notes:
   anytime commands (see `docs/phases/integration.md`).
 - **Harness:** `npm run harness` plays the engine headlessly, including random and greedy policies.
 - **Board UI:** board overlay, decision panel, dashboards, Laws tab, handoff banner, final scoring.
-- **Playtests:** three focused AI playtests against the rulebook; every confirmed finding fixed with a test.
+- **Playtests:** three focused AI playtests against the rulebook, and three-player and six-player
+  games through the web UI; every confirmed finding fixed with a test.
+- **Undo and rules reference:** step-back undo that refuses dice, draws and reveals; the rulebook
+  text in a searchable panel and on `/rules`.
 - **Save format:** schema 3, ruleset `john-company-2e-data-3`. Older saves are refused with a
   readable message.
 
 ## Next
 
-- **Undo and an in-app rules reference.** In progress.
 - **Human playtest:** play a full 1710 game with the group and fix what comes up.
 - **Rules questions:** confirm the assumptions recorded in the phase notes with the group.
+- **Plans:** `plans/remaining-game.md` (Deregulation and firms, Long 1710, 1758, 1813, draft
+  variant, the Crown) and `plans/online-multiplayer.md` (Cloudflare Worker and Durable Objects).
 
 ## Later (out of scope for 1710)
 
