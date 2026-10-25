@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { GameState } from "../../engine";
 import { createNewGame } from "../../engine";
+import { createRngState, rollDie } from "../../engine/rng";
+import { atConfirmation } from "../fixtures/london-season";
+import { applyCommandOrThrow } from "../fixtures/game";
 import { withOffice } from "../fixtures/builders";
+import { createHotseatGame } from "../fixtures/game";
 import { choose, hasCommand, parliamentState, withBlackmail } from "../fixtures/parliament";
 
 // Fixes from playtest reports. Each test names the rulebook page or card it checks.
@@ -63,5 +67,35 @@ describe("Setup", () => {
       ],
     });
     expect(state.company.balance).toBe(5);
+  });
+});
+
+describe("Tenure Limits (law #37)", () => {
+  function seedWhereFirstDieIs1(): string {
+    for (let i = 0; i < 500; i += 1) {
+      if (rollDie(createRngState(`tl-${i}`), 6).value === 1) return `tl-${i}`;
+    }
+    throw new Error("no seed");
+  }
+
+  function londonSeason(passedLaws: string[]): GameState {
+    let state = createHotseatGame({ seed: seedWhereFirstDieIs1() });
+    state = withOffice(state, "chairman", RED);
+    state = {
+      ...state,
+      parliament: { ...state.parliament, passedLaws: passedLaws.map((lawId) => ({ id: `law-${lawId}`, lawId })) },
+    };
+    return atConfirmation({ ...state, turn: 3 }, "londonSeason", "londonSeason.confirm");
+  }
+
+  it("the Chairman always retires in Attrition even on a low roll", () => {
+    const state = applyCommandOrThrow(londonSeason(["tenure-limits"]), { id: "tenure-1", actorId: "system", type: "londonSeason.confirm", payload: {} });
+    expect(state.company.offices.chairman.vacant).toBe(true);
+    expect(state.players[RED].familyMembers.pensioners).toBeGreaterThanOrEqual(1);
+  });
+
+  it("without the law a low roll leaves the Chairman in office", () => {
+    const state = applyCommandOrThrow(londonSeason([]), { id: "tenure-2", actorId: "system", type: "londonSeason.confirm", payload: {} });
+    expect(state.company.offices.chairman.vacant).toBe(false);
   });
 });

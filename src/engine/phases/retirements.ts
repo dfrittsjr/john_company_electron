@@ -64,19 +64,24 @@ export function resolveOfficeAttrition(
   for (const office of occupiedOffices) {
     const holder = office.holder as PlayerId;
     const stressModifier = office.id === "chairman" ? 1 : 0;
-    const roll = rollDie(nextRng, 6, `${labelPrefix}.${office.id}`);
-    nextRng = roll.rng;
-    rolls.push(roll.roll);
+    // Tenure Limits (#37): "The Chairman will always retire during the first step of the London
+    // Season." No die is rolled for the Chairman while it is in effect.
+    const alwaysRetires = office.id === "chairman" && tenureLimitsInEffect(state);
+    const roll = alwaysRetires ? undefined : rollDie(nextRng, 6, `${labelPrefix}.${office.id}`);
+    if (roll) {
+      nextRng = roll.rng;
+      rolls.push(roll.roll);
+    }
 
-    const total = roll.value + office.fatigue + stressModifier;
+    const total = alwaysRetires ? Infinity : roll!.value + office.fatigue + stressModifier;
     const outcome: AttritionRecord["outcome"] = total >= 5 ? "retired" : total >= 3 ? "fatigued" : "none";
     const record: AttritionRecord = {
       officeId: office.id,
       holder,
       fatigueBefore: office.fatigue,
-      roll: roll.value,
+      roll: roll?.value ?? 0,
       stressModifier,
-      total,
+      total: alwaysRetires ? 0 : total,
       outcome,
     };
     attritionedOffices.push(record);
@@ -99,6 +104,10 @@ export function resolveOfficeAttrition(
   }
 
   return { state: { ...nextState, rng: nextRng }, attritionedOffices, retiredOffices, rolls };
+}
+
+function tenureLimitsInEffect(state: GameState): boolean {
+  return state.parliament.passedLaws.some((law) => law.lawId === "tenure-limits");
 }
 
 // The retiring family member moves to the Pensioners box; the office card goes to the Vacant
