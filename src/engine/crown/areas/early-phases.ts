@@ -1,4 +1,4 @@
-import { offices, prestigeCards, prizes } from "../../../data";
+import { enterpriseDecks, offices, prestigeCards, prizes } from "../../../data";
 import { isDeregulated, firmById, allFirms, firmShareTotal } from "../../firms";
 import { activeInterrupt, applyTransfer, moveBlackmailCard } from "../../phases/negotiation";
 import type { FirmAction } from "../../phases/firms/investments";
@@ -794,16 +794,21 @@ function enterprisesOf(state: GameState, owner: PlayerId, kind: EnterpriseKind) 
   });
 }
 
+const enterpriseNames = new Map(enterpriseDecks.flatMap((deck) => deck.cards).map((card) => [card.id as string, card.label]));
+
 function boardFavors(): CrownFavorDefinition[] {
   const items = BOARD_ITEMS.flatMap(({ kind, text, id }) => {
     const holding = kind.includes("shipyard") ? "shipyard" : kind.includes("workshop") ? "workshop" : undefined;
-    const options = (owner: (playerId: PlayerId) => PlayerId) => (state: GameState, playerId: PlayerId) =>
-      enterprisesOf(state, owner(playerId), kind).map((enterprise) => ({ label: enterprise.cardId ?? enterprise.id, option: enterprise.id }));
+    const options = (owner: (playerId: PlayerId) => PlayerId, verb: string) => (state: GameState, playerId: PlayerId) =>
+      enterprisesOf(state, owner(playerId), kind).map((enterprise) => ({
+        label: `${verb} ${enterpriseNames.get(enterprise.cardId ?? "") ?? enterprise.cardId ?? enterprise.id}`,
+        option: enterprise.id,
+      }));
     const give: CrownFavorDefinition = {
       id: `board.give.${id}`,
       printed: { board: text },
       available: inBoardWindow,
-      options: options((playerId) => playerId),
+      options: options((playerId) => playerId, "give"),
       pausesCrown: false,
       apply: (state, playerId, option) => applyTransfer(state, playerId, CROWN, [{ kind: "enterprise", enterpriseId: option as string }]),
     };
@@ -811,7 +816,7 @@ function boardFavors(): CrownFavorDefinition[] {
       id: `board.take.${id}`,
       printed: { board: text, take: true },
       available: (state, playerId) => inBoardWindow(state) && !(holding && playerForbidsHolding(state, playerId, holding)),
-      options: options(() => CROWN),
+      options: options(() => CROWN, "take the Crown's"),
       pausesCrown: false,
       apply: (state, playerId, option) => applyTransfer(state, CROWN, playerId, [{ kind: "enterprise", enterpriseId: option as string }]),
     };
