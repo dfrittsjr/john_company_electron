@@ -12,6 +12,8 @@ import type {
 import { findLegalCommand, illegal, prizeDefinition } from "./retirements";
 import { createCommandLogEntry, createSystemDecision, wrongPhase } from "./shared";
 import { beginTurn } from "./turn-start";
+import { payWithRoyalPrivilege } from "../crown/areas/parliament-rules";
+import { createFinalScoringDecision } from "./revenue";
 
 // IX. Upkeep and Refresh (p.36). Every family member on a prize costs that prize's upkeep. A
 // player who cannot pay returns pieces to supply, losing each prize's VP, until the rest is
@@ -26,12 +28,20 @@ export function confirmUpkeep(state: GameState, command: GameCommand): ApplyComm
 
   const paid: Record<PlayerId, number> = {};
   const queue: PlayerId[] = [];
+  const privilege: string[] = [];
   let next = state;
 
   for (const playerId of state.seatingOrder) {
     const owed = prizeUpkeepOwed(next, playerId);
     if (owed === 0) continue;
-    if (next.players[playerId].cash >= owed) {
+    if (next.players[playerId].isCrown && next.players[playerId].cash < owed) {
+      // The Crown pays its family expenses with Royal Privilege (Handbook p.15): the Company
+      // treasury and emergency loans, never by giving up prizes.
+      const royal = payWithRoyalPrivilege(next, owed, "in family expenses");
+      next = royal.state;
+      paid[playerId] = owed;
+      privilege.push(royal.note);
+    } else if (next.players[playerId].cash >= owed) {
       next = payUpkeep(next, playerId);
       paid[playerId] = owed;
     } else {
@@ -50,7 +60,7 @@ export function confirmUpkeep(state: GameState, command: GameCommand): ApplyComm
       : `${queue.map((playerId) => state.players[playerId].name).join(", ")} cannot pay all prize upkeep.`;
   const continuation = continueUpkeep(next);
 
-  return finish(state, command, continuation, "upkeep.resolved", [payments, shortfall], { paid, cannotPay: queue });
+  return finish(state, command, continuation, "upkeep.resolved", [payments, ...privilege, shortfall], { paid, cannotPay: queue });
 }
 
 function forfeitPrizePiece(state: GameState, command: GameCommand): ApplyCommandResult {
@@ -103,6 +113,14 @@ function continueUpkeep(state: GameState): Continuation {
   if (queue.length > 0) return { state: { ...state, pendingDecision: cannotPayDecision(state, queue[0]) }, details: {} };
 
   const cleared: GameState = { ...state, londonSeason: { ...state.londonSeason, upkeep: undefined } };
+  // Royal Privilege can fail the Company (Handbook p.15): on to Final Scoring.
+  if (state.company.failed) {
+    return {
+      state: { ...cleared, pendingDecision: createFinalScoringDecision(cleared) },
+      ending: "Upkeep resolved. The Company has failed: on to Final Scoring.",
+      details: {},
+    };
+  }
   // "If it is the final turn of the game, skip this step and proceed to Final Scoring" (p.36).
   if (state.turn >= state.finalTurn) {
     return {

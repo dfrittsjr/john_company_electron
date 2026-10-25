@@ -10,6 +10,8 @@ import { createCommandLogEntry, createSystemDecision, wrongPhase } from "./share
 import { registerHiringResume } from "./hiring-resume";
 import { markActivated, registerConsentResolver, registerStateRefresher, requestConsent } from "./negotiation";
 import { newCollector, nextDecisionId, playerName, primeMinisterOrder, updatePlayer, type Collector } from "./parliament/common";
+import { crownTreasuryVotes, DEREGULATION_SPEND, rollClimateShift } from "../crown/areas/parliament-rules";
+import { CROWN_PLAYER_ID } from "../crown/state";
 import { prestigeCardOwners } from "./parliament/holdings";
 import {
   addPassedLaw,
@@ -140,7 +142,7 @@ function progressParliament(state: GameState, collector: Collector): { state: Ga
           (playerId) => !session.taxCollectorsOffered.includes(playerId),
         );
         if (!owner || session.extraWindowTax) {
-          current = startVoting(current);
+          current = startVoting(current, collector);
           continue;
         }
         return { state: current, decision: taxCollectorsDecision(current, owner) };
@@ -408,10 +410,27 @@ function taxCollectorsConsentDecision(state: GameState): PendingDecision {
 // ---------------------------------------------------------------------------------------------
 // Voting (p.35).
 
-function startVoting(state: GameState): GameState {
-  const order = primeMinisterOrder(state);
+function startVoting(state: GameState, collector: Collector): GameState {
+  let current = state;
+  const special = current.parliament.session?.special;
+  // Crown games: after the law is chosen and before voting, the climate shifts (Handbook p.15),
+  // whoever is Prime Minister. The Vote to Deregulate is not Parliament Meets.
+  if (current.crown && !special) {
+    const shift = rollClimateShift(current);
+    current = shift.state;
+    collector.rolls.push(shift.roll);
+    collector.notes.push(shift.note);
+  }
+  // The Crown votes first in Parliament Meets (Handbook p.14), and last and against in the Vote to
+  // Deregulate (p.2).
+  const base = primeMinisterOrder(current);
+  const order = current.crown
+    ? special
+      ? [...base.filter((playerId) => playerId !== CROWN_PLAYER_ID), ...base.filter((playerId) => playerId === CROWN_PLAYER_ID)]
+      : [...base.filter((playerId) => playerId === CROWN_PLAYER_ID), ...base.filter((playerId) => playerId !== CROWN_PLAYER_ID)]
+    : base;
   return withSession(
-    { ...state, parliament: { ...state.parliament, currentVotingRound: 1, votesByPlayer: {} } },
+    { ...current, parliament: { ...current.parliament, currentVotingRound: 1, votesByPlayer: {} } },
     {
       stage: "voting",
       votingOrder: order,
@@ -430,14 +449,23 @@ function signed(value: number): string {
 function voteCommands(state: GameState, voter: PlayerId): { commands: LegalCommand[]; castCount: number } {
   const session = state.parliament.session!;
   const pm = primeMinister(state);
+  const isCrown = voter === CROWN_PLAYER_ID && Boolean(state.crown);
   const directions: Array<"for" | "against"> = [];
   if (!session.opposition.includes(voter)) directions.push("for");
   // The Prime Minister's Honor: the Prime Minister cannot vote against the law, except the Vote to
-  // Deregulate, which the Prime Minister may vote against (p.36).
-  if (voter !== pm || session.special) directions.push("against");
+  // Deregulate, which the Prime Minister may vote against (p.36). The Crown may vote against its
+  // own law (Handbook p.15).
+  if (voter !== pm || session.special || isCrown) directions.push("against");
 
   const cost = voteCost(state);
-  const maxCashVotes = Math.floor((state.players[voter]?.cash ?? 0) / cost);
+  // The Crown buys no votes with cash, except the one purchase against Deregulation, up to a limit
+  // by climate (Handbook p.2).
+  const cashLimit = !isCrown
+    ? (state.players[voter]?.cash ?? 0)
+    : session.special && !session.usedCards.includes(`${voter}:cash`)
+      ? Math.min(state.players[voter]?.cash ?? 0, DEREGULATION_SPEND[state.crown!.climate])
+      : 0;
+  const maxCashVotes = Math.floor(cashLimit / cost);
   // Every amount from 1 to the most the voter can pay for; the UI groups long lists.
   const amounts = Array.from({ length: maxCashVotes }, (_, index) => index + 1);
   const cards = availableVoteCards(state, voter, session);
@@ -449,6 +477,15 @@ function voteCommands(state: GameState, voter: PlayerId): { commands: LegalComma
         type: "parliament.castVotes",
         label: `Spend £${votes * cost} for ${votes} vote${votes === 1 ? "" : "s"} ${direction}`,
         payload: { direction, source: "cash", votes },
+      });
+    }
+    // The Crown's treasury gives it bonus votes, once per Parliament (Handbook p.14).
+    const bonus = isCrown && !session.special && !session.usedCards.includes(`${voter}:treasury`) ? crownTreasuryVotes(state.players[voter].cash) : 0;
+    if (bonus > 0) {
+      commands.push({
+        type: "parliament.castVotes",
+        label: `Use the treasury's ${bonus} bonus vote${bonus === 1 ? "" : "s"} ${direction}`,
+        payload: { direction, source: "treasury", votes: bonus },
       });
     }
     for (const card of cards) {
@@ -466,7 +503,7 @@ function voteCommands(state: GameState, voter: PlayerId): { commands: LegalComma
   // partner commits to the opposition (p.35).
   if (castCount > 0 && directions.includes("against") && !session.creditTo[voter] && !session.special) {
     for (const partner of state.seatingOrder) {
-      if (partner === voter || partner === pm) continue;
+      if (partner === voter || partner === pm || state.players[partner]?.isCrown) continue;
       if (session.coalitionRefused?.includes(`${voter}>${partner}`)) continue;
       commands.push({
         type: "parliament.setVoteCredit",
@@ -692,15 +729,18 @@ const deregulationCall: CommandHandler = (state, command) => {
   collector.notes.push(
     `${playerName(state, pm)} called a special session of Parliament to vote on Deregulation (starting support ${signed(startingSupport)}).`,
   );
-  const opened = startVoting({
-    ...state,
-    parliament: {
-      ...state.parliament,
-      session: { ...emptySession(), stage: "voting", lawId: DEREGULATION_LAW_ID, startingSupport, special: "deregulation" },
-      voteMarker: startingSupport,
-      votesByPlayer: {},
+  const opened = startVoting(
+    {
+      ...state,
+      parliament: {
+        ...state.parliament,
+        session: { ...emptySession(), stage: "voting", lawId: DEREGULATION_LAW_ID, startingSupport, special: "deregulation" },
+        voteMarker: startingSupport,
+        votesByPlayer: {},
+      },
     },
-  });
+    collector,
+  );
   return complete(state, opened, command, collector, "parliament.deregulationCalled");
 };
 
@@ -796,6 +836,7 @@ const taxCollectorsConsent = handler<{ accept: boolean }>(
 
 type CastPayload =
   | { direction: "for" | "against"; source: "cash"; votes: number }
+  | { direction: "for" | "against"; source: "treasury"; votes: number }
   | { direction: "for" | "against"; source: "card"; cardKey: string };
 
 const castVotes = handler<CastPayload>("parliament.vote", "parliament.votesCast", (state, payload, collector) => {
@@ -807,6 +848,11 @@ const castVotes = handler<CastPayload>("parliament.vote", "parliament.votesCast"
   if (payload.source === "cash") {
     votes = payload.votes;
     next = updatePlayer(next, voter, (player) => ({ ...player, cash: player.cash - votes * voteCost(state) }));
+    // The Crown's one purchase against Deregulation (Handbook p.2).
+    if (voter === CROWN_PLAYER_ID) next = withSession(next, { usedCards: [...session.usedCards, `${voter}:cash`] });
+  } else if (payload.source === "treasury") {
+    votes = payload.votes;
+    next = withSession(next, { usedCards: [...session.usedCards, `${voter}:treasury`] });
   } else {
     const card = availableVoteCards(state, voter, session).find((candidate) => candidate.key === payload.cardKey)!;
     votes = card.votes;

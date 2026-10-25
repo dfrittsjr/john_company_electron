@@ -27,6 +27,7 @@ import type { ApplyCommandResult, EnterpriseInstance, GameCommand, GameState, Pe
 import type { FinalScoringEntry, FinalScoringPlayerResult, PowerBreakdown } from "./final-scoring.state";
 import { advanceRetirements, beginRetirements, resolveOfficeAttrition, returnPensionersToSupply } from "./retirements";
 import { createCommandLogEntry, wrongPhase } from "./shared";
+import { soloFailureAdjustment } from "../crown/areas/parliament-rules";
 
 // Final Scoring (p.9): Power Award, Court and workshops, then the final retirement if the
 // Company survived or a Company failure card if it failed. Ties go to most window icons, then
@@ -274,6 +275,14 @@ function scoreBeforeRetirement(state: GameState, survived: boolean, failureCard:
 
     if (failureCard) entries.push(...failureCardEntries(state, playerId, failureCard));
 
+    // Game End [SOLO] (Handbook p.15): if the Company failed, the soloist adjusts their own VP by the table.
+    if (!survived && state.mode === "soloCrown" && !player.isCrown) {
+      const adjustment = soloFailureAdjustment(state.scenario, state.turn);
+      if (adjustment !== 0) {
+        entries.push({ label: `Company failed on turn ${state.turn} (solo game, p.15)`, victoryPoints: adjustment });
+      }
+    }
+
     const total = entries.reduce((sum, entry) => sum + entry.victoryPoints, 0);
     // Firm shares, Debtor's Prison and the opening special retirement are already in the player's VP.
     const opening = state.finalScoring.openingEntries?.[playerId] ?? [];
@@ -358,6 +367,8 @@ function powerAwards(state: GameState, powers: Map<PlayerId, PowerBreakdown>): M
   const awards = new Map<PlayerId, FinalScoringEntry>();
   const entries = [...powers.entries()];
   if (entries.length === 0) return awards;
+  // Game End [SOLO] (Handbook p.15): only first place scores for the Power Award.
+  const firstPlaceOnly = state.mode === "soloCrown";
 
   const most = Math.max(...entries.map(([, power]) => power.total));
   const tiedForMost = entries.filter(([, power]) => power.total === most).map(([playerId]) => playerId);
@@ -373,6 +384,7 @@ function powerAwards(state: GameState, powers: Map<PlayerId, PowerBreakdown>): M
   }
 
   awards.set(tiedForMost[0], { label: `Power Award: most power (${most})`, victoryPoints: band.firstPlace });
+  if (firstPlaceOnly) return awards;
   const rest = entries.filter(([playerId]) => playerId !== tiedForMost[0]);
   if (rest.length === 0) return awards;
 
