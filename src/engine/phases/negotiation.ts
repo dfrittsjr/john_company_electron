@@ -10,7 +10,6 @@ import type {
   ActorId,
   ApplyCommandResult,
   CardInstance,
-  GameCommand,
   GameLogEntry,
   GameState,
   PendingDecision,

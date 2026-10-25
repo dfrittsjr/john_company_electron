@@ -15,6 +15,7 @@ import {
   type ValidationIssue,
 } from "../data";
 import { deserializeGameState, serializeSave } from "../save";
+import { NegotiationPanel } from "./NegotiationPanel";
 import { copyText, openTextFile, saveTextFile, TEXT_FILE_TYPE } from "./platform/files";
 import { nextActorName, suggestedSaveName, suggestedSummaryName } from "./save-names";
 
@@ -154,6 +155,8 @@ export function App() {
   const [game, setGame] = useState<GameState | null>(null);
   const [commandError, setCommandError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  // The player who has confirmed they hold the device; private cards and decisions show only to them.
+  const [revealedPlayer, setRevealedPlayer] = useState<string | null>(null);
   const [setup, setSetup] = useState<SetupState>({
     scenario: "1710",
     playerCount: 4,
@@ -241,6 +244,27 @@ export function App() {
     }
   }
 
+  function runAnytimeCommand(actorId: string, type: string, payload: unknown) {
+    if (!game) return;
+
+    const result = applyCommand(game, {
+      id: `cmd-${Date.now()}`,
+      gameId: game.gameId,
+      actorId,
+      decisionId: game.pendingDecision.id,
+      type,
+      payload,
+      clientTimestamp: new Date().toISOString(),
+    });
+
+    if (result.ok) {
+      setGame(result.state);
+      setCommandError(null);
+    } else {
+      setCommandError(result.errors.map((error) => error.message).join(" "));
+    }
+  }
+
   async function saveGame() {
     if (!game) return;
 
@@ -278,6 +302,7 @@ export function App() {
       const loadedGame = deserializeGameState(result.content);
       setGame(loadedGame);
       setCommandError(null);
+      setRevealedPlayer(null);
       setSaveStatus(`Loaded ${result.fileName}`);
       setScreen("board");
     } catch (error) {
@@ -515,6 +540,12 @@ export function App() {
   }
 
   const pendingActor = actorLabel(game);
+  const decisionActor = game.pendingDecision.actor;
+  const decisionHidden =
+    game.pendingDecision.visibility === "private" &&
+    decisionActor !== "system" &&
+    decisionActor !== "simultaneous" &&
+    revealedPlayer !== decisionActor;
   const playerRows = game.seatingOrder.map((playerId) => game.players[playerId]);
 
   return (
@@ -570,7 +601,14 @@ export function App() {
             </div>
           </dl>
           <div className="legal-command-list">
-            {game.pendingDecision.legalCommands.length > 0 ? (
+            {decisionHidden ? (
+              <div className="privacy-curtain">
+                <p className="status-note">This choice is private. Pass the device to {pendingActor}.</p>
+                <button type="button" onClick={() => setRevealedPlayer(decisionActor)}>
+                  I am {pendingActor}: reveal
+                </button>
+              </div>
+            ) : game.pendingDecision.legalCommands.length > 0 ? (
               game.pendingDecision.legalCommands.map((legalCommand, index) => (
                 <button
                   key={`${legalCommand.type}-${index}`}
@@ -630,6 +668,12 @@ export function App() {
         </section>
 
         <aside className="side-panel">
+          <NegotiationPanel
+            game={game}
+            revealedPlayer={revealedPlayer}
+            onReveal={setRevealedPlayer}
+            onCommand={runAnytimeCommand}
+          />
           <h2>Players</h2>
           <div className="dashboard-list">
             {playerRows.map((player) => (
