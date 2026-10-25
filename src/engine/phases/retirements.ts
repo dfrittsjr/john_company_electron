@@ -189,11 +189,11 @@ function retirementDecision(state: GameState, playerId: PlayerId): PendingDecisi
   const progress = state.londonSeason.retirement as RetirementProgress;
   const player = state.players[playerId];
   const legalCommands: LegalCommand[] = [...retirementOptions(state, progress, playerId)];
-
-  if (
+  const holdsLetters =
     !progress.lettersOfIntroduction.includes(playerId) &&
-    player.blackmailCards.some((card) => card.cardId === LETTERS_OF_INTRODUCTION && card.facedown !== false)
-  ) {
+    player.blackmailCards.some((card) => card.cardId === LETTERS_OF_INTRODUCTION && card.facedown !== false);
+
+  if (holdsLetters) {
     legalCommands.push({
       type: "retirement.playLettersOfIntroduction",
       label: "Play Letters of Introduction: also use every other player's spouse discounts",
@@ -219,7 +219,8 @@ function retirementDecision(state: GameState, playerId: PlayerId): PendingDecisi
     phase: state.phase,
     step: "retirement.retirePensioner",
     actor: playerId,
-    visibility: "public",
+    // Offering Letters of Introduction would reveal a face-down blackmail card.
+    visibility: holdsLetters ? "private" : "public",
     prompt: `${player.name}: retire a pensioner to a prize (${player.familyMembers.pensioners} pensioner(s), £${player.cash}).`,
     legalCommands,
     canSave: true,

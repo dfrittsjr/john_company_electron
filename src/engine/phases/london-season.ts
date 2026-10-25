@@ -439,7 +439,8 @@ function restrictionDecision(state: GameState): PendingDecision | undefined {
     phase: "londonSeason",
     step: "londonSeason.resolveRestriction",
     actor: restriction.playerId,
-    visibility: "public",
+    // Choices can name face-down blackmail, which only its owner may see.
+    visibility: "private",
     prompt: `${player.name}: ${spouse?.name ?? "your spouse"} forbids these holdings. Trade them now or discard them.`,
     legalCommands,
     canSave: true,
