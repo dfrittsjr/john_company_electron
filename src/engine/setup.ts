@@ -322,8 +322,6 @@ function createPlayer(input: {
     enterprises: [],
     prestigeCards: [],
     blackmailCards: [],
-    promiseCardsOwned: [],
-    promiseCardsGuaranteedToOthers: [],
     trophies: 0,
     passedLawTokens: 0,
     windows: 0,
