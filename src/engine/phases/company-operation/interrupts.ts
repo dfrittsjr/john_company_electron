@@ -23,6 +23,7 @@ import {
 import { localAlliances } from "../../../data";
 import { withBoardOfControlOffer, type OperationStep, type StepResult } from "./step";
 import { resolveTradeCheck } from "./trade";
+import { resolveFirmRoll } from "./firm-trade";
 
 // Decisions that interrupt an office: blackmail reactions, consents, and laws that trigger after an
 // office acts. Each records enough in CompanyOperationState to resume where the office left off.
@@ -64,7 +65,7 @@ export function interruptDecision(state: GameState, interrupt: OperationInterrup
     case "connection": {
       const card = interrupt.cardId === "mercantile-connection" ? "Mercantile Connection" : "Diplomatic Connection";
       const half = Math.floor(interrupt.check.dice / 2);
-      return decision(state, "connection", interrupt.holder, `${card}: force a reroll of this ${interrupt.check.context === "trade" ? "Trade" : "Deploy"} check (${interrupt.check.outcome}) with ${half} ${half === 1 ? "die" : "dice"}?`, [
+      return decision(state, "connection", interrupt.holder, `${card}: force a reroll of this ${interrupt.check.context === "deploy" ? "Deploy" : interrupt.check.context === "firmTrade" ? "firm Trade" : "Trade"} check (${interrupt.check.outcome}) with ${half} ${half === 1 ? "die" : "dice"}?`, [
         command(`Don't play ${card}`, { action: "declineConnection" }),
         command(`Play ${card}: reroll with ${half} ${half === 1 ? "die" : "dice"}`, { action: "playConnection" }, "Zero dice counts as a failure."),
       ]);
@@ -238,6 +239,10 @@ export const interruptStep: OperationStep = (state, cmd) => {
 function resolveCheck(state: GameState, check: PendingCheck): { state: GameState; summary: string; details?: unknown; rolls: RngRollRecord[] } {
   if (check.context === "trade") {
     const resolved = resolveTradeCheck(state, check);
+    return { state: resolved.state, summary: resolved.note, rolls: [] };
+  }
+  if (check.context === "firmTrade") {
+    const resolved = resolveFirmRoll(state, check);
     return { state: resolved.state, summary: resolved.note, rolls: [] };
   }
   const resolved = resolveDeployCheck(state, check);

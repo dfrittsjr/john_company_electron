@@ -70,7 +70,7 @@ function calculateBonusIncome(state: GameState): Record<string, BonusIncome> {
   for (const player of Object.values(state.players)) {
     if (player.isCrown) continue;
 
-    const workshops = player.enterprises.filter((enterprise) => enterprise.type === "workshop").length;
+    const workshops = player.enterprises.filter((enterprise) => enterprise.type === "workshop" && !enterprise.invested).length;
     // A shipyard pays £1 if its ship has been fitted, i.e. it is no longer on the shipyard (p.13, p.26).
     const fittedShipyards = player.enterprises.filter(
       (enterprise) =>
