@@ -1,6 +1,6 @@
 import type { CheckOutcome } from "../checks";
 import type { SubsystemInitInput, SubsystemInitResult } from "../subsystem";
-import type { ArmyId, OfficeId, PlayerId, PresidencyId, RegionId, SeaZoneId } from "../types";
+import type { ArmyId, FirmId, OfficeId, PlayerId, PresidencyId, RegionId, SeaZoneId } from "../types";
 
 /**
  * State owned by Company Operation (rulebook pp.17-26): progress through the red-ribbon offices
@@ -22,8 +22,25 @@ export type CompanyOperationState = {
   governorGeneralGoverned?: boolean;
   /** Board of Control may be used once per turn (law #34). */
   boardOfControlUsed?: boolean;
+  /** Deregulation (p.40): firms that have already filled their orders this turn. */
+  firmsFilled?: FirmId[];
+  /** Deregulation (p.40): the order-filling round for one Presidency, in progress. */
+  firmFill?: FirmFillState;
   /** A Connection blackmail was played on this check and waits for Man on the Inside to answer. */
   pendingConnection?: { cardId: "mercantile-connection" | "diplomatic-connection"; holder: PlayerId; check: PendingCheck };
+};
+
+/**
+ * Filling orders with firms (p.40): firms with an initiative, and the Company if its President's Trade
+ * succeeded, fill in initiative order. The Company's placement waits in `company.activity` for its turn.
+ */
+export type FirmFillState = {
+  presidency: PresidencyId;
+  company?: { initiative: number; activity: TradeActivity; started: boolean };
+  /** The firm now choosing orders. */
+  current?: { firmId: FirmId; orderIds: string[] };
+  /** The firms fill at the end of the Presidency's operations (no successful Trade): finish the office after. */
+  finishesOffice: boolean;
 };
 
 export type ShipDestination = SeaZoneId | "china";
@@ -58,6 +75,8 @@ export type TradeActivity = {
   /** Ships in the Presidency's sea zone when the check succeeded: one order each. */
   ships: number;
   placedOrderIds: string[];
+  /** £ each placed order is worth: half value for an order a firm filled first (p.40). Defaults to the printed value. */
+  placedValues?: number[];
 };
 
 export type DeploySelection = {
@@ -86,6 +105,7 @@ export type GovernorActivity = {
 
 export type PendingCheck =
   | { context: "trade"; presidency: PresidencyId; dice: number; values: number[]; outcome: CheckOutcome }
+  | { context: "firmTrade"; presidency: PresidencyId; firmId: FirmId; dice: number; values: number[]; outcome: CheckOutcome }
   | {
       context: "deploy";
       presidency: PresidencyId;

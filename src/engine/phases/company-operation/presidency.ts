@@ -5,6 +5,8 @@ import { commanderDecision, commanderStep, startCommander, type CommanderPayload
 import { governorDecision, governorStep, startGovernor, type GovernorPayload } from "./governor";
 import { presidencyProgress } from "./presidency-progress";
 import { finishOffice, type OperationStep, type StepResult } from "./step";
+import { firmFillDecision, firmRevealDecision, firmsNeedAttention, pendingFillers, startFirmFill, unrevealedFirms } from "./firm-trade";
+import { isDeregulated } from "../../firms";
 import { canTrade, startTrade, tradeDecision, tradeStep, tradeUnavailableReason, type TradePayload } from "./trade";
 
 // Presidency Operations (p.20): the President decides the order in which they Trade and their Commander
@@ -34,7 +36,12 @@ function commanderPending(state: GameState, presidency: PresidencyId): boolean {
 
 /** True when this Presidency has nobody to act this turn, so the office is simply skipped. */
 export function presidencyHasNothingToDo(state: GameState, presidency: PresidencyId): boolean {
-  return !presidentOf(state, presidency) && !commanderPending(state, presidency) && pendingGovernors(state, presidency).length === 0;
+  return (
+    !presidentOf(state, presidency) &&
+    !commanderPending(state, presidency) &&
+    pendingGovernors(state, presidency).length === 0 &&
+    !firmsNeedAttention(state, presidency)
+  );
 }
 
 export function presidencyChooser(state: GameState, presidency: PresidencyId) {
@@ -42,8 +49,12 @@ export function presidencyChooser(state: GameState, presidency: PresidencyId) {
 }
 
 export function presidencyDecision(state: GameState, presidency: PresidencyId): PendingDecision {
+  // Firms of this Presidency reveal and roll before anyone acts (p.40).
+  if (unrevealedFirms(state, presidency).length > 0) return firmRevealDecision(state, presidency);
   const progress = presidencyProgress(state, presidency);
   const activity = progress.activity;
+  const firmFill = coState(state).firmFill;
+  if (!activity && firmFill?.presidency === presidency) return firmFillDecision(state, firmFill);
   if (activity?.kind === "trade") return tradeDecision(state, presidency, activity);
   if (activity?.kind === "commander") return commanderDecision(state, presidency, activity);
   if (activity?.kind === "governor") return governorDecision(state, presidency, activity);
@@ -125,11 +136,20 @@ export const presidencyStep: OperationStep = (state, command) => {
         state: startGovernor(state, presidency, payload.officeId),
         summary: `The ${officeLabel(payload.officeId)} began acting.`,
       };
-    case "end":
+    case "end": {
+      // With no successful Trade this turn the firms fill after everyone else has acted (p.40).
+      if (isDeregulated(state) && pendingFillers(state, presidency).length > 0) {
+        const started = startFirmFill(state, presidency, undefined, true);
+        return {
+          state: started.state,
+          summary: [`The Presidency of ${presidency} finished its operations; the firms fill orders.`, ...started.notes].join(" "),
+        };
+      }
       return {
         state: finishOffice(state, presidentOfficeId(presidency)),
         summary: `The Presidency of ${presidency} finished its operations.`,
       };
+    }
   }
 };
 

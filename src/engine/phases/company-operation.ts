@@ -15,6 +15,7 @@ import {
   presidencyStep,
   tradeCommandStep,
 } from "./company-operation/presidency";
+import { FIRM_FILL_TYPE, FIRM_TRADE_TYPE, firmFillStep, firmTradeStep } from "./company-operation/firm-trade";
 import { shippingStep } from "./company-operation/shipping";
 import { finishOffice, type OperationStep } from "./company-operation/step";
 import { activeInterrupt } from "./negotiation";
@@ -123,4 +124,6 @@ export const companyOperationCommandHandlers: Record<string, CommandHandler> = {
   "companyOperation.china": operationCommand(chinaStep),
   "companyOperation.governorGeneral": operationCommand(governorGeneralStep),
   "companyOperation.interrupt": operationCommand(interruptStep),
+  [FIRM_TRADE_TYPE]: operationCommand(firmTradeStep),
+  [FIRM_FILL_TYPE]: operationCommand(firmFillStep),
 };

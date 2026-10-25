@@ -1,7 +1,7 @@
-import { FOREIGN_INVASION_MARCH_SHAPE, indiaEventTiles, stormDieFaces, stormSeaZoneRegion } from "../../../data";
+import { FOREIGN_INVASION_MARCH_SHAPE, firmStrategyById, indiaEventTiles, stormDieFaces, stormSeaZoneRegion } from "../../../data";
 import type { ElephantShape, IndiaEventTile } from "../../../data/india-events";
 import { shuffle } from "../../rng";
-import type { ElephantState, GameState, PendingDecision, PlayerId, RegionId } from "../../types";
+import type { ElephantState, GameState, PendingDecision, PlayerId, RegionId, ShipState } from "../../types";
 import { createFinalScoringDecision } from "../revenue";
 import { createSystemDecision } from "../shared";
 import type { ActiveTile, TileWorkItem } from "../events-in-india.state";
@@ -127,6 +127,18 @@ export function markEnvoyOffered(ctx: ResolutionContext, playerId: PlayerId): vo
 
 // --- Storm die (p.28) -----------------------------------------------------------------------
 
+/**
+ * The sea zone a ship counts in for storms. China counts as Eastern (p.25). A firm's ships count as in
+ * the sea zone of its strategy, and are safe with "Hobnob" or no strategy (p.42).
+ */
+function stormZoneOf(draft: GameState, ship: ShipState): string | undefined {
+  if (ship.location.startsWith("firm:")) {
+    const strategy = draft.hidden.firmStrategySecrets[ship.location.slice("firm:".length)]?.strategy;
+    return strategy ? firmStrategyById.get(strategy)?.seaZone : undefined;
+  }
+  return ship.location === "china" ? "east-indian" : ship.location;
+}
+
 function rollStormDie(ctx: ResolutionContext): void {
   const current = progress(ctx);
   const face = stormDieFaces[roll(ctx, 6, "eventsInIndia.stormDie") - 1];
@@ -142,7 +154,7 @@ function rollStormDie(ctx: ResolutionContext): void {
   for (const zone of face.storms) {
     // Only player-owned ships check (not Company or extra ships); China ships count as Eastern (p.25).
     const ships = ctx.draft.company.ships.filter(
-      (ship) => ship.kind === "player" && (ship.location === zone || (zone === "east-indian" && ship.location === "china")),
+      (ship) => (ship.kind === "player" || ship.location.startsWith("firm:")) && stormZoneOf(ctx.draft, ship) === zone,
     );
     for (const ship of ships) {
       const value = roll(ctx, 6, `eventsInIndia.storm.${ship.id}`);
