@@ -428,24 +428,7 @@ const taxCollectorsConsent: CrownPolicy = (_state, decision) =>
 /** The Crown moves the policy after a failed law with the same Crown-total rule as for choosing it. */
 const moveFailedPolicy = choosePolicy;
 
-// --- Negotiation (p.2): no deals, no consent ---
-
-function consentRequest(state: GameState) {
-  const frame = state.negotiation.interrupts[state.negotiation.interrupts.length - 1];
-  return frame?.kind === "consent" ? frame.request : undefined;
-}
-
-/**
- * The Crown gives no consent, except to dissolve or merge firms, which it "always" consents to
- * (Handbook p.3). Anything else is refused.
- */
-const negotiationConsent: CrownPolicy = (state, decision) => {
-  const request = consentRequest(state);
-  const action = request?.kind === "firms.action" ? (request.context as { kind?: string }) : undefined;
-  const yes = action?.kind === "dissolve" || action?.kind === "merge";
-  const option = optionsOfType(decision, "negotiation.respondToConsent", (payload) => payload.accept === yes)[0];
-  return choose(option, yes ? "The Crown always consents to dissolving and merging firms (Handbook p.3)." : "The Crown gives no consent (Handbook p.2).");
-};
+// --- Negotiation (p.2): no deals, no consent (consents are area A's `negotiation.consent`) ---
 
 /** The Crown's blackmail cards stay face down and it plays none (p.2): it never cancels a play. */
 const blackmailReaction: CrownPolicy = (_state, decision) =>
@@ -561,7 +544,6 @@ export const parliamentCrown: CrownArea = {
     "companyOperation.boardOfControl": boardOfControl,
     "companyOperation.militaryOversight": militaryOversight,
     "companyOperation.connection": connection,
-    "negotiation.consent": negotiationConsent,
     "negotiation.blackmailReaction": blackmailReaction,
   },
   favors,

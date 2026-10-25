@@ -1,3 +1,4 @@
+import { crownPolicyFor } from "../../engine/crown/registry";
 import { describe, expect, it } from "vitest";
 import { crownAiCards, enterpriseDecks, lawsById, prizes } from "../../data";
 import {
@@ -697,7 +698,8 @@ describe("negotiation with the Crown (Handbook p.2)", () => {
       { type: "negotiation.respondToConsent", label: "Consent", payload: { requestId: "consent-1", accept: true } },
       { type: "negotiation.respondToConsent", label: "Refuse", payload: { requestId: "consent-1", accept: false } },
     ]);
-    return policy("negotiation.consent")(state, decision)?.commands.map((c) => (c.payload as { accept: boolean }).accept);
+    // The consent policy is area A's (one policy per step); Parliament relies on it.
+    return crownPolicyFor("negotiation.consent")!({ ...state, pendingDecision: decision }, decision)?.commands.map((c) => (c.payload as { accept: boolean }).accept);
   };
 
   it("gives no consent, except to dissolving and merging firms", () => {

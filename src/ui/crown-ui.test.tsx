@@ -18,7 +18,7 @@ afterEach(() => {
 });
 
 function crownDecision(game: GameState, options: { count: number; chooser?: string }): GameState {
-  const legal = game.pendingDecision.legalCommands.slice(0, options.count);
+  const legal = Array.from({ length: options.count }, (_, index) => ({ type: "test.option", label: `Option ${index + 1}`, payload: { index } }));
   return {
     ...game,
     pendingDecision: {
