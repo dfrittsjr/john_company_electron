@@ -131,10 +131,19 @@ describe("Esther Summerson (card #12)", () => {
     return applyCommandOrThrow(state, { id: "be-2", actorId: RED, type: retire!.type, payload: retire!.payload });
   }
 
-  it("Becky Sharp's top-of-deck option is not offered when the top card is blackmail", () => {
+  it("offers Becky Sharp's top-of-deck option whatever the card, so it never hints at a hidden card", () => {
     const state = beckyState("company-fraud");
     expect(state.pendingDecision.step).toBe("londonSeason.choosePrestigeCard");
-    expect(hasCommand(state, "londonSeason.choosePrestigeCard", (payload) => payload.action === "takeTopOfDeck")).toBe(false);
+    expect(hasCommand(state, "londonSeason.choosePrestigeCard", (payload) => payload.action === "takeTopOfDeck")).toBe(true);
+  });
+
+  it("discards a blackmail drawn with Becky Sharp instead of letting an Esther holder keep it", () => {
+    let state = beckyState("company-fraud");
+    const top = state.pendingDecision.legalCommands.find((command) => (command.payload as { action?: string }).action === "takeTopOfDeck")!;
+    state = applyCommandOrThrow(state, { id: "be-3", actorId: RED, type: top.type, payload: top.payload });
+    expect(state.players[RED].blackmailCards).toHaveLength(0);
+    expect(state.londonSeason.discard).toContain("company-fraud");
+    expect(state.log.at(-1)?.summary).toMatch(/cannot take blackmail \(Esther Summerson\)/);
   });
 
   it("Becky Sharp's top-of-deck option is still offered when the top card is a prestige card", () => {
@@ -331,17 +340,18 @@ describe("No dead single-option prompts (p.17)", () => {
     return applyCommandOrThrow(state, { id: "dead-1", actorId: "system", type: "londonSeason.confirm", payload: {} });
   }
 
-  it("skips a pensioner whose owner cannot afford any prize, and logs it", () => {
+  it("still asks a pensioner's owner who cannot afford a prize, since another player may lend them cash (p.8, p.36)", () => {
     const state = retirementStart(0);
-    expect(state.log.some((entry) => entry.type === "retirement.skipped" && entry.summary.includes("Red"))).toBe(true);
-    expect(state.pendingDecision.step).not.toBe("retirement.retirePensioner");
+    expect(state.pendingDecision.step).toBe("retirement.retirePensioner");
+    expect(state.pendingDecision.actor).toBe(RED);
+    expect(state.pendingDecision.prompt).toMatch(/lend you cash/);
+    expect(state.pendingDecision.legalCommands.map((command) => command.type)).toEqual(["retirement.stop"]);
   });
 
   it("still offers the prompt when a prize is affordable (a real choice)", () => {
     const state = retirementStart(5);
     expect(state.pendingDecision.step).toBe("retirement.retirePensioner");
     expect(state.pendingDecision.actor).toBe(RED);
-    expect(state.log.some((entry) => entry.type === "retirement.skipped")).toBe(false);
   });
 
   it("skips a vacancy with no hirer or candidates with a log entry instead of a one-button decision", () => {

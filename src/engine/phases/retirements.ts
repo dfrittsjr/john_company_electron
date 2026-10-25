@@ -14,7 +14,7 @@ import type {
   RngRollRecord,
 } from "../types";
 import type { DiscountKey, RetirementContext, RetirementProgress } from "./london-season.state";
-import { appendLog, registerDecisionRefresher } from "./negotiation";
+import { registerDecisionRefresher } from "./negotiation";
 
 // Attrition and pensioner retirements, shared by the London Season (p.11) and the final
 // retirement in Final Scoring (p.9).
@@ -146,30 +146,13 @@ export function advanceRetirements(state: GameState): { state: GameState; decisi
   const progress = state.londonSeason.retirement;
   if (!progress) return { state };
 
+  // A player with no affordable prize is still asked: another player may lend them cash first
+  // ("players can transfer funds to each other at any time", p.8, p.36).
   let current = progress.current;
-  let next = state;
-  while (current < progress.order.length) {
-    const playerId = progress.order[current];
-    const player = next.players[playerId];
-    if ((player?.familyMembers.pensioners ?? 0) > 0) {
-      // No dead actions (p.17): with no affordable prize (after discounts) and no Letters of
-      // Introduction to play, the only choice would be "do not retire", so skip the prompt.
-      const withProgress = { ...next, londonSeason: { ...next.londonSeason, retirement: { ...progress, current } } };
-      if (!hasRetirementChoice(withProgress, progress, playerId)) {
-        next = appendLog(next, {
-          actor: "system",
-          type: "retirement.skipped",
-          summary: `${player.name} cannot afford any prize for ${player.familyMembers.pensioners === 1 ? "their pensioner" : `their ${player.familyMembers.pensioners} pensioners`}, so no retirement is offered.`,
-          details: { playerId, cash: player.cash, pensioners: player.familyMembers.pensioners },
-          timestamp: state.updatedAt,
-        });
-        current += 1;
-        continue;
-      }
-      break;
-    }
+  while (current < progress.order.length && (state.players[progress.order[current]]?.familyMembers.pensioners ?? 0) === 0) {
     current += 1;
   }
+  const next = state;
 
   const nextState: GameState =
     current === progress.current && next === state
@@ -179,15 +162,6 @@ export function advanceRetirements(state: GameState): { state: GameState; decisi
   if (current >= progress.order.length) return { state: nextState };
 
   return { state: nextState, decision: retirementDecision(nextState, progress.order[current]) };
-}
-
-function hasRetirementChoice(state: GameState, progress: RetirementProgress, playerId: PlayerId): boolean {
-  if (retirementOptions(state, progress, playerId).length > 0) return true;
-  const player = state.players[playerId];
-  return (
-    !progress.lettersOfIntroduction.includes(playerId) &&
-    player.blackmailCards.some((card) => card.cardId === LETTERS_OF_INTRODUCTION && card.facedown !== false)
-  );
 }
 
 // Cash can change hands mid-retirement (p.8): rebuild the affordable prizes after a transfer.
@@ -201,7 +175,8 @@ registerDecisionRefresher("retirement.retirePensioner", (state) => {
 function retirementDecision(state: GameState, playerId: PlayerId): PendingDecision {
   const progress = state.londonSeason.retirement as RetirementProgress;
   const player = state.players[playerId];
-  const legalCommands: LegalCommand[] = [...retirementOptions(state, progress, playerId)];
+  const prizeOptions = retirementOptions(state, progress, playerId);
+  const legalCommands: LegalCommand[] = [...prizeOptions];
   const holdsLetters =
     !progress.lettersOfIntroduction.includes(playerId) &&
     player.blackmailCards.some((card) => card.cardId === LETTERS_OF_INTRODUCTION && card.facedown !== false);
@@ -234,7 +209,10 @@ function retirementDecision(state: GameState, playerId: PlayerId): PendingDecisi
     actor: playerId,
     // Offering Letters of Introduction would reveal a face-down blackmail card.
     visibility: holdsLetters ? "private" : "public",
-    prompt: `${player.name}: retire a pensioner to a prize (${player.familyMembers.pensioners} pensioner(s), £${player.cash}).`,
+    prompt:
+      prizeOptions.length > 0
+        ? `${player.name}: retire a pensioner to a prize (${player.familyMembers.pensioners} pensioner(s), £${player.cash}).`
+        : `${player.name}: no prize is affordable with £${player.cash}. Another player may lend you cash first (Deals & Cards); otherwise choose not to retire.`,
     legalCommands,
     canSave: true,
   };

@@ -20,10 +20,14 @@ Files: `src/engine/phases/london-season.ts`, `london-season.state.ts`, `retireme
   - Discounts stack and each is used once per London Season and once per Final Scoring.
   - Lord Highgate limits prizes to the 8 and 12 VP boxes.
   - Letters of Introduction, played when retiring, lends every other player's spouse discounts.
+  - A player who can't afford any prize is still asked, because another player may lend them cash
+    first (p.8, p.36). The prompt says so, and its only option is not to retire until a loan arrives.
 - Prestige Cards step: players who retired pick in order of cash spent, then window icons
   (including this turn's prize pieces), then Prime Minister order. Each takes or discards one
   display card; the choices name face-down blackmail for the acting player only. Becky Sharp may
-  take the deck's top card. If the display empties, remaining players are skipped.
+  take the deck's top card; the option is offered whatever the card is, so it never hints at a
+  hidden card. If an Esther Summerson holder draws blackmail that way, it is discarded and the pick
+  is spent. If the display empties, remaining players are skipped.
 - On taking a card:
   - Spouse VP is added.
   - Lady Glencora removes the opportunity marker.

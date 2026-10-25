@@ -249,15 +249,9 @@ function prestigeDecision(state: GameState, playerId: PlayerId): PendingDecision
   });
 
   // Becky Sharp: "you may take a card from the top of the deck instead as long as there is at
-  // least one card in the display."
-  // Esther Summerson (#12): "You may no longer take or own blackmail cards", so a blackmail on top
-  // of the deck cannot be taken.
-  const topOfDeck = state.londonSeason.deck[0];
-  if (
-    playerHasPrestigeCard(state, playerId, BECKY_SHARP) &&
-    topOfDeck !== undefined &&
-    (!noBlackmail || prestigeById.has(topOfDeck))
-  ) {
+  // least one card in the display." Offered whatever the top card is, so the option itself never
+  // hints at a hidden card; Esther Summerson's restriction applies when the card is drawn.
+  if (playerHasPrestigeCard(state, playerId, BECKY_SHARP) && state.londonSeason.deck.length > 0) {
     legalCommands.push({
       type: "londonSeason.choosePrestigeCard",
       label: "Take the top card of the deck (Becky Sharp)",
@@ -310,6 +304,16 @@ function choosePrestigeCard(state: GameState, command: GameCommand): ApplyComman
     if (payload.action === "takeTopOfDeck") {
       [cardId] = next.londonSeason.deck;
       next = { ...next, londonSeason: { ...next.londonSeason, deck: next.londonSeason.deck.slice(1) } };
+      // Esther Summerson (#12): "You may no longer take or own blackmail cards." A blackmail drawn
+      // with Becky Sharp can't be kept, so it is discarded and this pick is spent.
+      if (!prestigeById.has(cardId) && forbidsHolding(next, playerId, "blackmail")) {
+        next = { ...next, londonSeason: { ...next.londonSeason, discard: [...next.londonSeason.discard, cardId] } };
+        return finishCommand(state, command, command.clientTimestamp, "londonSeason.prestigeCardChosen", {
+          state: continueLondonSeason(next),
+          summary: `${state.players[playerId].name} drew a face-down blackmail card from the top of the deck but cannot take blackmail (Esther Summerson), so it is discarded.`,
+          details: { playerId, discarded: "blackmail", source: "topOfDeck" },
+        });
+      }
     } else {
       const display = [...next.londonSeason.display];
       [cardId] = display.splice(payload.slot as number, 1);

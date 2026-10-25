@@ -148,10 +148,11 @@ describe("London Season (pp.11-12)", () => {
     state = choose(state, "Retire to the £4 prize (2 VP, upkeep £1) for £2 using -£2 Lady Glencora");
 
     // The discount is spent, so the second pensioner can't use it again this season.
-    // Red is out of cash, so the second pensioner's prompt is skipped automatically (p.17).
+    // Red is out of cash: the second pensioner is still offered, in case another player lends
+    // Red the money (p.8), with no discounted prize left to pick.
     expect(state.players[RED].cash).toBe(0);
-    expect(state.log.some((entry) => entry.type === "retirement.skipped")).toBe(true);
-    expect(state.pendingDecision.step).toBe("londonSeason.choosePrestigeCard");
+    expect(state.pendingDecision.step).toBe("retirement.retirePensioner");
+    expect(state.pendingDecision.legalCommands.map((legal) => legal.type)).toEqual(["retirement.stop"]);
   });
 
   it("restricts Lord Highgate's family to the 8 and 12 VP prizes", () => {
