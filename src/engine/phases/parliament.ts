@@ -431,8 +431,8 @@ function voteCommands(state: GameState, voter: PlayerId): { commands: LegalComma
 
   const cost = voteCost(state);
   const maxCashVotes = Math.floor((state.players[voter]?.cash ?? 0) / cost);
-  // Votes can be cast in several batches in one turn, so these amounts reach any total.
-  const amounts = [...new Set([1, 2, 5, 10, maxCashVotes])].filter((votes) => votes >= 1 && votes <= maxCashVotes).sort((a, b) => a - b);
+  // Every amount from 1 to the most the voter can pay for; the UI groups long lists.
+  const amounts = Array.from({ length: maxCashVotes }, (_, index) => index + 1);
   const cards = availableVoteCards(state, voter, session);
   const commands: LegalCommand[] = [];
 

@@ -272,3 +272,36 @@ describe("Coalitions need the partner's consent (p.35)", () => {
     expect(hasCommand(state, "parliament.setVoteCredit", (payload) => payload.creditTo === BLUE)).toBe(false);
   });
 });
+
+describe("Vote and allocation amounts", () => {
+  it("offers every cash vote amount from 1 to the most the player can pay for (p.35)", () => {
+    let state = parliamentState({ drawPile: ["trade-regulations"], cash: { [RED]: 2, [BLUE]: 7, [YELLOW]: 5 } });
+    state = choose(state, "parliament.confirm");
+    state = choose(state, "parliament.selectLaw");
+    state = choose(state, "parliament.choosePolicy", (payload) => payload.space === 2);
+    state = choose(state, "parliament.passVote"); // Red, the Prime Minister
+    expect(state.pendingDecision.actor).toBe(BLUE);
+    const against = state.pendingDecision.legalCommands
+      .filter((command) => command.type === "parliament.castVotes")
+      .map((command) => command.payload as { direction: string; source: string; votes?: number })
+      .filter((payload) => payload.direction === "against" && payload.source === "cash")
+      .map((payload) => payload.votes);
+    expect(against).toEqual([1, 2, 3, 4, 5, 6, 7]);
+  });
+});
+
+describe("Chairman allocation amounts (p.18)", () => {
+  it("offers 1, 2, 3, 5, 10 and all per office, only within the remaining Balance", () => {
+    const amountsFor = (balance: number): number[] => {
+      let state = withOffice(operationGame("allocation"), "chairman", RED);
+      state = { ...state, company: { ...state.company, balance } };
+      state = enterOperation(state, []);
+      return state.pendingDecision.legalCommands
+        .map((command) => command.payload as { action: string; officeId?: string; amount?: number })
+        .filter((payload) => payload.action === "allocate" && payload.officeId === "manager-of-shipping")
+        .map((payload) => payload.amount as number);
+    };
+    expect(amountsFor(12)).toEqual([1, 2, 3, 5, 10, 12]);
+    expect(amountsFor(4)).toEqual([1, 2, 3, 4]);
+  });
+});
