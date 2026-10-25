@@ -19,7 +19,9 @@ import { finishOffice, type OperationStep } from "./step";
 // Manager of Shipping (p.19): must spend until the treasury holds £2 or less.
 // Lease an extra ship £2; fit a ship from a shipyard £3 (no owner consent; Ship Subsidy makes it £2);
 // buy a Company ship £5 only when no ships are on shipyards. Ships go to any sea zone (China once open).
-// Assumption: spending stops once the treasury is at £2 or less ("until it has at most £2 remaining").
+// Assumption: £2 is a minimum spend, not a stop. While the treasury is above £2 only purchases are offered;
+// at £2 or less any still-affordable purchase is offered plus "Finish". The step ends by itself only when
+// nothing is affordable.
 
 const OFFICE_ID = "manager-of-shipping";
 const LEASE_COST = 2;
@@ -41,8 +43,6 @@ function shipsOnShipyards(state: GameState) {
 
 function shippingCommands(state: GameState): LegalCommand[] {
   const treasury = state.company.offices[OFFICE_ID]?.treasury ?? 0;
-  if (treasury <= 2) return [];
-
   const commands: LegalCommand[] = [];
   const destinations = shipDestinations(state);
   const supply = companyShipPiecesInSupply(state);
@@ -82,8 +82,14 @@ function shippingCommands(state: GameState): LegalCommand[] {
 
 export function shippingDecision(state: GameState): PendingDecision {
   const treasury = state.company.offices[OFFICE_ID]?.treasury ?? 0;
-  const commands = shippingCommands(state);
-  const done = commands.length === 0;
+  const purchases = shippingCommands(state);
+  const done = purchases.length === 0;
+  const finish: LegalCommand = {
+    type: "companyOperation.shipping",
+    label: "Finish as Manager of Shipping",
+    payload: { action: "finish" } satisfies ShippingPayload,
+  };
+  const commands = done || treasury > 2 ? purchases : [...purchases, finish];
 
   return {
     id: decisionId(state, "company-operation-shipping"),
@@ -93,16 +99,10 @@ export function shippingDecision(state: GameState): PendingDecision {
     visibility: "public",
     prompt: done
       ? `Manager of Shipping: nothing more to spend (treasury £${treasury}).`
-      : `Manager of Shipping: spend until £2 or less remains (treasury £${treasury}).`,
-    legalCommands: done
-      ? [
-          {
-            type: "companyOperation.shipping",
-            label: "Finish as Manager of Shipping",
-            payload: { action: "finish" } satisfies ShippingPayload,
-          },
-        ]
-      : commands,
+      : treasury > 2
+        ? `Manager of Shipping: spend until £2 or less remains (treasury £${treasury}).`
+        : `Manager of Shipping: you may spend more or finish (treasury £${treasury}).`,
+    legalCommands: done ? [finish] : commands,
     canSave: true,
   };
 }
@@ -140,6 +140,7 @@ export const shippingStep: OperationStep = (state, command) => {
   }
 
   next = withCo(next, {});
+  // Ends by itself only when nothing is affordable; at £2 or less the player may still buy or finish.
   return shippingCommands(next).length === 0
     ? { state: finishOffice(next, OFFICE_ID), summary: `${summary} The Manager of Shipping is done.` }
     : { state: next, summary };

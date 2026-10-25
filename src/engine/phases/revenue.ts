@@ -328,7 +328,8 @@ function royalProtectionDecision(state: GameState, chairman: PlayerId): PendingD
       {
         type: "revenue.royalProtection",
         label: "Discard Royal Protection: no loans, cancel the remaining expenses",
-        description: "Standing is not lowered for loans, but is still lowered if the Balance misses Expectations.",
+        description:
+          "The Balance pays what it can of the expenses first. The rest of the expenses are cancelled, with no emergency loans. Expectations are still checked afterwards, so Standing can still fall if the Balance misses them.",
         payload: { discard: true },
       },
       { type: "revenue.royalProtection", label: "Keep Royal Protection and take the loans", payload: { discard: false } },

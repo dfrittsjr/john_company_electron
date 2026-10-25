@@ -40,8 +40,9 @@ Envoy to China (trade value), Inclosure Acts.
 
 ## Assumptions
 
-1. **Manager of Shipping** stops as soon as the treasury is £2 or less ("until it has at most £2
-   remaining"); there is no optional extra spending after that.
+1. **Manager of Shipping**: "spend until at most £2 remaining" is a minimum spend, not a stop. Above £2
+   only purchases are offered; at £2 or less any still-affordable purchase is offered plus "Finish as
+   Manager of Shipping". The step ends automatically only when nothing is affordable.
 2. **Chairman**: Debt advances may be taken between allocations (p.18 allows this). After the Court
    refuses an advance, no further advance is offered that turn.
 3. **Trade declaration** is incremental: a region can be added only if an open order in it can be

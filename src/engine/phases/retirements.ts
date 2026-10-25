@@ -254,6 +254,10 @@ function allowedPrizes(state: GameState, playerId: PlayerId): PrizeDefinition[] 
   return prizes.filter((prize) => allowedVp.every((allowed) => allowed.includes(prize.victoryPoints)));
 }
 
+function heldPrizeUpkeep(prizeCounts: Record<string, number>): number {
+  return Object.entries(prizeCounts).reduce((total, [prizeId, count]) => total + count * (prizeDefinition(prizeId)?.upkeep ?? 0), 0);
+}
+
 /**
  * One option per prize and per useful combination of unused discounts (p.12: discounts stack and
  * each is used once per London Season / Final Scoring). Discounts of equal value are
@@ -292,9 +296,16 @@ function retirementOptions(state: GameState, progress: RetirementProgress, playe
 
       const discountText =
         combo.length === 0 ? "" : ` using ${combo.map((discount) => `-£${discount.amount} ${discount.label}`).join(", ")}`;
+      // Warn when the cash left cannot cover the upkeep owed at the next Upkeep (p.36): every prize
+      // piece the player holds, including this one.
+      const cashLeft = player.cash - cost;
+      const upkeepOwed = heldPrizeUpkeep(player.familyMembers.prizes) + prize.upkeep;
       options.push({
         type: "retirement.retirePensioner",
         label: `Retire to the £${prize.cost} prize (${prize.victoryPoints} VP, upkeep £${prize.upkeep}) for £${cost}${discountText}`,
+        ...(cashLeft < upkeepOwed
+          ? { description: `Warning: you'd have £${cashLeft} left for £${upkeepOwed} upkeep at the next Upkeep.` }
+          : {}),
         payload: { prizeId: prize.id, discounts: combo.map((discount) => discount.key) },
       });
     }
