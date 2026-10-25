@@ -5,7 +5,8 @@ Wehrlegig Games). Players take their turns and pass a `.joco` save file to whoev
 The site is built with [Astro](https://astro.build) and React and served as static assets from a
 Cloudflare Worker. See `NOTICE.md` for credits and licensing.
 
-The game engine is still incomplete; see `docs/first-pass-todo.md`.
+The 1710 scenario is playable end to end for 3-6 players. Status: `docs/status.md`; developer
+notes: `docs/README.md`.
 
 ## Requirements
 

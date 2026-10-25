@@ -148,7 +148,7 @@ export const validateScenarioData = (
         code: "scenario.missing",
         path: `scenarios.${id}`,
         message: `Required scenario '${id}' is missing from static data.`,
-        source: "docs/GAME_DESIGN.md",
+        source: "printnplay/Rulebooks/John Company Rules.pdf",
       });
     }
   }
@@ -159,7 +159,7 @@ export const validateScenarioData = (
       code: "scenario.duplicate-id",
       path: `scenarios.${id}`,
       message: `Scenario id '${id}' is defined more than once.`,
-      source: "docs/GAME_DESIGN.md",
+      source: "printnplay/Rulebooks/John Company Rules.pdf",
     });
   }
 
@@ -173,7 +173,7 @@ export const validateScenarioData = (
           code: "scenario.required-field",
           path: `${basePath}.${field}`,
           message: `Scenario '${scenario.id}' is missing required field '${field}'.`,
-          source: "docs/GAME_DESIGN.md",
+          source: "printnplay/Rulebooks/John Company Rules.pdf",
         });
       }
     }
@@ -184,7 +184,7 @@ export const validateScenarioData = (
         code: "scenario.player-counts-missing",
         path: `${basePath}.recommendedPlayerCounts`,
         message: `Scenario '${scenario.id}' must list supported human player counts.`,
-        source: "docs/GAME_DESIGN.md",
+        source: "printnplay/Rulebooks/John Company Rules.pdf",
       });
     }
 
@@ -214,7 +214,7 @@ export const validateScenarioData = (
         code: "scenario.setup-metadata-missing",
         path: `${basePath}.setup.missingSections`,
         message: `Scenario '${scenario.id}' must track missing setup sections for data entry.`,
-        source: "docs/data-entry-checklist.md",
+        source: "printnplay/Rulebooks/John Company Rules.pdf",
       });
       continue;
     }
@@ -1167,7 +1167,7 @@ export const validateCrownData = (
       code: "crown.ai-card-count",
       path: "crown.aiCards",
       message: `Crown AI deck must contain exactly ${CROWN_AI_CARD_COUNT} cards; found ${crownData.aiCards.length}.`,
-      source: "docs/crown-ai-design.md",
+      source: "printnplay/Rulebooks/John Company Rules.pdf",
     });
   }
 
@@ -1177,7 +1177,7 @@ export const validateCrownData = (
       code: "crown.ai-card-duplicate-id",
       path: `crown.aiCards.${id}`,
       message: `Crown AI card id '${id}' is defined more than once.`,
-      source: "docs/crown-ai-design.md",
+      source: "printnplay/Rulebooks/John Company Rules.pdf",
     });
   }
 
@@ -1190,7 +1190,7 @@ export const validateCrownData = (
         code: "crown.ai-card-source-missing",
         path: `${basePath}.source`,
         message: `Crown AI card '${card.id}' must include a source reference.`,
-        source: "docs/crown-ai-design.md",
+        source: "printnplay/Rulebooks/John Company Rules.pdf",
       });
     }
 
@@ -1201,7 +1201,7 @@ export const validateCrownData = (
           code: "crown.ai-card-field-missing",
           path: `${basePath}.${fieldPath}`,
           message: `Crown AI card '${card.id}' is missing required field '${fieldPath}'.`,
-          source: "docs/crown-ai-design.md",
+          source: "printnplay/Rulebooks/John Company Rules.pdf",
         });
       }
     }
@@ -1215,7 +1215,7 @@ export const validateCrownData = (
         code: "crown.setup-distribution-missing",
         path: `crown.setupDistributions.${mode}`,
         message: `Crown setup distribution for '${mode}' is missing.`,
-        source: "docs/crown-ai-design.md",
+        source: "printnplay/Rulebooks/John Company Rules.pdf",
       });
     }
   }
@@ -1243,7 +1243,7 @@ export const validateCrownData = (
         code: "crown.difficulty-missing",
         path: `crown.difficultySettings.${difficulty}`,
         message: `Crown difficulty '${difficulty}' is missing.`,
-        source: "docs/crown-ai-design.md",
+        source: "printnplay/Rulebooks/John Company Rules.pdf",
       });
     }
   }
@@ -1287,7 +1287,7 @@ export const validateNewGameStaticData = ({
       code: "new-game.scenario-missing",
       path: `scenarios.${scenarioId}`,
       message: `Cannot start '${scenarioId}': scenario data is missing.`,
-      source: "docs/GAME_DESIGN.md",
+      source: "printnplay/Rulebooks/John Company Rules.pdf",
     });
   } else if (
     mode === "hotseat" &&
@@ -1308,7 +1308,7 @@ export const validateNewGameStaticData = ({
       code: "new-game.solo-crown-player-count",
       path: "newGame.humanPlayerCount",
       message: "Solo Crown mode requires exactly one human player.",
-      source: "docs/crown-ai-design.md",
+      source: "printnplay/Rulebooks/John Company Rules.pdf",
     });
   }
 
@@ -1318,7 +1318,7 @@ export const validateNewGameStaticData = ({
       code: "new-game.two-player-crown-player-count",
       path: "newGame.humanPlayerCount",
       message: "Two-player Crown mode requires exactly two human players.",
-      source: "docs/crown-ai-design.md",
+      source: "printnplay/Rulebooks/John Company Rules.pdf",
     });
   }
 

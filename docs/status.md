@@ -17,15 +17,15 @@ Current state of the 1710 build. Details live in the phase notes:
 - **Integration:** the dispatcher's option guard and resource guard, and decision refreshers after
   anytime commands (see `docs/phases/integration.md`).
 - **Harness:** `npm run harness` plays the engine headlessly, including random and greedy policies.
+- **Board UI:** board overlay, decision panel, dashboards, Laws tab, handoff banner, final scoring.
+- **Playtests:** three focused AI playtests against the rulebook; every confirmed finding fixed with a test.
 - **Save format:** schema 3, ruleset `john-company-2e-data-3`. Older saves are refused with a
   readable message.
 
 ## Next
 
-- **Board UI:** show the map state (orders, towers, flags, Elephant, writers), offices, armies,
-  tracks and the London Season Display, so people can play from the screen rather than the log.
-- **Playtesting:** have AI or human playtesters play each phase against the rulebook, and add a
-  test that cites the page for every finding.
+- **Undo and an in-app rules reference.** In progress.
+- **Human playtest:** play a full 1710 game with the group and fix what comes up.
 - **Rules questions:** confirm the assumptions recorded in the phase notes with the group.
 
 ## Later (out of scope for 1710)

@@ -46,10 +46,7 @@ export type DataSourceRef =
   | "rulebook-scenario-1758"
   | "rulebook-scenario-1813"
   | "rulebook-scenario-long-1710"
-  | "crown-handbook"
-  | "docs/crown-ai-design.md"
-  | "docs/data-entry-checklist.md"
-  | "docs/GAME_DESIGN.md";
+  | "crown-handbook";
 
 export type ValidationSeverity = "error" | "warning";
 
