@@ -63,14 +63,15 @@ Examples:
 
 ```ts
 type GameState = {
-  schemaVersion: number;
+  schemaVersion: number; // 2: canonical piece locations (see below)
   gameId: string;
   createdAt: string;
   updatedAt: string;
   mode: "hotseat" | "soloCrown" | "twoPlayerCrown";
-  scenario: ScenarioId;
+  scenario: "1710" | "1758" | "1813" | "long-1710";
   turn: number;
-  finalTurn: number;
+  startTurn: number; // from the scenario's date on the Turn track
+  finalTurn: number; // from the scenario's end marker on the Turn track
   phase: PhaseId;
   pendingDecision: PendingDecision;
   players: Record<PlayerId, PlayerState>;
@@ -86,6 +87,30 @@ type GameState = {
   hidden: HiddenInfoState;
 };
 ```
+
+### One canonical location per piece
+
+Every family piece lives in exactly one place in state. Per-player views (a family's
+writers, officers, offices, Court shares, Stock Exchange pieces) are computed by the
+selectors in `src/engine/selectors.ts`, never stored on the player:
+
+| Piece | Canonical location |
+| --- | --- |
+| Officeholders, including the Chairman | `company.offices[officeId].holder` |
+| Company shares in the Court | `company.court` (the Chairman's piece is one more share) |
+| Stock Exchange pieces | `company.stockExchange[].share` |
+| Writers in a Presidency box | `india.presidencies[p].writers[playerId]` |
+| Writers on orders | `india.regions[r].orders[].writer` |
+| Officers | `company.armies[a].officers[playerId]` |
+| Commanders | `company.armies[a].commander` |
+| Firm shares | `firms[].shares[playerId]` |
+| Supply, pensioners, prizes, officers-in-training, Debtor's Prison | `players[id].familyMembers` |
+
+Presidents, Presidency treasuries and Governors are not duplicated on `PresidencyState`;
+treasuries live on the office (`company.offices[...].treasury`). The test fixtures assert
+after every command that each family's pieces total 18 (36 for the Crown).
+
+Saves made with schema version 1 are refused with a readable error; there is no migration.
 
 ## Crown State
 
@@ -142,15 +167,7 @@ type PlayerState = {
     supply: number;
     pensioners: number;
     prizes: Record<PrizeId, number>;
-    courtShares: number;
-    chairmanShare: boolean;
-    stockExchange: string[];
-    writers: Record<PresidencyId, number>;
     officersInTraining: number;
-    officers: Record<ArmyId, PieceStack>;
-    commanders: Record<ArmyId, boolean>;
-    offices: OfficeId[];
-    firmShares: Record<FirmId, number>;
     debtorPrison: number;
   };
   opportunityMarker: FamilyActionId | "supply" | "removed";
@@ -169,25 +186,29 @@ type PlayerState = {
 
 ```ts
 type CompanyState = {
-  standing: number;
-  debt: number;
+  standing: number; // index into companyTracks.standing; 0 = Company failure
+  debt: number; // 0-8
   balance: number;
-  expectations: number;
   shareValue: number;
   failed: boolean;
   powerTrack: Record<PowerTargetId, number>;
   offices: Record<OfficeId, OfficeState>;
-  vacantOffices: OfficeId[];
-  unusedOffices: OfficeId[];
+  vacantOffices: OfficeId[]; // the Hiring queue
+  unusedOffices: OfficeId[]; // China, Governor General and Governors until created
   court: ShareInstance[];
   stockExchange: StockExchangeSlot[];
-  ships: ShipState[];
-  extraShips: ShipState[];
+  ships: ShipState[]; // player, Company and extra ships
   armies: Record<ArmyId, ArmyState>;
-  chinaOffice?: ChinaOfficeState;
   governorGeneralInPlay: boolean;
 };
 ```
+
+Expectations are not stored: they are printed under each Standing space
+(`companyTracks.standing[standing].expectations`, read with `companyExpectations(state)`).
+
+Ships carry `kind` ("player" | "company" | "extra") and a `location` of "shipyard"
+(unfitted), a sea zone ("west-indian" | "south-indian" | "east-indian"), "china", or
+`firm:<id>`. A player ship belongs to whoever owns its shipyard card (`shipyardCardId`).
 
 Office state:
 
@@ -209,8 +230,8 @@ type OfficeState = {
 ```ts
 type IndiaState = {
   regions: Record<RegionId, RegionState>;
-  presidencies: Record<PresidencyId, PresidencyState>;
-  elephant: ElephantState;
+  presidencies: Record<PresidencyId, PresidencyState>; // { id, army, writers, seaZone }
+  elephant: { regionId?: RegionId; facing?: RegionId };
   eventDiscards: EventTileId[];
   regionsLostThisTurn: number;
 };
@@ -222,7 +243,7 @@ Region state:
 type RegionState = {
   id: RegionId;
   name: string;
-  presidency: PresidencyId;
+  homePresidency?: PresidencyId; // Bombay, Madras and Bengal only
   adjacent: RegionId[];
   orders: OrderState[];
   towerLevels: number;
@@ -230,18 +251,18 @@ type RegionState = {
   empireFlag?: EmpireFlagId;
   isCapital: boolean;
   companyControlled: boolean;
-  associatedPresidency?: PresidencyId;
-  governorOffice?: OfficeId;
+  associatedPresidency?: PresidencyId; // set on conquest (p.23), cleared on Region Loss (p.29)
+  governorOffice: OfficeId;
   unrest: number;
-  lootToken: {
-    available: boolean;
-    value: number;
-    face: "loot" | "control";
-  };
+  lootToken: { available: boolean; value: number | null; face: "loot" | "control" };
   exportIcons: number;
   partialCompanyShip: boolean;
 };
 ```
+
+Regions have no fixed Presidency. A region becomes associated with a Presidency when that
+Presidency's Army conquers it, and loses the association on Region Loss. The home regions
+only fix which home port a President trades from and which Commander may target them.
 
 Order state:
 
@@ -249,6 +270,7 @@ Order state:
 type OrderState = {
   id: string;
   value: number;
+  deregulationValue: number; // the small number printed beside the order
   isHomePortFor?: PresidencyId;
   closed: boolean;
   filledThisTurnBy: ("company" | FirmId)[];
@@ -292,22 +314,26 @@ Implement scenario setup as data-driven effects:
 
 The source card data is not fully encoded in `John-Company-Rules.txt`; it must be manually entered from the provided physical/PDF material before setup automation is complete.
 
-Current hotseat `1710` setup implementation assumptions:
+Current setup implementation:
 
-- Random setup is implemented for hotseat `1710`: 3-4 players use the 12 base
-  setup cards, 5 players add 3 random extra cards, and 6 players add all 6 extra
-  cards. Cards are shuffled with the saved seeded RNG and dealt round-robin in
-  seating order.
-- Setup-card effects apply directly to engine state for cash, offices, Company
-  shares, Prime Minister, writers, commanders, officers in training, enterprises,
-  placed ships, trophies, and luxury VP/window icons.
-- Setup-card Presidency IDs are normalized from data-layer lowercase IDs to the
-  engine's title-case Presidency IDs.
-- Until the blackmail deck is encoded, setup `randomBlackmail` effects create
-  facedown placeholder blackmail cards in both player state and hidden private
-  card state.
-- Draft setup, Crown setup-card distribution, and advanced-scenario setup-card
-  application remain TODO.
+- `turn`/`startTurn`/`finalTurn` come from the scenario (Turn track: 1710 turns 1-5,
+  1758 turns 3-7, 1813 turns 5-8, Long 1710 turns 1-8).
+- Standing, Debt, regiments, Company ships and "£X in every Company treasury" come from the
+  scenario card. The Company treasuries are the coin boxes on the red ribbon: Director of
+  Trade (shared with the Governor General), Manager of Shipping and the three Presidencies.
+  Military Affairs' box is the Officers-in-Training box and the Chairman has none.
+- India comes from `mapData` plus the scenario's Situation in India card: tower levels,
+  domes, empire flags (capital + dominated), closed orders and the Elephant. Only 1710 /
+  Long 1710 have their Situation in India transcribed.
+- All seven starting offices begin vacant (in the Hiring queue); setup cards fill them.
+  China, the Governor General and the Governors start in `unusedOffices`.
+- Random setup deals the 1710 deck for 1710 and Long 1710 (3-4 players: 12 base cards; 5:
+  +3 random extras; 6: +6). Setup shipyards place their ship in the named sea zone or on the
+  shipyard if unfitted.
+- Until the blackmail deck is encoded, setup `randomBlackmail` effects create facedown
+  placeholder blackmail cards in both player state and hidden private card state.
+- TODO: loot token values (printed on the punchboard tokens) are `null`; draft setup, Crown
+  setup-card distribution, and the 1758/1813 setup cards and Situation in India cards.
 
 For Crown modes, also implement Crown setup as data-driven effects:
 
@@ -319,18 +345,20 @@ For Crown modes, also implement Crown setup as data-driven effects:
 
 ### London Season
 
-On the first turn, London Season is skipped and advances to Family. On later
-turns, resolve:
+The London Season is skipped on the scenario's first turn (`turn === startTurn`), not
+always on turn 1. On later turns, resolve:
 
-- Attrition for each office card held by each player.
-- Retirement of officeholders on `5+`, with Chairman `+1` stress modifier.
-  Current implementation increments occupied office fatigue, rolls a seeded d6,
-  and retires on `roll + fatigue + Chairman stress >= 5`.
-- Pensioners may retire to prize boxes by paying cost and gaining VP.
-- Track cash spent on retirements to determine London Season Display order.
-- Each eligible player takes or discards one prestige/blackmail card.
-- Refill display to three cards.
-- Return remaining pensioners to supplies.
+- Attrition (p.11): roll one die per office card, adding the office's existing fatigue and
+  +1 for the Chairman. 1-2 nothing; 3-4 add one fatigue; 5+ the officeholder retires to the
+  Pensioners box, the office goes to the Vacant Offices box and its fatigue returns to
+  supply. Fatigue is never added before the roll. A retiring Chairman takes the Chairman
+  slot's Company share with them.
+- Pensioners may retire to prize boxes by paying cost and gaining VP. TODO.
+- Track cash spent on retirements to determine London Season Display order. TODO.
+- Each eligible player takes or discards one prestige/blackmail card. TODO.
+- Refill display to three cards. TODO.
+- Return remaining pensioners to supplies. Implemented; because retirements are not built
+  yet, every pensioner returns to supply at the end of the phase.
 
 For Crown games, add Crown retirement behavior, Crown London Season card selection from the AI-card splay position, Crown spouse/blackmail/enterprise handling, special retirement under Deregulation, and Crown favor windows.
 
@@ -362,44 +390,33 @@ Only present after Deregulation:
 
 ### Hiring
 
-Resolve vacant offices in ascending office-card order:
+Resolve vacant offices in ascending order of the number printed on the back of each office
+card (`OfficeDefinition.hiringOrder`): Chairman 1, Director of Trade 2 (Governor General
+also 2), Manager of Shipping 3, Military Affairs 4, Presidents of Bombay 5 / Madras 6 /
+Bengal 7, Superintendent of Trade in China 8, Governors of Bombay 9 / Madras 10 / Bengal 11
+/ Punjab 12 / Delhi 13 / Maratha 14 / Hyderabad 15 / Mysore 16. This is separate from the
+red-ribbon Company Operation order.
 
-- Determine hirer and candidate pool from office data.
-  Current implementation supports Chairman-hired writer offices for
-  `Manager of Shipping` and `Superintendent of Trade in China` when the
-  Chairman is filled.
-- Director of Trade supports promotion from an existing non-Chairman,
-  non-Governor officeholder. The previous office is queued as vacant and fatigue
-  moves to Director of Trade. If no eligible officeholder can be promoted, the
-  Chairman may hire a writer into Director of Trade.
-- Military Affairs supports Chairman hiring from military pieces in priority
-  order: Commanders, officers, then officers in training. Officers are currently
-  tracked by Presidency army; Governor hiring still needs a state-model decision
-  for region-tied officer eligibility.
-- Presidents are hired by the Director of Trade from writers in that Presidency
-  or Governors associated with that Presidency. Matching writers are removed
-  from their Presidency box. Promoted Governors vacate their previous office and
-  move fatigue to the President office.
-- Governor General, when in play as a vacancy, is hired by the Chairman like
-  Director of Trade, using promotion from a non-Chairman, non-Governor
-  officeholder before writer fallback.
-- Governors are hired by the associated President from writers on orders in the
-  Governor's region, falling back to officers in the associated Presidency army.
-  This is a temporary state-model assumption until region-level officer location
-  exists.
-- Request consent for nepotism when required. Current implementation uses a
-  public table-consent decision; accepted consent completes the hire, while
-  denied consent leaves the vacancy unfilled for the turn.
-- Promote candidates and move fatigue from previous office.
-- Skip if no hirer or no eligible candidates.
-- Elect Chairman by majority Company share support.
-  Current implementation covers the deterministic case where one player already
-  controls a pure majority: `floor(total current Company shares / 2) + 1`.
-  A Chairman-slot share counts as a Company share. When no human player has a
-  pure majority, all human Company shareholders are exposed as public contested
-  candidates to record table-negotiated support. Empty Court/no-share states
-  expose an explicit public skip. Formal negotiated support commitments and
-  former-Chairman fallback remain TODO.
+Hirers and candidate pools follow the card backs:
+
+- Chairman: elected by Company-share majority (the Chairman's piece counts as a share). A
+  player with a pure majority is offered directly; otherwise every shareholder is offered
+  as a table-negotiated candidate. Former-Chairman fallback and the empty-Court rule
+  (former Chairman places a piece from supply) remain TODO; an empty Court is skipped.
+- Director of Trade / Governor General (Chairman hires): any officeholder except Governors
+  and the Chairman (a promotion); if none, any writer.
+- Manager of Shipping and Superintendent of Trade in China (Chairman hires): any writer.
+- Military Affairs (Chairman hires): Commanders, else officers, else officers-in-training.
+- Presidents (Director of Trade hires): writers in that Presidency's box and Governors of
+  regions associated with that Presidency.
+- Governors: hired by the President of the Presidency the region is associated with
+  (home-region Governors by their own President). Candidates are writers in that
+  Presidency's Writers box and officers in that Presidency's Army. Writers sitting on
+  orders are never candidates: they return to their box during Refresh, before Hiring.
+- Promotions move the old office card to the vacant stack and carry its fatigue.
+- Nepotism (p.14): selecting your own family member pauses on a public consent decision;
+  accepted consent completes the hire, denial leaves the vacancy unfilled for the turn.
+- Offices with no hirer or no candidates are skipped explicitly.
 - For Crown games, enforce Crown Chairman election behavior, Crown support bribes, Crown nepotism consent favors, Crown self-hiring priority, Crown Director of Trade/Governor General selection, and Crown candidate priority.
 
 ### Company Operation
@@ -410,10 +427,13 @@ Follow the red ribbon office order:
   or uncreated offices with system log entries, giving occupied non-Chairman
   offices a private `companyOperation.passOffice` fallback decision, and
   advancing to Bonuses after the final red-ribbon office.
-- Current Chairman implementation uses `companyOperation.resolveChairman` to
-  take Company Debt and allocate Company Balance to created non-Chairman office
-  treasuries. Each debt taken adds `GBP 5` to Company Balance until the detailed
-  Chairman debt rule is encoded.
+- Chairman (p.18), implemented: each Debt advance adds £5; up to three advances are free,
+  more pause on a `companyOperation.debtConsent` decision (players holding a majority of
+  Company shares, Chairman included). Refusal returns the Chairman to a decision capped at
+  three. Debt never passes 8. The Chairman must then allocate the whole Balance to the
+  Company treasuries (Director of Trade or Governor General, Manager of Shipping, the three
+  Presidents). Assumption: like nepotism, consent is one public table decision rather than
+  a per-player vote.
 - Temporary assumption: skipped vacant/uncreated offices are marked
   `actedThisTurn` to track loop progress until Upkeep refresh resets office
   action flags.
@@ -431,38 +451,29 @@ Follow the red ribbon office order:
 
 ### Bonuses
 
-Each player gains `GBP 1` for each workshop and each shipyard whose ship is fitted.
+Each player gains `£1` for each workshop and each shipyard whose ship is fitted, meaning the
+ship is no longer on its shipyard (in a sea zone, China, or on a firm).
 
 ### Revenue
 
-If deregulated, firms resolve expenses/dividends before Company expenses.
+If deregulated, firms resolve expenses/dividends before Company expenses (TODO).
 
-Company revenue sequence:
+Company revenue sequence (p.27), implemented:
 
-- Pay expenses for Debt, army pieces except Commanders, and ships in sea zones.
-- Take emergency loans as needed.
-- Adjust Standing for public embarrassment.
-- Check Expectations and lower Standing if Balance is too low.
-- Chairman may pay dividends to Company shares.
-- Advance Standing if dividends exceed Expectations.
-- Trigger Company failure if Standing reaches the leftmost space.
+- Expenses: `£1` per Debt, per regiment and officer in an Army (not Commanders), and per
+  ship in the three sea zones. Ships trading in China count as Eastern (p.25).
+- Emergency loans: `+£5` Balance and `+1` Debt each until expenses are met; Debt stops at 8
+  but loans continue; loan Debt adds no expense this turn; afterwards the Balance is set to
+  zero.
+- Public embarrassment: `-1` Standing for 1-2 loans, `-2` for 3 or more.
+- Expectations: `-1` Standing if the Balance is below the Expectations printed under the
+  current Standing space.
+- Dividends: the Chairman pays any number of dividends; each costs `£1` per Company share,
+  the Chairman's piece included. Public Enthusiasm: `+1` Standing if more cash was paid
+  than Expectations.
+- Company failure happens the moment Standing reaches the leftmost space (index 0), from any
+  source; the game goes straight to Final Scoring.
 - For Crown games, apply Crown Chairman dividend reserve behavior, Royal Protection discard behavior, Royal Privilege for unaffordable Crown taxes/expenses, Crown firm emergency investment refusal unless bribed, and Crown firm dividend promise-cube rewards.
-
-Current Revenue implementation assumptions:
-
-- Each Debt, army piece, and ship in a Presidency sea zone costs `GBP 1`.
-- Each emergency loan adds `GBP 5` to Company Balance and increases Debt by
-  `1`; loans are taken until expenses can be paid.
-- Public embarrassment lowers Standing by one step per emergency loan.
-- Expectations lower Standing by one step if Balance after expenses and
-  emergency loans is below `company.expectations`.
-- The engine saves between expense resolution and `revenue.chooseDividends`.
-- Dividends are a whole-GBP amount per current Company share in the Court and
-  Chairman slot, limited by Company Balance.
-- Total dividends greater than `company.expectations` raise Standing by one
-  step.
-- Company failure currently triggers when Standing is below `0` after the
-  dividend decision.
 
 ### Events In India
 

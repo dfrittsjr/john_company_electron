@@ -31,6 +31,12 @@ architecture and long-range scope, use `docs/implementation-plan.md`,
   - Final Scoring
 - The current engine is still mostly a phase skeleton. Many commands record
   that a phase happened but do not apply the real rules yet.
+- October 2026 corrections (see `docs/rules-and-state-model.md`): the India map, Standing
+  and Debt tracks, scenario turns and the 1710 Situation in India were re-transcribed from
+  the board and cards; attrition, Revenue, Company failure, Chairman debt, hiring order and
+  Governor hiring were corrected; each family piece now has one canonical location (state
+  schema 2) with per-player views from `src/engine/selectors.ts`; Bonuses now pay for
+  fitted (not unfitted) shipyards.
 - Crown data is intentionally placeholder-level and Crown modes must remain
   blocked by validation until Crown AI cards/profiles/favors are encoded.
 
@@ -208,6 +214,12 @@ Current behavior:
 Implement:
 
 - Done: Opportunity marker double-action rule for main Family actions.
+- Family order: start with the player holding the Chairman title and go clockwise (p.13);
+  the engine currently starts with the first seat.
+- Seek Share: the player may choose any empty Stock Exchange space (p.14); the engine only
+  offers the cheapest affordable one.
+- Enlist Writer: with four or more vacant offices, one additional writer once this turn
+  (p.13).
 - Extra family action from the most recent applicable law once laws exist.
 - Out-of-family-pieces rule once prizes exist.
 - Save/load coverage during future Family decision types as laws, prizes, and
@@ -254,9 +266,9 @@ Current behavior:
   office and move fatigue to the President office.
 - `Governor General`, when in play as a vacancy, can be filled by the Chairman
   using the same promotion-then-writer fallback as Director of Trade.
-- Governors can be filled by their associated President from writers on orders
-  in the Governor's region, falling back to officers in the associated
-  Presidency army.
+- Governors are hired by the President of the Presidency their region is associated with
+  (association comes from conquest), from writers in that Presidency's box and officers in
+  its Army. Hiring order follows the card-back numbers (`hiringOrder`).
 
 Implement:
 
@@ -280,10 +292,9 @@ Implement:
 - Done: President hirer and candidate pool generation. Presidents are hired by
   the Director of Trade from writers in that Presidency or Governors associated
   with that Presidency.
-- Done: Governor hirer and candidate pool generation. Current assumption:
-  Governors are hired by the associated President from writers on orders in the
-  Governor's region, falling back to officers in that region's associated
-  Presidency army until region-level officer location exists.
+- Done: Governor hirer and candidate pool generation per the card backs ("Consider
+  writers and officers in this Presidency"), with the hirer taken from the region's
+  conquest association.
 - Done: Governor General hiring. When in play as a vacancy, Governor General is
   hired by the Chairman like Director of Trade.
 - Done for deterministic majority: Chairman election by Company-share majority.
@@ -333,19 +344,16 @@ Current behavior:
 
 Implement:
 
-- Done: Skip on first turn where rules require it.
-- Done for current slice: Office attrition and retirement rolls. The engine increments
-  each occupied office's fatigue, then rolls a seeded d6 and retires the
-  officeholder on `roll + fatigue + Chairman stress >= 5`. Assumption:
-  retired officeholders move to pensioners, vacate their office, and keep
-  Chairman-share/company-share cleanup simple until a fuller Chairman retirement
-  rule is encoded.
-- Done: Retirement rolls, including Chairman stress modifier.
+- Done: Skip on the scenario's first turn (`turn === startTurn`; 1758 starts on turn 3).
+- Done: Office attrition (p.11): roll + existing fatigue (+1 Chairman); 1-2 nothing,
+  3-4 add a fatigue, 5+ retire. Codex previously added a fatigue to every office before
+  rolling, which retired fresh officeholders half the time instead of a third.
 - Pensioner retirement to prize boxes by paying costs and gaining VP.
 - London Season Display order based on retirement spending.
 - Prestige/blackmail card selection and discard.
 - Display refill.
-- Return remaining pensioners to family supplies.
+- Done for now: return remaining pensioners to family supplies (all of them, until prize
+  retirements exist).
 
 Data dependency:
 
@@ -382,10 +390,9 @@ Current assumptions:
 
 - Until Upkeep refresh is implemented, skipped vacant/uncreated offices are
   marked `actedThisTurn` to track Company Operation loop progress.
-- Each debt taken by the Chairman adds `GBP 5` to Company Balance, matching the
-  current emergency-loan unit used by Revenue until a more detailed debt rule is
-  encoded.
-- Chairman allocation can fund created non-Chairman office treasuries.
+- Chairman (p.18): three free Debt advances, more need a Company-share majority consent
+  decision, never past Debt 8, and the whole Balance must be allocated to the five
+  Company treasuries.
 
 Then replace office pass behavior in this order:
 
@@ -420,11 +427,8 @@ Implement:
 - Done: `GBP 1` for each shipyard with a fitted ship.
 - Done: Correct income ownership and log entries.
 
-Current assumption:
-
-- Until Manager of Shipping fitting/placement rules exist, a shipyard has a
-  fitted ship when a ship owned by the same player is located at
-  `shipyard:<enterprise instance id>`.
+Fixed: a shipyard pays when its ship is fitted, i.e. not on the shipyard. Codex had this
+inverted.
 
 Tests:
 
@@ -441,27 +445,11 @@ Current behavior:
 
 Implement:
 
-- Done: Company expenses for Debt, armies, and ships.
-- Done: Emergency loans.
-- Done for current slice: Public embarrassment, Expectations check, Chairman
-  dividend decision, Standing increase from dividends over Expectations, and
-  Company failure trigger.
-
-Current assumptions:
-
-- Until detailed Revenue rules are implemented, each Debt, army piece
-  (regiment or officer, ready or exhausted), and ship in a Presidency sea zone
-  costs `GBP 1`.
-- Emergency loans add `GBP 5` to Company Balance and increase Company Debt by
-  `1` per loan, taking as many loans as needed to pay current expenses.
-- Public embarrassment currently lowers Standing by one step per emergency loan
-  taken during Revenue.
-- Expectations currently lower Standing by one step when Company Balance after
-  expenses and emergency loans is below `company.expectations`.
-- Dividend decisions pay a whole-GBP amount per current Company share in the
-  Court and Chairman slot, limited by Company Balance. Total dividends greater
-  than `company.expectations` raise Standing by one step.
-- Company failure is triggered when Standing falls below `0`.
+- Done: Company expenses for Debt, armies, and ships (sea zones plus China).
+- Done: Emergency loans (Debt capped at 8, Balance set to zero afterwards).
+- Done: Public embarrassment (-1 for 1-2 loans, -2 for 3+), Expectations from the Standing
+  track, dividends with Public Enthusiasm, and immediate Company failure at the leftmost
+  Standing space, going straight to Final Scoring.
 
 Tests:
 
@@ -556,12 +544,10 @@ Current assumptions:
 
 - Until order divider state is encoded separately, filled-order cleanup resets
   each order's `filledThisTurnBy` list and removes any order writer.
-- Writer return currently uses the Presidency recorded on `order.writer`; revisit
-  if later trade-path state needs `region.associatedPresidency` instead.
-- Army refresh currently updates `company.armies[*]`, which is the structure
-  used by Revenue expense counting. Before Military Affairs and Deploy use
-  `players[*].familyMembers.officers`, decide whether that player-facing officer
-  stack is canonical state or a dashboard projection that must be kept in sync.
+- Writer return uses the Presidency recorded on `order.writer` (the Presidency whose
+  President placed it), which is the box the writer came from.
+- Army refresh updates `company.armies[*]`, the only place officers and regiments are
+  stored; per-player officer views come from `playerOfficers` in `src/engine/selectors.ts`.
 
 Tests:
 

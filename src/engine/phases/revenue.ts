@@ -1,6 +1,16 @@
-import type { ApplyCommandResult, GameCommand, GameState } from "../types";
+import { MAX_COMPANY_DEBT, MAX_STANDING_SPACE, expectationsForStanding } from "../../data";
+import {
+  chairmanHolder,
+  companyExpectations,
+  companyShareCount,
+  shipsInSeaZones,
+} from "../selectors";
+import type { ApplyCommandResult, CompanyState, GameCommand, GameState, PendingDecision } from "../types";
 import { createCommandLogEntry, createSystemDecision, wrongPhase } from "./shared";
 
+const EMERGENCY_LOAN = 5;
+
+// Revenue (p.27): expenses, emergency loans, public embarrassment, expectations, then dividends.
 export function confirmRevenue(state: GameState, command: GameCommand): ApplyCommandResult {
   if (state.phase !== "revenue" || state.pendingDecision.step !== "revenue.confirm") {
     return wrongPhase("Revenue confirmation can only be chosen during Revenue expenses.");
@@ -8,43 +18,52 @@ export function confirmRevenue(state: GameState, command: GameCommand): ApplyCom
 
   const now = command.clientTimestamp;
   const expenses = calculateCompanyExpenses(state);
-  const emergencyLoans = calculateEmergencyLoans(state.company.balance, expenses.total);
-  const availableBalance = state.company.balance + emergencyLoans * 5;
-  const endingBalance = availableBalance - expenses.total;
-  const embarrassmentStandingLoss = emergencyLoans;
-  const expectationsStandingLoss = endingBalance < state.company.expectations ? 1 : 0;
-  const standingAfterExpenses =
-    state.company.standing - embarrassmentStandingLoss - expectationsStandingLoss;
-  const companyAfterExpenses = {
+  const startingBalance = state.company.balance;
+  const emergencyLoans = calculateEmergencyLoans(startingBalance, expenses.total);
+  // Loans are taken until expenses are met; Debt stops at the end of the track but loans
+  // continue. Any surplus from the last loan is lost: "Finally, set the Company Balance to zero."
+  const endingBalance = emergencyLoans > 0 ? 0 : startingBalance - expenses.total;
+  const debtAfterLoans = Math.min(MAX_COMPANY_DEBT, state.company.debt + emergencyLoans);
+  const embarrassmentStandingLoss = emergencyLoans === 0 ? 0 : emergencyLoans <= 2 ? 1 : 2;
+
+  let company: CompanyState = {
     ...state.company,
     balance: endingBalance,
-    debt: state.company.debt + emergencyLoans,
-    standing: standingAfterExpenses,
+    debt: debtAfterLoans,
   };
-  const nextDecision = createDividendDecision({
-    ...state,
-    company: companyAfterExpenses,
-  });
+  company = lowerStanding(company, embarrassmentStandingLoss);
+
+  const expectations = expectationsForStanding(company.standing);
+  const expectationsStandingLoss =
+    !company.failed && expectations !== null && endingBalance < expectations ? 1 : 0;
+  company = lowerStanding(company, expectationsStandingLoss);
+
+  const stateAfterExpenses: GameState = { ...state, company };
+  const nextDecision = company.failed
+    ? createFinalScoringDecision(stateAfterExpenses)
+    : createDividendDecision(stateAfterExpenses);
   const logEntry = createCommandLogEntry({
     state,
     command,
     now,
     type: "revenue.expensesResolved",
-    summary:
-      expenses.total === 0
+    summary: company.failed
+      ? "The Company failed during Revenue."
+      : expenses.total === 0
         ? "Revenue resolved with no Company expenses."
         : `Revenue paid £${expenses.total} in Company expenses.`,
     details: {
       expenses,
       emergencyLoans,
-      startingBalance: state.company.balance,
+      startingBalance,
       endingBalance,
+      debtAfterLoans,
       publicEmbarrassmentStandingLoss: embarrassmentStandingLoss,
+      expectations,
       expectationsStandingLoss,
       startingStanding: state.company.standing,
-      standingAfterExpenses,
-      assumption:
-        "Each Debt, army piece, and ship in a Presidency sea zone costs £1; each emergency loan adds £5 Balance and 1 Debt. Public embarrassment lowers Standing by one per emergency loan; Expectations lower Standing by one if ending Balance is below Expectations.",
+      standingAfterExpenses: company.standing,
+      failed: company.failed,
     },
   });
 
@@ -52,11 +71,10 @@ export function confirmRevenue(state: GameState, command: GameCommand): ApplyCom
     ok: true,
     logEntry,
     state: {
-      ...state,
+      ...stateAfterExpenses,
       updatedAt: now,
       phase: nextDecision.phase,
       pendingDecision: nextDecision,
-      company: companyAfterExpenses,
       log: [...state.log, logEntry],
     },
   };
@@ -82,7 +100,7 @@ export function chooseRevenueDividends(
       errors: [
         {
           code: "ILLEGAL_REVENUE_DIVIDEND",
-          message: "Dividend amount must be a whole non-negative GBP amount per Company share.",
+          message: "Choose a whole, non-negative number of dividends (each pays £1 per Company share).",
           field: "payload.amountPerShare",
         },
       ],
@@ -90,7 +108,7 @@ export function chooseRevenueDividends(
   }
   const amountPerShare = rawAmountPerShare as number;
 
-  const shareCount = countCompanyShares(state);
+  const shareCount = companyShareCount(state);
   const totalDividends = amountPerShare * shareCount;
   if (totalDividends > state.company.balance) {
     return {
@@ -113,9 +131,10 @@ export function chooseRevenueDividends(
 
   const now = command.clientTimestamp;
   const dividendIncomeByPlayer = calculateDividendIncomeByPlayer(state, amountPerShare);
-  const standingGain = totalDividends > state.company.expectations ? 1 : 0;
-  const endingStanding = state.company.standing + standingGain;
-  const failed = endingStanding < 0;
+  const expectations = companyExpectations(state);
+  // Public Enthusiasm: advance Standing if more cash was paid in dividends than Expectations.
+  const standingGain = expectations !== null && totalDividends > expectations ? 1 : 0;
+  const endingStanding = Math.min(MAX_STANDING_SPACE, state.company.standing + standingGain);
   const nextDecision = createSystemDecision({
     id: `decision-events-in-india-confirm-turn-${state.turn}`,
     phase: "eventsInIndia",
@@ -139,12 +158,9 @@ export function chooseRevenueDividends(
       shareCount,
       totalDividends,
       dividendIncomeByPlayer,
-      expectations: state.company.expectations,
+      expectations,
       standingGain,
       endingStanding,
-      failed,
-      assumption:
-        "Dividends are paid as a whole-GBP amount per current Company share; dividends greater than Expectations raise Standing by one.",
     },
   });
 
@@ -169,13 +185,36 @@ export function chooseRevenueDividends(
         ...state.company,
         balance: state.company.balance - totalDividends,
         standing: endingStanding,
-        failed,
       },
       log: [...state.log, logEntry],
     },
   };
 }
 
+/** Move Standing left; reaching the leftmost space fails the Company immediately (p.9, p.27). */
+export function lowerStanding(company: CompanyState, spaces: number): CompanyState {
+  if (spaces <= 0 || company.failed) return company;
+
+  const standing = Math.max(0, company.standing - spaces);
+  return { ...company, standing, failed: standing === 0 };
+}
+
+export function createFinalScoringDecision(state: GameState): PendingDecision {
+  return createSystemDecision({
+    id: `decision-final-scoring-confirm-turn-${state.turn}`,
+    phase: "finalScoring",
+    step: "finalScoring.confirm",
+    prompt: state.company.failed
+      ? "The Company has failed. Confirm Final Scoring."
+      : "Confirm starter Final Scoring.",
+    commandType: "finalScoring.confirm",
+    label: "Confirm Final Scoring",
+    description: "Starter scaffold: records that Final Scoring was confirmed.",
+  });
+}
+
+// Expenses: £1 per Debt, per regiment and officer in an Army (not Commanders), and per ship in
+// the three sea zones. Ships trading in China count as Eastern ships (p.25).
 function calculateCompanyExpenses(state: GameState) {
   const debt = state.company.debt;
   const armies = Object.values(state.company.armies).reduce((total, army) => {
@@ -186,8 +225,7 @@ function calculateCompanyExpenses(state: GameState) {
 
     return total + army.regiments.ready + army.regiments.exhausted + officerCount;
   }, 0);
-  const seaZones = new Set(Object.values(state.india.presidencies).map((presidency) => presidency.seaZone));
-  const ships = state.company.ships.filter((ship) => seaZones.has(ship.location)).length;
+  const ships = shipsInSeaZones(state).length;
 
   return {
     debt,
@@ -201,43 +239,38 @@ function calculateEmergencyLoans(balance: number, expenses: number): number {
   const shortfall = expenses - balance;
   if (shortfall <= 0) return 0;
 
-  return Math.ceil(shortfall / 5);
+  return Math.ceil(shortfall / EMERGENCY_LOAN);
 }
 
-function createDividendDecision(state: GameState) {
-  const shareCount = countCompanyShares(state);
+function createDividendDecision(state: GameState): PendingDecision {
+  const shareCount = companyShareCount(state);
   const maxAmountPerShare = shareCount === 0 ? 0 : Math.floor(state.company.balance / shareCount);
   const legalCommands = Array.from({ length: maxAmountPerShare + 1 }, (_, amountPerShare) => ({
     type: "revenue.chooseDividends",
-    label: amountPerShare === 0 ? "Pay No Dividends" : `Pay £${amountPerShare} Per Share`,
+    label:
+      amountPerShare === 0
+        ? "Pay No Dividends"
+        : `Pay ${amountPerShare} Dividend${amountPerShare === 1 ? "" : "s"} (£${amountPerShare * shareCount})`,
     description:
       amountPerShare === 0
         ? "Advance without paying Company-share dividends."
-        : `Pay £${amountPerShare} to each current Company share.`,
+        : `Each dividend costs £${shareCount} (one per Company share, Chairman included).`,
     payload: { amountPerShare },
   }));
-  const chairman = state.company.offices.chairman?.holder;
+  const chairman = chairmanHolder(state);
 
   return {
     id: `decision-revenue-dividends-turn-${state.turn}`,
-    phase: "revenue" as const,
+    phase: "revenue",
     step: "revenue.chooseDividends",
     actor: chairman ?? "system",
-    visibility: "public" as const,
+    visibility: "public",
     prompt: chairman
       ? "Chairman may pay dividends to Company shares."
       : "No Chairman is in office; choose Revenue dividends.",
     legalCommands,
-    canSave: true as const,
+    canSave: true,
   };
-}
-
-function countCompanyShares(state: GameState): number {
-  return state.company.court.filter((share) => share.owner).length + countChairmanShares(state);
-}
-
-function countChairmanShares(state: GameState): number {
-  return Object.values(state.players).filter((player) => player.familyMembers.chairmanShare).length;
 }
 
 function calculateDividendIncomeByPlayer(
@@ -251,10 +284,8 @@ function calculateDividendIncomeByPlayer(
     incomeByPlayer[share.owner] = (incomeByPlayer[share.owner] ?? 0) + amountPerShare;
   }
 
-  for (const player of Object.values(state.players)) {
-    if (!player.familyMembers.chairmanShare) continue;
-    incomeByPlayer[player.id] = (incomeByPlayer[player.id] ?? 0) + amountPerShare;
-  }
+  const chairman = chairmanHolder(state);
+  if (chairman) incomeByPlayer[chairman] = (incomeByPlayer[chairman] ?? 0) + amountPerShare;
 
   return incomeByPlayer;
 }

@@ -5,6 +5,7 @@ export const offices: OfficeDefinition[] = [
     id: "chairman",
     label: "Chairman",
     category: "chairman",
+    hiringOrder: 1,
     operationOrder: 1,
     source: "board_image-1.png",
     notes: ["First red-ribbon Company Operation office."],
@@ -13,6 +14,7 @@ export const offices: OfficeDefinition[] = [
     id: "director-of-trade",
     label: "Director of Trade",
     category: "company",
+    hiringOrder: 2,
     operationOrder: 2,
     hiring: {
       hirer: "chairman",
@@ -29,6 +31,7 @@ export const offices: OfficeDefinition[] = [
     id: "manager-of-shipping",
     label: "Manager of Shipping",
     category: "company",
+    hiringOrder: 3,
     operationOrder: 3,
     hiring: {
       hirer: "chairman",
@@ -45,6 +48,7 @@ export const offices: OfficeDefinition[] = [
     id: "military-affairs",
     label: "Military Affairs",
     category: "company",
+    hiringOrder: 4,
     operationOrder: 4,
     hiring: {
       hirer: "chairman",
@@ -61,6 +65,7 @@ export const offices: OfficeDefinition[] = [
     id: "president-bombay",
     label: "Presidency of Bombay",
     category: "presidency",
+    hiringOrder: 5,
     operationOrder: 5,
     presidency: "bombay",
     hiring: {
@@ -81,6 +86,7 @@ export const offices: OfficeDefinition[] = [
     id: "president-madras",
     label: "Presidency of Madras",
     category: "presidency",
+    hiringOrder: 6,
     operationOrder: 6,
     presidency: "madras",
     hiring: {
@@ -101,6 +107,7 @@ export const offices: OfficeDefinition[] = [
     id: "president-bengal",
     label: "Presidency of Bengal",
     category: "presidency",
+    hiringOrder: 7,
     operationOrder: 7,
     presidency: "bengal",
     hiring: {
@@ -121,6 +128,7 @@ export const offices: OfficeDefinition[] = [
     id: "superintendent-of-trade-in-china",
     label: "Superintendent of Trade in China",
     category: "china",
+    hiringOrder: 8,
     operationOrder: 8,
     hiring: {
       hirer: "chairman",
@@ -137,6 +145,7 @@ export const offices: OfficeDefinition[] = [
     id: "governor-general",
     label: "Governor General",
     category: "governorGeneral",
+    hiringOrder: 2,
     hiring: {
       hirer: "chairman",
       candidatePool: {
@@ -152,160 +161,136 @@ export const offices: OfficeDefinition[] = [
     id: "governor-bengal",
     label: "Governor of Bengal",
     category: "governor",
-    presidency: "bengal",
+    hiringOrder: 11,
     region: "bengal",
     hiring: {
-      hirer: {
-        type: "office",
-        officeId: "president-bengal",
-      },
+      hirer: "regionPresident",
       candidatePool: {
         type: "special",
         rule: "governor",
       },
       excludeHirerUntilNepotismConsent: true,
     },
-    source: "John-Company-Rules.txt",
+    source: "printnplay/Cards/John Company Cards (Bridge, Bridge).pdf",
     notes: ["Governor office for the Bengal region."],
   },
   {
     id: "governor-delhi",
     label: "Governor of Delhi",
     category: "governor",
-    presidency: "bengal",
+    hiringOrder: 13,
     region: "delhi",
     hiring: {
-      hirer: {
-        type: "office",
-        officeId: "president-bengal",
-      },
+      hirer: "regionPresident",
       candidatePool: {
         type: "special",
         rule: "governor",
       },
       excludeHirerUntilNepotismConsent: true,
     },
-    source: "John-Company-Rules.txt",
+    source: "printnplay/Cards/John Company Cards (Bridge, Bridge).pdf",
     notes: ["Governor office for the Delhi region."],
   },
   {
     id: "governor-bombay",
     label: "Governor of Bombay",
     category: "governor",
-    presidency: "bombay",
+    hiringOrder: 9,
     region: "bombay",
     hiring: {
-      hirer: {
-        type: "office",
-        officeId: "president-bombay",
-      },
+      hirer: "regionPresident",
       candidatePool: {
         type: "special",
         rule: "governor",
       },
       excludeHirerUntilNepotismConsent: true,
     },
-    source: "John-Company-Rules.txt",
+    source: "printnplay/Cards/John Company Cards (Bridge, Bridge).pdf",
     notes: ["Governor office for the Bombay region."],
   },
   {
     id: "governor-punjab",
     label: "Governor of Punjab",
     category: "governor",
-    presidency: "bombay",
+    hiringOrder: 12,
     region: "punjab",
     hiring: {
-      hirer: {
-        type: "office",
-        officeId: "president-bombay",
-      },
+      hirer: "regionPresident",
       candidatePool: {
         type: "special",
         rule: "governor",
       },
       excludeHirerUntilNepotismConsent: true,
     },
-    source: "John-Company-Rules.txt",
+    source: "printnplay/Cards/John Company Cards (Bridge, Bridge).pdf",
     notes: ["Governor office for the Punjab region."],
   },
   {
     id: "governor-maratha",
     label: "Governor of Maratha",
     category: "governor",
-    presidency: "bombay",
+    hiringOrder: 14,
     region: "maratha",
     hiring: {
-      hirer: {
-        type: "office",
-        officeId: "president-bombay",
-      },
+      hirer: "regionPresident",
       candidatePool: {
         type: "special",
         rule: "governor",
       },
       excludeHirerUntilNepotismConsent: true,
     },
-    source: "John-Company-Rules.txt",
+    source: "printnplay/Cards/John Company Cards (Bridge, Bridge).pdf",
     notes: ["Governor office for the Maratha region."],
   },
   {
     id: "governor-madras",
     label: "Governor of Madras",
     category: "governor",
-    presidency: "madras",
+    hiringOrder: 10,
     region: "madras",
     hiring: {
-      hirer: {
-        type: "office",
-        officeId: "president-madras",
-      },
+      hirer: "regionPresident",
       candidatePool: {
         type: "special",
         rule: "governor",
       },
       excludeHirerUntilNepotismConsent: true,
     },
-    source: "John-Company-Rules.txt",
+    source: "printnplay/Cards/John Company Cards (Bridge, Bridge).pdf",
     notes: ["Governor office for the Madras region."],
   },
   {
     id: "governor-mysore",
     label: "Governor of Mysore",
     category: "governor",
-    presidency: "madras",
+    hiringOrder: 16,
     region: "mysore",
     hiring: {
-      hirer: {
-        type: "office",
-        officeId: "president-madras",
-      },
+      hirer: "regionPresident",
       candidatePool: {
         type: "special",
         rule: "governor",
       },
       excludeHirerUntilNepotismConsent: true,
     },
-    source: "John-Company-Rules.txt",
+    source: "printnplay/Cards/John Company Cards (Bridge, Bridge).pdf",
     notes: ["Governor office for the Mysore region."],
   },
   {
     id: "governor-hyderabad",
     label: "Governor of Hyderabad",
     category: "governor",
-    presidency: "madras",
+    hiringOrder: 15,
     region: "hyderabad",
     hiring: {
-      hirer: {
-        type: "office",
-        officeId: "president-madras",
-      },
+      hirer: "regionPresident",
       candidatePool: {
         type: "special",
         rule: "governor",
       },
       excludeHirerUntilNepotismConsent: true,
     },
-    source: "John-Company-Rules.txt",
+    source: "printnplay/Cards/John Company Cards (Bridge, Bridge).pdf",
     notes: ["Governor office for the Hyderabad region."],
   },
 ];

@@ -1,6 +1,6 @@
 import type { SetupCardDeckDefinition, SetupCardDefinition } from "./types";
 
-const source = "game_bits/Cards/John Company Cards (MiniEuro, Fronts).pdf" as const;
+const source = "printnplay/Cards/John Company Cards (MiniEuro, Fronts).pdf" as const;
 
 const baseCards: SetupCardDefinition[] = [
   {

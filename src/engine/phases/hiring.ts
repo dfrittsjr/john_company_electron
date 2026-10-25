@@ -1,5 +1,12 @@
 import { offices } from "../../data";
-import type { OfficeDefinition, PresidencyId as DataPresidencyId } from "../../data/types";
+import type { OfficeDefinition } from "../../data/types";
+import {
+  companyShareCount,
+  companySharesByPlayer,
+  presidentOf,
+  regionPresidency,
+  toEnginePresidency,
+} from "../selectors";
 import type {
   ApplyCommandResult,
   ArmyId,
@@ -59,22 +66,10 @@ type MilitaryHireOfficePayload = {
       };
 };
 
-type RegionalWriterHireOfficePayload = {
-  officeId: OfficeId;
-  candidateId: PlayerId;
-  source: {
-    type: "regionalWriter";
-    regionId: string;
-    orderId: string;
-    presidency: EnginePresidencyId;
-  };
-};
-
 type HireOfficePayload =
   | WriterHireOfficePayload
   | PromotionHireOfficePayload
-  | MilitaryHireOfficePayload
-  | RegionalWriterHireOfficePayload;
+  | MilitaryHireOfficePayload;
 
 type ResolveNepotismConsentPayload = {
   accepted: boolean;
@@ -601,11 +596,9 @@ function compareHiringOfficeOrder(left: OfficeId, right: OfficeId): number {
   return hiringOfficeOrder(left) - hiringOfficeOrder(right);
 }
 
+// Offices are hired in ascending order of the number on the back of each card (p.14).
 function hiringOfficeOrder(officeId: OfficeId): number {
-  if (officeId === "chairman") return 0;
-
-  const definition = offices.find((office) => office.id === officeId);
-  return definition?.operationOrder ?? Number.MAX_SAFE_INTEGER;
+  return officeDefinition(officeId)?.hiringOrder ?? Number.MAX_SAFE_INTEGER;
 }
 
 function officeLabel(officeId: OfficeId): string {
@@ -700,7 +693,7 @@ function createWriterHireCommands(
     if (player.isCrown || player.id === excludedPlayerId) continue;
 
     for (const presidency of eligiblePresidencies) {
-      const writerCount = player.familyMembers.writers[presidency] ?? 0;
+      const writerCount = state.india.presidencies[presidency].writers[player.id] ?? 0;
       if (writerCount <= 0) continue;
 
       commands.push({
@@ -784,85 +777,46 @@ function createPresidentHireCommands(state: GameState, officeId: OfficeId): Lega
   const hirer = determineOfficeHirer(state, officeId);
   if (!hirer) return [];
 
-  const presidency = toEnginePresidencyId(definition.presidency);
+  const presidency = toEnginePresidency(definition.presidency);
 
+  // Presidents: "Consider writers and Governors associated with this Presidency" (card back).
   return [
     ...createWriterHireCommands(state, officeId, undefined, [presidency]),
-    ...createGovernorPromotionCommands(state, officeId, definition.presidency),
+    ...createGovernorPromotionCommands(state, officeId, presidency),
   ];
 }
 
+// Governors: chosen by the President the region is associated with; "Consider writers and
+// officers in this Presidency" (card back). Writers on orders have already returned to their
+// Presidency box during Refresh, so they are never candidates here.
 function createGovernorHireCommands(state: GameState, officeId: OfficeId): LegalCommand[] {
   const definition = officeDefinition(officeId);
-  if (definition?.category !== "governor" || !definition.presidency || !definition.region) {
-    return [];
-  }
+  if (definition?.category !== "governor" || !definition.region) return [];
 
-  const hirer = determineOfficeHirer(state, officeId);
-  if (!hirer) return [];
+  const presidency = regionPresidency(state, definition.region);
+  if (!presidency || !determineOfficeHirer(state, officeId)) return [];
 
-  const regionalWriterCommands = createRegionalWriterHireCommands(
-    state,
-    officeId,
-    definition.region,
-  );
-  if (regionalWriterCommands.length > 0) return regionalWriterCommands;
-
-  return createOfficerHireCommands(
-    state,
-    officeId,
-    undefined,
-    [toEnginePresidencyId(definition.presidency)],
-  );
-}
-
-function createRegionalWriterHireCommands(
-  state: GameState,
-  officeId: OfficeId,
-  regionId: string,
-  excludedPlayerId?: PlayerId,
-): LegalCommand[] {
-  const region = state.india.regions[regionId];
-  if (!region) return [];
-
-  const commands: LegalCommand[] = [];
-  for (const order of region.orders) {
-    if (!order.writer || order.writer.playerId === excludedPlayerId) continue;
-
-    const player = state.players[order.writer.playerId];
-    if (!player || player.isCrown) continue;
-
-    commands.push({
-      type: "hiring.hireOffice",
-      label: `Hire ${player.name} writer from ${region.name}`,
-      description: `Move ${player.name}'s writer from ${region.name} order ${order.id} to ${officeLabel(officeId)}.`,
-      payload: {
-        officeId,
-        candidateId: player.id,
-        source: {
-          type: "regionalWriter",
-          regionId,
-          orderId: order.id,
-          presidency: order.writer.presidency,
-        },
-      } satisfies HireOfficePayload,
-    });
-  }
-
-  return commands;
+  return [
+    ...createWriterHireCommands(state, officeId, undefined, [presidency]),
+    ...createOfficerHireCommands(state, officeId, undefined, [presidency]),
+  ];
 }
 
 function createGovernorPromotionCommands(
   state: GameState,
   officeId: OfficeId,
-  dataPresidency: DataPresidencyId,
+  presidency: EnginePresidencyId,
   excludedPlayerId?: PlayerId,
 ): LegalCommand[] {
   return Object.values(state.company.offices)
     .filter((office) => {
       if (office.vacant || !office.holder || office.holder === excludedPlayerId) return false;
       const definition = officeDefinition(office.id);
-      return definition?.category === "governor" && definition.presidency === dataPresidency;
+      return (
+        definition?.category === "governor" &&
+        definition.region !== undefined &&
+        regionPresidency(state, definition.region) === presidency
+      );
     })
     .map((office) => {
       const candidate = state.players[office.holder as PlayerId];
@@ -925,9 +879,8 @@ function createOfficerHireCommands(
 
     for (const army of eligibleArmies) {
       for (const readiness of ["ready", "exhausted"] as const) {
-        const officerCount = player.familyMembers.officers[army]?.[readiness] ?? 0;
         const armyCount = state.company.armies[army].officers[player.id]?.[readiness] ?? 0;
-        if (officerCount <= 0 || armyCount <= 0) continue;
+        if (armyCount <= 0) continue;
 
         commands.push({
           type: "hiring.hireOffice",
@@ -985,17 +938,21 @@ function determineOfficeHirer(state: GameState, officeId: OfficeId): PlayerId | 
   const hirer = definition?.hiring?.hirer;
   if (!hirer) return undefined;
 
-  if (hirer !== "chairman") {
-    const hirerOffice = state.company.offices[hirer.officeId];
-    if (!hirerOffice || hirerOffice.vacant || !hirerOffice.holder) return undefined;
+  if (hirer === "chairman") return holderOf(state, "chairman");
 
-    return hirerOffice.holder;
+  if (hirer === "regionPresident") {
+    const presidency = definition.region ? regionPresidency(state, definition.region) : undefined;
+    return presidency ? presidentOf(state, presidency) : undefined;
   }
 
-  const chairmanOffice = state.company.offices.chairman;
-  if (!chairmanOffice || chairmanOffice.vacant || !chairmanOffice.holder) return undefined;
+  return holderOf(state, hirer.officeId);
+}
 
-  return chairmanOffice.holder;
+function holderOf(state: GameState, officeId: OfficeId): PlayerId | undefined {
+  const office = state.company.offices[officeId];
+  if (!office || office.vacant || !office.holder) return undefined;
+
+  return office.holder;
 }
 
 function requiresNepotismConsent(state: GameState, payload: HireOfficePayload): boolean {
@@ -1017,64 +974,27 @@ function enginePresidenciesForCandidatePool(
     return ["Bombay", "Madras", "Bengal"];
   }
 
-  return candidatePool.presidencies.map(toEnginePresidencyId);
-}
-
-function toEnginePresidencyId(presidency: DataPresidencyId): EnginePresidencyId {
-  if (presidency === "bombay") return "Bombay";
-  if (presidency === "madras") return "Madras";
-  return "Bengal";
+  return candidatePool.presidencies.map(toEnginePresidency);
 }
 
 function totalCompanyShares(state: GameState): number {
-  return state.company.court.length + Object.values(state.players).filter((player) => player.familyMembers.chairmanShare).length;
+  return companyShareCount(state);
 }
 
 function shareCountsByPlayer(state: GameState): Map<PlayerId, number> {
-  const counts = new Map<PlayerId, number>();
-  for (const share of state.company.court) {
-    if (!share.owner) continue;
-    counts.set(share.owner, (counts.get(share.owner) ?? 0) + 1);
-  }
-
-  for (const player of Object.values(state.players)) {
-    if (player.familyMembers.chairmanShare) {
-      counts.set(player.id, (counts.get(player.id) ?? 0) + 1);
-    }
-  }
-
-  return counts;
+  return companySharesByPlayer(state);
 }
 
+// The new Chairman moves one of their Court shares to the Chairman slot; it still counts as a
+// Company share (p.15).
 function assignChairman(state: GameState, candidateId: PlayerId): GameState {
   const candidateShare = state.company.court.find((share) => share.owner === candidateId);
   const court = candidateShare
     ? removeShare(state.company.court, candidateShare.id)
     : state.company.court;
-  const players = Object.fromEntries(
-    Object.entries(state.players).map(([playerId, player]) => [
-      playerId,
-      {
-        ...player,
-        familyMembers: {
-          ...player.familyMembers,
-          courtShares:
-            playerId === candidateId && candidateShare
-              ? Math.max(0, player.familyMembers.courtShares - 1)
-              : player.familyMembers.courtShares,
-          chairmanShare: playerId === candidateId,
-          offices:
-            playerId === candidateId
-              ? [...new Set([...player.familyMembers.offices, "chairman"])]
-              : player.familyMembers.offices.filter((officeId) => officeId !== "chairman"),
-        },
-      },
-    ]),
-  );
 
   return {
     ...state,
-    players,
     company: {
       ...state.company,
       court,
@@ -1127,10 +1047,6 @@ function moveCandidateToOffice(state: GameState, payload: HireOfficePayload): Ga
     return moveMilitaryCandidateToOffice(state, payload);
   }
 
-  if (isRegionalWriterHirePayload(payload)) {
-    return moveRegionalWriterToOffice(state, payload);
-  }
-
   return moveWriterToOffice(state, payload);
 }
 
@@ -1146,54 +1062,18 @@ function isMilitaryHirePayload(payload: HireOfficePayload): payload is MilitaryH
   );
 }
 
-function isRegionalWriterHirePayload(
-  payload: HireOfficePayload,
-): payload is RegionalWriterHireOfficePayload {
-  return payload.source.type === "regionalWriter";
-}
-
 function moveWriterToOffice(
   state: GameState,
   payload: WriterHireOfficePayload,
 ): GameState {
-  const candidate = state.players[payload.candidateId];
   const presidency = payload.source.presidency;
-  const currentPlayerWriterCount = candidate.familyMembers.writers[presidency] ?? 0;
   const currentPresidencyWriterCount = state.india.presidencies[presidency].writers[payload.candidateId] ?? 0;
 
-  const nextState: GameState = {
+  return {
     ...state,
-    players: {
-      ...state.players,
-      [payload.candidateId]: {
-        ...candidate,
-        familyMembers: {
-          ...candidate.familyMembers,
-          writers: {
-            ...candidate.familyMembers.writers,
-            [presidency]: Math.max(0, currentPlayerWriterCount - 1),
-          },
-          offices: [...new Set([...candidate.familyMembers.offices, payload.officeId])],
-        },
-      },
-    },
-    company: {
-      ...state.company,
-      offices: {
-        ...state.company.offices,
-        [payload.officeId]: {
-          id: payload.officeId,
-          treasury: state.company.offices[payload.officeId]?.treasury ?? 0,
-          fatigue: state.company.offices[payload.officeId]?.fatigue ?? 0,
-          created: true,
-          vacant: false,
-          actedThisTurn: false,
-          holder: payload.candidateId,
-          familyMemberId: `writer-${presidency}-${state.turn}-${payload.candidateId}-${payload.officeId}`,
-        },
-      },
-      vacantOffices: state.company.vacantOffices.filter((officeId) => officeId !== payload.officeId),
-    },
+    company: placeOfficeholder(state, payload.officeId, payload.candidateId, {
+      familyMemberId: `writer-${presidency}-${state.turn}-${payload.candidateId}-${payload.officeId}`,
+    }),
     india: {
       ...state.india,
       presidencies: {
@@ -1208,50 +1088,54 @@ function moveWriterToOffice(
       },
     },
   };
-
-  return applyOfficeAssignmentSideEffects(nextState, {
-    officeId: payload.officeId,
-    holder: payload.candidateId,
-  });
 }
 
+function placeOfficeholder(
+  state: GameState,
+  officeId: OfficeId,
+  holder: PlayerId,
+  options: { familyMemberId: string; fatigue?: number },
+): GameState["company"] {
+  return {
+    ...state.company,
+    offices: {
+      ...state.company.offices,
+      [officeId]: {
+        id: officeId,
+        treasury: state.company.offices[officeId]?.treasury ?? 0,
+        fatigue: options.fatigue ?? state.company.offices[officeId]?.fatigue ?? 0,
+        created: true,
+        vacant: false,
+        actedThisTurn: false,
+        holder,
+        familyMemberId: options.familyMemberId,
+      },
+    },
+    vacantOffices: state.company.vacantOffices.filter((candidate) => candidate !== officeId),
+  };
+}
+
+// Promotions: the old office card goes to the vacant stack and its fatigue moves with the
+// officeholder (p.14).
 function promoteOfficeholderToOffice(
   state: GameState,
   payload: PromotionHireOfficePayload,
 ): GameState {
-  const candidate = state.players[payload.candidateId];
   const sourceOffice = state.company.offices[payload.source.officeId];
-  const movedFatigue = sourceOffice?.fatigue ?? 0;
   const familyMemberId =
     sourceOffice?.familyMemberId ??
     `officeholder-${payload.source.officeId}-${state.turn}-${payload.candidateId}`;
-  const nextVacantOffices = [
-    ...state.company.vacantOffices.filter((officeId) => officeId !== payload.officeId),
-    payload.source.officeId,
-  ].filter((officeId, index, officeIds) => officeIds.indexOf(officeId) === index);
+  const company = placeOfficeholder(state, payload.officeId, payload.candidateId, {
+    familyMemberId,
+    fatigue: sourceOffice?.fatigue ?? 0,
+  });
 
-  const nextState: GameState = {
+  return {
     ...state,
-    players: {
-      ...state.players,
-      [payload.candidateId]: {
-        ...candidate,
-        familyMembers: {
-          ...candidate.familyMembers,
-          offices: [
-            ...new Set(
-              candidate.familyMembers.offices
-                .filter((officeId) => officeId !== payload.source.officeId)
-                .concat(payload.officeId),
-            ),
-          ],
-        },
-      },
-    },
     company: {
-      ...state.company,
+      ...company,
       offices: {
-        ...state.company.offices,
+        ...company.offices,
         [payload.source.officeId]: {
           id: payload.source.officeId,
           treasury: sourceOffice?.treasury ?? 0,
@@ -1260,237 +1144,72 @@ function promoteOfficeholderToOffice(
           vacant: true,
           actedThisTurn: false,
         },
-        [payload.officeId]: {
-          id: payload.officeId,
-          treasury: state.company.offices[payload.officeId]?.treasury ?? 0,
-          fatigue: movedFatigue,
-          created: true,
-          vacant: false,
-          actedThisTurn: false,
-          holder: payload.candidateId,
-          familyMemberId,
-        },
       },
-      vacantOffices: nextVacantOffices,
+      vacantOffices: [...new Set([...company.vacantOffices, payload.source.officeId])],
     },
   };
-
-  return applyOfficeAssignmentSideEffects(
-    clearOfficeAssignmentSideEffects(nextState, payload.source.officeId),
-    {
-      officeId: payload.officeId,
-      holder: payload.candidateId,
-    },
-  );
-}
-
-function applyOfficeAssignmentSideEffects(
-  state: GameState,
-  assignment: { officeId: OfficeId; holder: PlayerId },
-): GameState {
-  const definition = officeDefinition(assignment.officeId);
-  if (definition?.category === "presidency" && definition.presidency) {
-    const presidency = toEnginePresidencyId(definition.presidency);
-    return {
-      ...state,
-      india: {
-        ...state.india,
-        presidencies: {
-          ...state.india.presidencies,
-          [presidency]: {
-            ...state.india.presidencies[presidency],
-            president: assignment.holder,
-          },
-        },
-      },
-    };
-  }
-
-  if (definition?.category === "china") {
-    return {
-      ...state,
-      company: {
-        ...state.company,
-        chinaOffice: {
-          treasury: state.company.chinaOffice?.treasury ?? 0,
-          holder: assignment.holder,
-        },
-      },
-    };
-  }
-
-  return state;
-}
-
-function clearOfficeAssignmentSideEffects(state: GameState, officeId: OfficeId): GameState {
-  const definition = officeDefinition(officeId);
-  if (definition?.category === "presidency" && definition.presidency) {
-    const presidency = toEnginePresidencyId(definition.presidency);
-    return {
-      ...state,
-      india: {
-        ...state.india,
-        presidencies: {
-          ...state.india.presidencies,
-          [presidency]: {
-            ...state.india.presidencies[presidency],
-            president: undefined,
-          },
-        },
-      },
-    };
-  }
-
-  if (definition?.category === "china") {
-    return {
-      ...state,
-      company: {
-        ...state.company,
-        chinaOffice: state.company.chinaOffice
-          ? {
-              ...state.company.chinaOffice,
-              holder: undefined,
-            }
-          : undefined,
-      },
-    };
-  }
-
-  return state;
 }
 
 function moveMilitaryCandidateToOffice(
   state: GameState,
   payload: MilitaryHireOfficePayload,
 ): GameState {
-  const candidate = state.players[payload.candidateId];
-  const playerAfterSourceMove = moveMilitaryCandidateFromPlayer(candidate, payload);
-  const companyAfterSourceMove = moveMilitaryCandidateFromCompany(state, payload);
-  const nextState: GameState = {
-    ...state,
-    players: {
-      ...state.players,
-      [payload.candidateId]: {
-        ...playerAfterSourceMove,
-        familyMembers: {
-          ...playerAfterSourceMove.familyMembers,
-          offices: [...new Set([...playerAfterSourceMove.familyMembers.offices, payload.officeId])],
-        },
-      },
-    },
-    company: {
-      ...companyAfterSourceMove,
-      offices: {
-        ...companyAfterSourceMove.offices,
-        [payload.officeId]: {
-          id: payload.officeId,
-          treasury: state.company.offices[payload.officeId]?.treasury ?? 0,
-          fatigue: state.company.offices[payload.officeId]?.fatigue ?? 0,
-          created: true,
-          vacant: false,
-          actedThisTurn: false,
-          holder: payload.candidateId,
-          familyMemberId: militaryFamilyMemberId(state, payload),
-        },
-      },
-      vacantOffices: companyAfterSourceMove.vacantOffices.filter((officeId) => officeId !== payload.officeId),
-    },
-  };
-
-  return applyOfficeAssignmentSideEffects(nextState, {
-    officeId: payload.officeId,
-    holder: payload.candidateId,
-  });
-}
-
-function moveMilitaryCandidateFromPlayer(
-  player: GameState["players"][PlayerId],
-  payload: MilitaryHireOfficePayload,
-): GameState["players"][PlayerId] {
-  if (payload.source.type === "officersInTraining") {
-    return {
-      ...player,
-      familyMembers: {
-        ...player.familyMembers,
-        officersInTraining: Math.max(0, player.familyMembers.officersInTraining - 1),
-      },
-    };
-  }
-
-  if (payload.source.type === "commander") {
-    return {
-      ...player,
-      familyMembers: {
-        ...player.familyMembers,
-        commanders: {
-          ...player.familyMembers.commanders,
-          [payload.source.army]: false,
-        },
-      },
-    };
-  }
-
-  const currentStack = player.familyMembers.officers[payload.source.army] ?? {
-    ready: 0,
-    exhausted: 0,
-  };
+  const stateAfterSourceMove = removeMilitaryCandidate(state, payload);
 
   return {
-    ...player,
-    familyMembers: {
-      ...player.familyMembers,
-      officers: {
-        ...player.familyMembers.officers,
-        [payload.source.army]: {
-          ...currentStack,
-          [payload.source.readiness]: Math.max(0, currentStack[payload.source.readiness] - 1),
-        },
-      },
-    },
+    ...stateAfterSourceMove,
+    company: placeOfficeholder(stateAfterSourceMove, payload.officeId, payload.candidateId, {
+      familyMemberId: militaryFamilyMemberId(state, payload),
+    }),
   };
 }
 
-function moveMilitaryCandidateFromCompany(
-  state: GameState,
-  payload: MilitaryHireOfficePayload,
-): GameState["company"] {
+function removeMilitaryCandidate(state: GameState, payload: MilitaryHireOfficePayload): GameState {
   if (payload.source.type === "officersInTraining") {
-    return state.company;
+    const player = state.players[payload.candidateId];
+    return {
+      ...state,
+      players: {
+        ...state.players,
+        [payload.candidateId]: {
+          ...player,
+          familyMembers: {
+            ...player.familyMembers,
+            officersInTraining: Math.max(0, player.familyMembers.officersInTraining - 1),
+          },
+        },
+      },
+    };
   }
 
   const army = state.company.armies[payload.source.army];
   if (payload.source.type === "commander") {
     return {
+      ...state,
+      company: {
+        ...state.company,
+        armies: { ...state.company.armies, [payload.source.army]: { ...army, commander: undefined } },
+      },
+    };
+  }
+
+  const readiness = payload.source.readiness;
+  const currentStack = army.officers[payload.candidateId] ?? { ready: 0, exhausted: 0 };
+
+  return {
+    ...state,
+    company: {
       ...state.company,
       armies: {
         ...state.company.armies,
         [payload.source.army]: {
           ...army,
-          commander: undefined,
-        },
-      },
-    };
-  }
-
-  const currentStack = army.officers[payload.candidateId] ?? {
-    ready: 0,
-    exhausted: 0,
-  };
-
-  return {
-    ...state.company,
-    armies: {
-      ...state.company.armies,
-      [payload.source.army]: {
-        ...army,
-        officers: {
-          ...army.officers,
-          [payload.candidateId]: {
-            ...currentStack,
-            [payload.source.readiness]: Math.max(
-              0,
-              currentStack[payload.source.readiness] - 1,
-            ),
+          officers: {
+            ...army.officers,
+            [payload.candidateId]: {
+              ...currentStack,
+              [readiness]: Math.max(0, currentStack[readiness] - 1),
+            },
           },
         },
       },
@@ -1508,66 +1227,6 @@ function militaryFamilyMemberId(state: GameState, payload: MilitaryHireOfficePay
   }
 
   return `officer-${payload.source.army}-${payload.source.readiness}-${state.turn}-${payload.candidateId}-${payload.officeId}`;
-}
-
-function moveRegionalWriterToOffice(
-  state: GameState,
-  payload: RegionalWriterHireOfficePayload,
-): GameState {
-  const candidate = state.players[payload.candidateId];
-  const region = state.india.regions[payload.source.regionId];
-  const nextState: GameState = {
-    ...state,
-    players: {
-      ...state.players,
-      [payload.candidateId]: {
-        ...candidate,
-        familyMembers: {
-          ...candidate.familyMembers,
-          offices: [...new Set([...candidate.familyMembers.offices, payload.officeId])],
-        },
-      },
-    },
-    company: {
-      ...state.company,
-      offices: {
-        ...state.company.offices,
-        [payload.officeId]: {
-          id: payload.officeId,
-          treasury: state.company.offices[payload.officeId]?.treasury ?? 0,
-          fatigue: state.company.offices[payload.officeId]?.fatigue ?? 0,
-          created: true,
-          vacant: false,
-          actedThisTurn: false,
-          holder: payload.candidateId,
-          familyMemberId: `regional-writer-${payload.source.regionId}-${payload.source.orderId}-${state.turn}-${payload.candidateId}-${payload.officeId}`,
-        },
-      },
-      vacantOffices: state.company.vacantOffices.filter((officeId) => officeId !== payload.officeId),
-    },
-    india: {
-      ...state.india,
-      regions: {
-        ...state.india.regions,
-        [payload.source.regionId]: {
-          ...region,
-          orders: region.orders.map((order) =>
-            order.id === payload.source.orderId
-              ? {
-                  ...order,
-                  writer: undefined,
-                }
-              : order,
-          ),
-        },
-      },
-    },
-  };
-
-  return applyOfficeAssignmentSideEffects(nextState, {
-    officeId: payload.officeId,
-    holder: payload.candidateId,
-  });
 }
 
 function parseChairmanElectionPayload(payload: unknown): ChairmanElectionPayload | undefined {
@@ -1602,8 +1261,6 @@ function parseHireOfficePayload(payload: unknown): HireOfficePayload | undefined
       officeId?: unknown;
       army?: unknown;
       readiness?: unknown;
-      regionId?: unknown;
-      orderId?: unknown;
     };
   };
   if (typeof raw.officeId !== "string" || typeof raw.candidateId !== "string") return undefined;
@@ -1653,24 +1310,6 @@ function parseHireOfficePayload(payload: unknown): HireOfficePayload | undefined
       candidateId: raw.candidateId,
       source: {
         type: "officersInTraining",
-      },
-    };
-  }
-
-  if (
-    raw.source.type === "regionalWriter" &&
-    typeof raw.source.regionId === "string" &&
-    typeof raw.source.orderId === "string" &&
-    isPresidencyId(raw.source.presidency)
-  ) {
-    return {
-      officeId: raw.officeId,
-      candidateId: raw.candidateId,
-      source: {
-        type: "regionalWriter",
-        regionId: raw.source.regionId,
-        orderId: raw.source.orderId,
-        presidency: raw.source.presidency,
       },
     };
   }

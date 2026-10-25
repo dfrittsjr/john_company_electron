@@ -459,10 +459,6 @@ function enlistWriter(
           familyMembers: {
             ...actor.familyMembers,
             supply: actor.familyMembers.supply - 1,
-            writers: {
-              ...actor.familyMembers.writers,
-              [presidency]: actor.familyMembers.writers[presidency] + 1,
-            },
           },
         },
       },
@@ -557,7 +553,6 @@ function seekShare(
           familyMembers: {
             ...actor.familyMembers,
             supply: actor.familyMembers.supply - 1,
-            stockExchange: [...actor.familyMembers.stockExchange, slot.id],
           },
         },
       },
@@ -620,9 +615,10 @@ function purchaseEnterprise(
                 ...state.company.ships,
                 {
                   id: `ship-${card.id}`,
-                  owner: actor.id,
-                  location: `shipyard:${instance.id}`,
-                  exhausted: false,
+                  kind: "player",
+                  shipyardCardId: card.id,
+                  location: "shipyard",
+                  fatigued: false,
                 },
               ],
             }
@@ -642,7 +638,6 @@ function resolveStockExchangeSharesAtFamilyEnd(state: GameState, shouldResolve: 
   if (occupiedSlots.length === 0) return state;
 
   let debt = state.company.debt;
-  let players = state.players;
   let court = state.company.court;
   const convertedSlotIds = new Set<string>();
 
@@ -650,9 +645,6 @@ function resolveStockExchangeSharesAtFamilyEnd(state: GameState, shouldResolve: 
     if (debt <= 0 || !slot.share?.owner) break;
 
     const owner = slot.share.owner;
-    const player = players[owner];
-    if (!player) continue;
-
     convertedSlotIds.add(slot.id);
     debt -= 1;
     const companyShare: ShareInstance = {
@@ -660,22 +652,10 @@ function resolveStockExchangeSharesAtFamilyEnd(state: GameState, shouldResolve: 
       owner,
     };
     court = [...court, companyShare];
-    players = {
-      ...players,
-      [owner]: {
-        ...player,
-        familyMembers: {
-          ...player.familyMembers,
-          stockExchange: player.familyMembers.stockExchange.filter((id) => id !== slot.id),
-          courtShares: player.familyMembers.courtShares + 1,
-        },
-      },
-    };
   }
 
   const stateAfterConversion: GameState = {
     ...state,
-    players,
     company: {
       ...state.company,
       debt,
@@ -697,45 +677,20 @@ function slideStockExchangePiecesRightward(state: GameState): GameState {
   if (remainingShares.length === 0) return state;
 
   const targetSlots = state.company.stockExchange.slice(-remainingShares.length);
-  const slotMoves = new Map<string, string>();
   const stockExchange: StockExchangeSlot[] = state.company.stockExchange.map((slot) => ({
     id: slot.id,
     cost: slot.cost,
   }));
 
   targetSlots.forEach((slot, index) => {
-    const share = remainingShares[index];
     const targetIndex = stockExchange.findIndex((candidate) => candidate.id === slot.id);
-    const originalSlot = state.company.stockExchange.find((candidate) => candidate.share?.id === share.id);
-    if (targetIndex >= 0 && originalSlot) {
-      stockExchange[targetIndex] = {
-        ...stockExchange[targetIndex],
-        share,
-      };
-      slotMoves.set(originalSlot.id, slot.id);
+    if (targetIndex >= 0) {
+      stockExchange[targetIndex] = { ...stockExchange[targetIndex], share: remainingShares[index] };
     }
   });
 
-  let players = state.players;
-  for (const [playerId, player] of Object.entries(state.players)) {
-    const nextStockExchange = player.familyMembers.stockExchange.map((slotId) => slotMoves.get(slotId) ?? slotId);
-    if (nextStockExchange.some((slotId, index) => slotId !== player.familyMembers.stockExchange[index])) {
-      players = {
-        ...players,
-        [playerId]: {
-          ...player,
-          familyMembers: {
-            ...player.familyMembers,
-            stockExchange: nextStockExchange,
-          },
-        },
-      };
-    }
-  }
-
   return {
     ...state,
-    players,
     company: {
       ...state.company,
       stockExchange,

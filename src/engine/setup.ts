@@ -1,7 +1,10 @@
-import { componentManifest, stockExchangeTrack } from "../data";
+import { componentManifest, mapData, offices, stockExchangeTrack } from "../data";
+import type { ScenarioDefinition } from "../data/types";
 import { createRngState, shuffle } from "./rng";
+import { COMPANY_TREASURY_OFFICE_IDS, scenarioDefinition, toEnginePresidency } from "./selectors";
 import {
   GAME_SCHEMA_VERSION,
+  type ArmyId,
   type CompanyState,
   type CrownState,
   type GameLogEntry,
@@ -14,7 +17,10 @@ import {
   type PlayerId,
   type PlayerState,
   type PresidencyId,
+  type RegionState,
   type ScenarioId,
+  type SeaZoneId,
+  type ShipState,
 } from "./types";
 
 export type NewPlayerInput = {
@@ -52,6 +58,7 @@ const CROWN_AI_CARD_IDS = [
 export function createNewGame(options: NewGameOptions): GameState {
   validateNewGameOptions(options);
 
+  const scenario = scenarioDefinition(options);
   const createdAt = options.now ?? new Date().toISOString();
   let rng = createRngState(options.seed ?? `${options.scenario}:${options.mode}:${createdAt}`);
   const gameId = options.gameId ?? `game-${slugify(options.scenario)}-${createdAt}`;
@@ -111,17 +118,18 @@ export function createNewGame(options: NewGameOptions): GameState {
     updatedAt: createdAt,
     mode: options.mode,
     scenario: options.scenario,
-    turn: 1,
-    finalTurn: finalTurnForScenario(options.scenario),
+    turn: scenario.startTurn,
+    startTurn: scenario.startTurn,
+    finalTurn: scenario.finalTurn,
     phase: "setup",
     pendingDecision,
     players,
     seatingOrder,
-    company: createInitialCompanyState(),
-    india: createInitialIndiaState(),
+    company: createInitialCompanyState(scenario),
+    india: createInitialIndiaState(scenario),
     parliament: createInitialParliamentState(seatingOrder[0]),
     decks: {},
-    firms: options.scenario === "1813" ? [] : undefined,
+    firms: scenario.startsDeregulated ? [] : undefined,
     crown,
     rng,
     log: [],
@@ -289,23 +297,7 @@ function createPlayer(input: {
       supply: input.familySupply,
       pensioners: 0,
       prizes: {},
-      courtShares: 0,
-      chairmanShare: false,
-      stockExchange: [],
-      writers: emptyPresidencyRecord(0),
       officersInTraining: 0,
-      officers: {
-        Bombay: { ready: 0, exhausted: 0 },
-        Madras: { ready: 0, exhausted: 0 },
-        Bengal: { ready: 0, exhausted: 0 },
-      },
-      commanders: {
-        Bombay: false,
-        Madras: false,
-        Bengal: false,
-      },
-      offices: [],
-      firmShares: {},
       debtorPrison: 0,
     },
     opportunityMarker: "supply",
@@ -320,18 +312,69 @@ function createPlayer(input: {
   };
 }
 
-function createInitialCompanyState(): CompanyState {
+const SEA_ZONE_BY_PRESIDENCY: Record<PresidencyId, SeaZoneId> = {
+  Bombay: "west-indian",
+  Madras: "south-indian",
+  Bengal: "east-indian",
+};
+
+// Offices whose cards start in play; the Superintendent of Trade in China, Governor General
+// and Governors start in the unused-office stack (p.4, p.16, p.24-26).
+const STARTING_OFFICE_IDS = [
+  "chairman",
+  "director-of-trade",
+  "manager-of-shipping",
+  "military-affairs",
+  "president-bombay",
+  "president-madras",
+  "president-bengal",
+];
+
+function createInitialCompanyState(scenario: ScenarioDefinition): CompanyState {
+  const tracks = scenario.setup.companyTracks;
+  const treasury = tracks.officeTreasury ?? 0;
+  const regiments = (presidency: PresidencyId) =>
+    scenario.setup.startingRegiments[presidency.toLowerCase() as keyof typeof scenario.setup.startingRegiments] ?? 0;
+  const ships: ShipState[] = [];
+  for (const presidency of ["Bombay", "Madras", "Bengal"] as const) {
+    const count =
+      scenario.setup.startingCompanyShips[
+        presidency.toLowerCase() as keyof typeof scenario.setup.startingCompanyShips
+      ] ?? 0;
+    for (let index = 0; index < count; index += 1) {
+      ships.push({
+        id: `company-ship-setup-${presidency.toLowerCase()}-${index + 1}`,
+        kind: "company",
+        location: SEA_ZONE_BY_PRESIDENCY[presidency],
+        fatigued: false,
+      });
+    }
+  }
+
   return {
-    standing: 0,
-    debt: 0,
+    standing: tracks.standingSpace ?? 4,
+    debt: tracks.debt ?? 0,
     balance: 0,
-    expectations: 0,
     shareValue: 0,
     failed: false,
     powerTrack: {},
-    offices: {},
-    vacantOffices: [],
-    unusedOffices: [],
+    offices: Object.fromEntries(
+      STARTING_OFFICE_IDS.map((officeId) => [
+        officeId,
+        {
+          id: officeId,
+          treasury: COMPANY_TREASURY_OFFICE_IDS.includes(officeId) ? treasury : 0,
+          fatigue: 0,
+          vacant: true,
+          created: true,
+          actedThisTurn: false,
+        },
+      ]),
+    ),
+    vacantOffices: [...STARTING_OFFICE_IDS],
+    unusedOffices: offices
+      .map((office) => office.id)
+      .filter((officeId) => !STARTING_OFFICE_IDS.includes(officeId)),
     court: [],
     stockExchange: stockExchangeTrack.slots
       .slice()
@@ -340,26 +383,80 @@ function createInitialCompanyState(): CompanyState {
         id: slot.id,
         cost: slot.cost,
       })),
-    ships: [],
-    extraShips: [],
+    ships,
     armies: {
-      Bombay: { id: "Bombay", officers: {}, regiments: { ready: 0, exhausted: 0 } },
-      Madras: { id: "Madras", officers: {}, regiments: { ready: 0, exhausted: 0 } },
-      Bengal: { id: "Bengal", officers: {}, regiments: { ready: 0, exhausted: 0 } },
+      Bombay: createArmy("Bombay", regiments("Bombay")),
+      Madras: createArmy("Madras", regiments("Madras")),
+      Bengal: createArmy("Bengal", regiments("Bengal")),
     },
     governorGeneralInPlay: false,
   };
 }
 
-function createInitialIndiaState(): IndiaState {
+function createArmy(id: ArmyId, regiments: number) {
+  return { id, officers: {}, regiments: { ready: regiments, exhausted: 0 } };
+}
+
+function createInitialIndiaState(scenario: ScenarioDefinition): IndiaState {
+  const mapSetup = scenario.setup.mapSetup;
+  const empireFlagByRegion = new Map<string, { flag: string; capital: boolean }>();
+  mapSetup?.empires.forEach((empire, index) => {
+    const flag = `empire-flag-${index + 1}`;
+    empireFlagByRegion.set(empire.capital, { flag, capital: true });
+    for (const regionId of empire.dominated) empireFlagByRegion.set(regionId, { flag, capital: false });
+  });
+
+  const regions: Record<string, RegionState> = Object.fromEntries(
+    mapData.regions.map((region) => {
+      const regionSetup = mapSetup?.regions[region.id];
+      const closed = new Set(regionSetup?.closedOrderIds ?? []);
+      const companyControlled = mapSetup?.companyControlled.includes(region.id) ?? false;
+      const empire = empireFlagByRegion.get(region.id);
+
+      return [
+        region.id,
+        {
+          id: region.id,
+          name: region.label,
+          homePresidency: region.homePresidency ? toEnginePresidency(region.homePresidency) : undefined,
+          adjacent: [...region.adjacentRegionIds],
+          orders: region.orders.map((order) => ({
+            id: order.id,
+            value: order.value,
+            deregulationValue: order.deregulationValue,
+            isHomePortFor: order.isHomePortFor ? toEnginePresidency(order.isHomePortFor) : undefined,
+            closed: closed.has(order.id),
+            filledThisTurnBy: [],
+            connectedOrderIds: [...order.connectedOrderIds],
+            boardPosition: order.boardPosition,
+          })),
+          towerLevels: regionSetup?.towerLevels ?? 0,
+          hasDome: !companyControlled,
+          empireFlag: empire?.flag,
+          isCapital: empire?.capital ?? false,
+          companyControlled,
+          // Association comes only from conquest (p.23). Scenarios that start with Company
+          // control (1758 Bengal, 1813) will set it when their map setup is transcribed.
+          associatedPresidency: undefined,
+          governorOffice: region.governorOfficeId,
+          unrest: 0,
+          // TODO: loot token values are printed on the punchboard tokens and not transcribed yet.
+          lootToken: { available: true, value: null, face: "loot" },
+          exportIcons: region.exportIcons,
+          partialCompanyShip: false,
+        } satisfies RegionState,
+      ];
+    }),
+  );
+
   return {
-    regions: {},
+    regions,
     presidencies: {
       Bombay: createPresidency("Bombay"),
       Madras: createPresidency("Madras"),
       Bengal: createPresidency("Bengal"),
     },
-    elephant: {},
+    elephant: mapSetup ? { regionId: mapSetup.elephant.region, facing: mapSetup.elephant.facing } : {},
     eventDiscards: [],
     regionsLostThisTurn: 0,
   };
@@ -369,11 +466,8 @@ function createPresidency(id: PresidencyId) {
   return {
     id,
     army: id,
-    treasury: 0,
     writers: {},
-    seaZone: `${id.toLowerCase()}-sea-zone`,
-    governors: [],
-    associatedRegions: [],
+    seaZone: SEA_ZONE_BY_PRESIDENCY[id],
   };
 }
 
@@ -387,29 +481,6 @@ function createInitialParliamentState(firstPlayer: PlayerId): ParliamentState {
     passedLaws: [],
     deregulated: false,
   };
-}
-
-function emptyPresidencyRecord(value: number): Record<PresidencyId, number> {
-  return {
-    Bombay: value,
-    Madras: value,
-    Bengal: value,
-  };
-}
-
-function finalTurnForScenario(scenario: ScenarioId): number {
-  switch (scenario) {
-    case "1758":
-      return 4;
-    case "1813":
-      return 3;
-    case "Long 1710":
-    case "long-1710":
-      return 6;
-    case "1710":
-    default:
-      return 5;
-  }
 }
 
 function createLogEntry(input: {

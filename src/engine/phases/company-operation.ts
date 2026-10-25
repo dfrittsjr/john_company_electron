@@ -1,4 +1,5 @@
-import { offices } from "../../data";
+import { MAX_COMPANY_DEBT, offices } from "../../data";
+import { COMPANY_TREASURY_OFFICE_IDS, companyShareCount } from "../selectors";
 import type { ApplyCommandResult, GameCommand, GameState, OfficeId, PendingDecision } from "../types";
 import { confirmStarterPhase, createCommandLogEntry, createSystemDecision, wrongPhase } from "./shared";
 
@@ -12,7 +13,15 @@ type ChairmanOperationPayload = {
   allocations: Record<OfficeId, number>;
 };
 
+type DebtConsentPayload = {
+  accepted: boolean;
+  operation: ChairmanOperationPayload;
+};
+
+// Chairman (p.18): each Debt advance adds £5. Up to three advances are free; each further advance
+// needs consent from players holding a majority of Company shares (the Chairman counts as one).
 const DEBT_PROCEEDS = 5;
+const FREE_DEBT_ADVANCES = 3;
 
 export function resolveChairmanOperation(
   state: GameState,
@@ -37,6 +46,75 @@ export function resolveChairmanOperation(
     };
   }
 
+  if (payload.debtTaken > FREE_DEBT_ADVANCES) {
+    const now = command.clientTimestamp;
+    const pendingDecision = createDebtConsentDecision(state, payload);
+    const logEntry = createCommandLogEntry({
+      state,
+      command,
+      now,
+      type: "companyOperation.debtConsentRequested",
+      summary: `The Chairman asked the Court to approve ${payload.debtTaken} Debt advances.`,
+      details: { operation: payload, freeAdvances: FREE_DEBT_ADVANCES, companyShares: companyShareCount(state) },
+    });
+
+    return {
+      ok: true,
+      logEntry,
+      state: { ...state, updatedAt: now, pendingDecision, log: [...state.log, logEntry] },
+    };
+  }
+
+  return applyChairmanOperation(state, command, payload);
+}
+
+export function resolveChairmanDebtConsent(
+  state: GameState,
+  command: GameCommand,
+): ApplyCommandResult {
+  if (state.phase !== "companyOperation" || state.pendingDecision.step !== "companyOperation.debtConsent") {
+    return wrongPhase("Debt consent can only be resolved while the Court is voting on extra Debt.");
+  }
+
+  const payload = parseDebtConsentPayload(command.payload);
+  if (!payload || !isLegalCommandPayload(state, "companyOperation.resolveDebtConsent", payload)) {
+    return {
+      ok: false,
+      errors: [
+        {
+          code: "ILLEGAL_COMPANY_OPERATION_CHOICE",
+          message: "The requested debt consent response is not legal for this decision.",
+          field: "payload",
+        },
+      ],
+    };
+  }
+
+  if (payload.accepted) {
+    return applyChairmanOperation(state, command, payload.operation, { debtConsent: "accepted" });
+  }
+
+  const now = command.clientTimestamp;
+  const logEntry = createCommandLogEntry({
+    state,
+    command,
+    now,
+    type: "companyOperation.debtConsentDenied",
+    summary: `The Court refused more than ${FREE_DEBT_ADVANCES} Debt advances.`,
+    details: { operation: payload.operation },
+  });
+  const stateWithLog: GameState = { ...state, updatedAt: now, log: [...state.log, logEntry] };
+  const pendingDecision = createChairmanDecision(stateWithLog, { debtConsentDenied: true });
+
+  return { ok: true, logEntry, state: { ...stateWithLog, pendingDecision } };
+}
+
+function applyChairmanOperation(
+  state: GameState,
+  command: GameCommand,
+  payload: ChairmanOperationPayload,
+  options: { debtConsent?: "accepted" } = {},
+): ApplyCommandResult {
   const startingBalance = state.company.balance;
   const debtProceeds = payload.debtTaken * DEBT_PROCEEDS;
   const allocatedTotal = Object.values(payload.allocations).reduce((total, amount) => total + amount, 0);
@@ -76,8 +154,7 @@ export function resolveChairmanOperation(
       allocatedTotal,
       endingBalance: stateAfterChairman.company.balance,
       allocations: payload.allocations,
-      assumption:
-        "Each debt taken during the Chairman operation adds GBP 5 to Company Balance; allocation may fund created non-Chairman office treasuries.",
+      debtConsent: options.debtConsent,
     },
   });
   const stateWithLog: GameState = {
@@ -205,27 +282,7 @@ export function createNextCompanyOperationDecision(state: GameState): PendingDec
   const office = state.company.offices[officeId];
   if (office?.created && !office.vacant && office.holder) {
     if (officeId === "chairman") {
-      return {
-        id: `decision-company-operation-chairman-turn-${state.turn}`,
-        phase: "companyOperation",
-        step: "companyOperation.resolveChairman",
-        actor: office.holder,
-        visibility: "private",
-        prompt: "Resolve Chairman debt and Company Balance allocation.",
-        legalCommands: [
-          {
-            type: "companyOperation.resolveChairman",
-            label: "Resolve Chairman",
-            description: "Take Company debt, then allocate available Company Balance to office treasuries.",
-            payload: {
-              officeId: "chairman",
-              debtTaken: 0,
-              allocations: {},
-            } satisfies ChairmanOperationPayload,
-          },
-        ],
-        canSave: true,
-      };
+      return createChairmanDecision(state);
     }
 
     return {
@@ -360,6 +417,94 @@ function parseChairmanPayload(payload: unknown): ChairmanOperationPayload | unde
   };
 }
 
+function createChairmanDecision(
+  state: GameState,
+  options: { debtConsentDenied?: boolean } = {},
+): PendingDecision {
+  const chairman = state.company.offices.chairman?.holder;
+  const targets = treasuryOfficeIds(state);
+  const defaultAllocations: Record<OfficeId, number> =
+    state.company.balance > 0 && targets[0] ? { [targets[0]]: state.company.balance } : {};
+
+  return {
+    id: `decision-company-operation-chairman-turn-${state.turn}${options.debtConsentDenied ? "-after-refusal" : ""}`,
+    phase: "companyOperation",
+    step: "companyOperation.resolveChairman",
+    actor: chairman ?? "system",
+    visibility: "private",
+    prompt: options.debtConsentDenied
+      ? `The Court refused extra Debt. Take up to ${FREE_DEBT_ADVANCES} Debt, then allocate the whole Company Balance.`
+      : "Take Company Debt if you wish, then allocate the whole Company Balance to office treasuries.",
+    legalCommands: [
+      {
+        type: "companyOperation.resolveChairman",
+        label: "Resolve Chairman",
+        description: `Advance Debt (£${DEBT_PROCEEDS} each; more than ${FREE_DEBT_ADVANCES} needs Court consent; Debt cannot pass ${MAX_COMPANY_DEBT}), then allocate all of the Balance to: ${targets.join(", ")}.`,
+        payload: {
+          officeId: "chairman",
+          debtTaken: 0,
+          allocations: defaultAllocations,
+        } satisfies ChairmanOperationPayload,
+        payloadSchema: {
+          maxDebtTaken: options.debtConsentDenied
+            ? Math.min(FREE_DEBT_ADVANCES, MAX_COMPANY_DEBT - state.company.debt)
+            : MAX_COMPANY_DEBT - state.company.debt,
+          allocationTargets: targets,
+        },
+      },
+    ],
+    canSave: true,
+  };
+}
+
+function createDebtConsentDecision(state: GameState, operation: ChairmanOperationPayload): PendingDecision {
+  return {
+    id: `decision-company-operation-debt-consent-turn-${state.turn}`,
+    phase: "companyOperation",
+    step: "companyOperation.debtConsent",
+    actor: "system",
+    visibility: "public",
+    prompt: `Do players holding a majority of the ${companyShareCount(state)} Company shares consent to ${operation.debtTaken} Debt advances?`,
+    legalCommands: [
+      {
+        type: "companyOperation.resolveDebtConsent",
+        label: "Majority consents",
+        description: `Advance Debt ${operation.debtTaken} times and apply the Chairman's allocation.`,
+        payload: { accepted: true, operation } satisfies DebtConsentPayload,
+      },
+      {
+        type: "companyOperation.resolveDebtConsent",
+        label: "Majority refuses",
+        description: `The Chairman chooses again with at most ${FREE_DEBT_ADVANCES} Debt advances.`,
+        payload: { accepted: false, operation } satisfies DebtConsentPayload,
+      },
+    ],
+    canSave: true,
+  };
+}
+
+/** The Director of Trade's treasury is used by the Governor General once that office exists (p.26). */
+function treasuryOfficeIds(state: GameState): OfficeId[] {
+  return COMPANY_TREASURY_OFFICE_IDS.map((officeId) =>
+    officeId === "director-of-trade" && state.company.governorGeneralInPlay ? "governor-general" : officeId,
+  ).filter((officeId) => state.company.offices[officeId]?.created);
+}
+
+function parseDebtConsentPayload(payload: unknown): DebtConsentPayload | undefined {
+  if (!payload || typeof payload !== "object") return undefined;
+  const raw = payload as { accepted?: unknown; operation?: unknown };
+  const operation = parseChairmanPayload(raw.operation);
+  if (typeof raw.accepted !== "boolean" || !operation) return undefined;
+
+  return { accepted: raw.accepted, operation };
+}
+
+function isLegalCommandPayload(state: GameState, type: string, payload: unknown): boolean {
+  return state.pendingDecision.legalCommands.some(
+    (command) => command.type === type && JSON.stringify(command.payload ?? {}) === JSON.stringify(payload),
+  );
+}
+
 function validateChairmanPayload(
   state: GameState,
   payload: ChairmanOperationPayload,
@@ -368,21 +513,27 @@ function validateChairmanPayload(
     return "Chairman operation is not legal for this decision.";
   }
 
-  const availableBalance =
-    state.company.balance + payload.debtTaken * DEBT_PROCEEDS;
-  const allocatedTotal = Object.values(payload.allocations).reduce((total, amount) => total + amount, 0);
-  if (allocatedTotal > availableBalance) {
-    return "Chairman allocation cannot exceed Company Balance after debt proceeds.";
+  if (state.company.debt + payload.debtTaken > MAX_COMPANY_DEBT) {
+    return `The Chairman may not advance Debt beyond the end of the track (${MAX_COMPANY_DEBT}).`;
   }
 
-  for (const officeId of Object.keys(payload.allocations)) {
-    if (officeId === "chairman") {
-      return "Chairman cannot allocate Company Balance to the Chairman office.";
-    }
+  const schema = state.pendingDecision.legalCommands.find(
+    (command) => command.type === "companyOperation.resolveChairman",
+  )?.payloadSchema as { maxDebtTaken?: number } | undefined;
+  if (schema?.maxDebtTaken !== undefined && payload.debtTaken > schema.maxDebtTaken) {
+    return `The Court refused extra Debt; take at most ${schema.maxDebtTaken} advances.`;
+  }
 
-    const office = state.company.offices[officeId];
-    if (!office?.created) {
-      return `Chairman allocation target "${officeId}" is not a created office.`;
+  const availableBalance = state.company.balance + payload.debtTaken * DEBT_PROCEEDS;
+  const allocatedTotal = Object.values(payload.allocations).reduce((total, amount) => total + amount, 0);
+  if (allocatedTotal !== availableBalance) {
+    return `The Chairman must allocate the whole Company Balance (£${availableBalance}); allocated £${allocatedTotal}.`;
+  }
+
+  const targets = treasuryOfficeIds(state);
+  for (const officeId of Object.keys(payload.allocations)) {
+    if (!targets.includes(officeId)) {
+      return `"${officeId}" does not have a Company treasury the Chairman can fund.`;
     }
   }
 

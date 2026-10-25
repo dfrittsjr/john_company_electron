@@ -4,8 +4,8 @@ This plan is ordered for an AI coding agent. Complete each milestone with tests 
 
 ## Milestone 1: Project Foundation
 
-- Replace the static mockup with a Vite + React + TypeScript Electron renderer.
-- Add `src/engine`, `src/data`, `src/save`, `src/ui`, and `src/electron` directories.
+- Replace the static mockup with a React + TypeScript game screen. (Superseded: the app now ships as an Astro static site on Cloudflare Worker static assets instead of Electron.)
+- Add `src/engine`, `src/data`, `src/save`, and `src/ui` directories.
 - Add Vitest.
 - Add ESLint/TypeScript checks.
 - Render the start menu and load `board_image-1.png` on a board screen.
@@ -30,7 +30,7 @@ Done when static data loads and validates at startup.
 
 - Implement `.joco` envelope.
 - Implement deterministic RNG.
-- Implement save export through Electron dialog.
+- Implement save export through the browser (save picker where available, otherwise a download).
 - Implement load import and validation.
 - Implement event log.
 - Add round-trip tests.

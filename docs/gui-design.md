@@ -185,7 +185,7 @@ Preserve a historical document feel, but prioritize legibility.
 
 ## Responsive Behavior
 
-Primary target is desktop, but the app should be usable on narrow windows:
+Primary target is a desktop or laptop browser, but the app should be usable on narrow windows:
 
 - Board remains pan/zoomable.
 - Side panels collapse into tabs.

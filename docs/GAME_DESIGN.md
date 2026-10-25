@@ -1,6 +1,6 @@
 # John Company Second Edition Digital Implementation Design
 
-This document is the entry point for an AI coding agent building a complete local desktop version of `John Company: Second Edition` from this project. It assumes hotseat play on one PC, asynchronous save-file handoff, and solo/two-player play through the Crown system.
+This document is the entry point for an AI coding agent building a complete browser version of `John Company: Second Edition` from this project. It assumes hotseat play on one computer, asynchronous save-file handoff, and solo/two-player play through the Crown system. The site is static (Astro + React) and served from a Cloudflare Worker; all game logic runs in the browser.
 
 ## Source Material In This Project
 
@@ -9,12 +9,12 @@ This document is the entry point for an AI coding agent building a complete loca
 - `John_Company_2e_Crown_Handbook_for_BGG_(prepress).pdf`: Crown Handbook for solo and two-player Crown AI behavior.
 - `John Company Game Board.pdf`: board source PDF.
 - `board_image-1.png`: board image, `4902 x 2481`, suitable as the rendered board background.
-- `index.html`: prior Gemini pass. Treat as a visual sketch only; it references missing `styles.css` and `js/app.js` and is not a working implementation.
-- `package.json`: minimal Electron package.
+- `public/images/board.webp`: the board image converted to WebP for the site (same `4902 x 2481` dimensions).
+- `NOTICE.md`: credits and licensing (game content CC BY-NC-SA 4.0, project code MIT).
 
 ## Product Goal
 
-Build a desktop GUI game that lets players complete an entire game of John Company Second Edition without the physical board.
+Build a browser game that lets players complete an entire game of John Company Second Edition without the physical board. It must run in current browsers on Linux, Windows, and macOS, including older machines such as an old Mac running Firefox 115 ESR or Safari 14+.
 
 Required play forms:
 
@@ -31,13 +31,15 @@ Do not hard-code one-off UI behavior. Implement the game as deterministic state 
 
 ## Recommended Stack
 
-Use the existing Electron intent, but rebuild the application around a maintainable TypeScript stack.
+The application is a static website. There is no server-side game logic yet; a Worker script (for example a Durable Object per game for server-held saves) may be added later.
 
-- Runtime: Electron desktop app.
-- Renderer: React + TypeScript + Vite.
-- Board rendering: SVG or Canvas overlay over `board_image-1.png` using the image's native `4902 x 2481` coordinate space.
+- Site: Astro (static output) with pages in `src/pages`.
+- Game screen: React + TypeScript, mounted on `/play/` as a `client:only="react"` island.
+- Hosting: Cloudflare Worker static assets (`wrangler.jsonc`), deployed with `npm run deploy`.
+- Browser targets: Chrome 87, Edge 88, Firefox 78, Safari 14 (set in `astro.config.mjs`).
+- Board rendering: SVG or Canvas overlay over the board image (`public/images/board.webp`, generated from `board_image-1.png`) using the image's native `4902 x 2481` coordinate space.
 - State engine: TypeScript pure reducers plus a thin store such as Zustand or Redux Toolkit.
-- Persistence: JSON save files with extension `.joco`.
+- Persistence: JSON save files with extension `.joco`, saved and loaded with browser file APIs (`src/ui/platform/files.ts`).
 - Tests: Vitest for engine reducers and rule fixtures.
 - Styling: CSS modules or a small utility system; preserve a readable period-inspired style without sacrificing clarity.
 
@@ -49,7 +51,8 @@ Use these top-level modules:
 - `src/data`: structured JSON/TS data for cards, offices, scenarios, regions, board coordinates, policies, Crown AI data.
 - `src/save`: save schema, migrations, import/export, validation, optional hidden-info protection.
 - `src/ui`: React screens, board components, action panels, modals, hotseat privacy curtain.
-- `src/electron`: file dialogs, native menu, app shell, safe preload APIs.
+- `src/ui/platform`: browser file handling (save picker or download, file input, clipboard).
+- `src/pages`, `src/layouts`, `src/styles`: Astro site pages (home, play, how to play, credits).
 - `src/tests`: rule tests and scenario fixtures.
 
 Renderer code must not mutate game state directly. All state changes go through engine commands.

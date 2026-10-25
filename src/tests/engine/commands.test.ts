@@ -1,5 +1,33 @@
 import { describe, expect, it } from "vitest";
-import { applyCommand, createNewGame, rollDie, type GameState } from "../../engine";
+import {
+  applyCommand,
+  chairmanHolder,
+  commanderOf,
+  createNewGame,
+  playerCourtShares,
+  playerOffices,
+  playerOfficers,
+  playerStockExchangeSlots,
+  playerWriters,
+  presidentOf,
+  rollDie,
+  type GameState,
+} from "../../engine";
+import {
+  withAssociatedRegion,
+  withCash,
+  withCommander,
+  withCourtShares,
+  withFilledOrder,
+  withHiringQueue,
+  withNoSupply,
+  withOffice,
+  withOfficers,
+  withOfficersInTraining,
+  withRegiments,
+  withWriterOnOrder,
+  withWriters,
+} from "../fixtures/builders";
 import {
   advanceThroughStarterFamily,
   advanceThroughStarterHiring,
@@ -192,7 +220,7 @@ describe("command application", () => {
     if (familyResult.ok) {
       expect(familyResult.state.players["player-red"].opportunityMarker).toBe("enlist-writer");
       expect(familyResult.state.players["player-red"].familyMembers.supply).toBe(17);
-      expect(familyResult.state.players["player-red"].familyMembers.writers.Bombay).toBe(1);
+      expect(playerWriters(familyResult.state, "player-red").Bombay).toBe(1);
       expect(familyResult.state.india.presidencies.Bombay.writers["player-red"]).toBe(1);
       expect(familyResult.state.pendingDecision.actor).toBe("player-blue");
       expect(familyResult.state.log.at(-1)?.summary).toBe("Red chose Enlist Writer.");
@@ -279,8 +307,8 @@ describe("command application", () => {
 
     expect(state.pendingDecision.actor).toBe("player-blue");
     expect(state.players["player-red"].familyMembers.supply).toBe(16);
-    expect(state.players["player-red"].familyMembers.writers.Bombay).toBe(1);
-    expect(state.players["player-red"].familyMembers.writers.Madras).toBe(1);
+    expect(playerWriters(state, "player-red").Bombay).toBe(1);
+    expect(playerWriters(state, "player-red").Madras).toBe(1);
     expect(state.players["player-red"].opportunityMarker).toBe("enlist-writer");
     expect(state.log.at(-1)?.summary).toBe("Red repeated Enlist Writer.");
   });
@@ -310,7 +338,7 @@ describe("command application", () => {
 
     expect(state.pendingDecision.actor).toBe("player-blue");
     expect(state.players["player-red"].familyMembers.supply).toBe(17);
-    expect(state.players["player-red"].familyMembers.writers.Bombay).toBe(1);
+    expect(playerWriters(state, "player-red").Bombay).toBe(1);
     expect(state.players["player-red"].opportunityMarker).toBe("enlist-writer");
     expect(state.log.at(-1)?.summary).toBe("Red finished Enlist Writer.");
   });
@@ -332,7 +360,7 @@ describe("command application", () => {
 
     expect(nextState.players["player-red"].cash).toBe(0);
     expect(nextState.players["player-red"].familyMembers.supply).toBe(17);
-    expect(nextState.players["player-red"].familyMembers.stockExchange).toEqual([
+    expect(playerStockExchangeSlots(nextState, "player-red")).toEqual([
       "stock-exchange-2",
     ]);
     expect(nextState.company.stockExchange[0].share).toEqual(
@@ -364,8 +392,8 @@ describe("command application", () => {
         owner: "player-red",
       }),
     ]);
-    expect(state.players["player-red"].familyMembers.courtShares).toBe(1);
-    expect(state.players["player-red"].familyMembers.stockExchange).toEqual([]);
+    expect(playerCourtShares(state, "player-red")).toBe(1);
+    expect(playerStockExchangeSlots(state, "player-red")).toEqual([]);
     expect(state.company.stockExchange[0].share).toBeUndefined();
   });
 
@@ -392,7 +420,7 @@ describe("command application", () => {
 
     expect(state.pendingDecision.actor).toBe("player-blue");
     expect(state.players["player-red"].cash).toBe(0);
-    expect(state.players["player-red"].familyMembers.stockExchange).toEqual([
+    expect(playerStockExchangeSlots(state, "player-red")).toEqual([
       "stock-exchange-2",
       "stock-exchange-3-left",
     ]);
@@ -428,8 +456,8 @@ describe("command application", () => {
     expect(state.phase).toBe("companyOperation");
     expect(state.company.debt).toBe(0);
     expect(state.company.court.filter((share) => share.owner === "player-yellow")).toHaveLength(2);
-    expect(state.players["player-yellow"].familyMembers.courtShares).toBe(2);
-    expect(state.players["player-yellow"].familyMembers.stockExchange).toEqual([]);
+    expect(playerCourtShares(state, "player-yellow")).toBe(2);
+    expect(playerStockExchangeSlots(state, "player-yellow")).toEqual([]);
   });
 
   it("purchases shipyards, workshops, and luxuries with their immediate effects", () => {
@@ -447,8 +475,9 @@ describe("command application", () => {
     expect(shipyardState.company.ships[0]).toEqual(
       expect.objectContaining({
         id: "ship-shipyard-01",
-        owner: "player-red",
-        location: expect.stringContaining("shipyard:"),
+        kind: "player",
+        shipyardCardId: "shipyard-01",
+        location: "shipyard",
       }),
     );
 
@@ -513,10 +542,6 @@ describe("command application", () => {
         { id: "share-red-2", owner: "player-red" },
         { id: "share-blue-1", owner: "player-blue" },
       ],
-      playerCourtShares: {
-        "player-red": 2,
-        "player-blue": 1,
-      },
     });
 
     state = advanceThroughFamilyFromSetup(state, "chairman-election");
@@ -548,9 +573,9 @@ describe("command application", () => {
         created: true,
       }),
     );
-    expect(state.players["player-red"].familyMembers.chairmanShare).toBe(true);
-    expect(state.players["player-red"].familyMembers.courtShares).toBe(1);
-    expect(state.players["player-red"].familyMembers.offices).toContain("chairman");
+    expect((chairmanHolder(state) === "player-red")).toBe(true);
+    expect(playerCourtShares(state, "player-red")).toBe(1);
+    expect(playerOffices(state, "player-red")).toContain("chairman");
     expect(state.company.court).toHaveLength(2);
     expect(state.company.vacantOffices).toEqual([]);
     expect(state.log.at(-1)?.summary).toBe("Red was elected Chairman.");
@@ -564,10 +589,6 @@ describe("command application", () => {
           { id: "share-red-2", owner: "player-red" },
           { id: "share-blue-1", owner: "player-blue" },
         ],
-        playerCourtShares: {
-          "player-red": 2,
-          "player-blue": 1,
-        },
       }),
       "chairman-election-illegal",
     );
@@ -603,10 +624,6 @@ describe("command application", () => {
           { id: "share-red-1", owner: "player-red" },
           { id: "share-blue-1", owner: "player-blue" },
         ],
-        playerCourtShares: {
-          "player-red": 1,
-          "player-blue": 1,
-        },
       }),
       "chairman-election-contested",
     );
@@ -642,8 +659,8 @@ describe("command application", () => {
 
     expect(state.phase).toBe("companyOperation");
     expect(state.company.offices.chairman.holder).toBe("player-blue");
-    expect(state.players["player-blue"].familyMembers.chairmanShare).toBe(true);
-    expect(state.players["player-blue"].familyMembers.courtShares).toBe(0);
+    expect((chairmanHolder(state) === "player-blue")).toBe(true);
+    expect(playerCourtShares(state, "player-blue")).toBe(0);
     expect(state.company.court).toEqual([
       expect.objectContaining({
         id: "share-red-1",
@@ -656,7 +673,6 @@ describe("command application", () => {
     const state = advanceThroughFamilyFromSetup(
       createGameWithVacantOffice("chairman", {
         courtShares: [],
-        playerCourtShares: {},
       }),
       "chairman-election-empty-court",
     );
@@ -715,9 +731,9 @@ describe("command application", () => {
         created: true,
       }),
     );
-    expect(state.players["player-blue"].familyMembers.writers.Bombay).toBe(0);
+    expect(playerWriters(state, "player-blue").Bombay).toBe(0);
     expect(state.india.presidencies.Bombay.writers["player-blue"]).toBe(0);
-    expect(state.players["player-blue"].familyMembers.offices).toContain("manager-of-shipping");
+    expect(playerOffices(state, "player-blue")).toContain("manager-of-shipping");
     expect(state.company.vacantOffices).toEqual([]);
     expect(state.log.at(-1)?.summary).toBe("Blue filled Manager of Shipping.");
   });
@@ -823,8 +839,8 @@ describe("command application", () => {
       }),
     );
     expect(state.company.armies.Bengal.commander).toBeUndefined();
-    expect(state.players["player-blue"].familyMembers.commanders.Bengal).toBe(false);
-    expect(state.players["player-blue"].familyMembers.offices).toContain("military-affairs");
+    expect((commanderOf(state, "Bengal") === "player-blue")).toBe(false);
+    expect(playerOffices(state, "player-blue")).toContain("military-affairs");
     expect(state.company.vacantOffices).toEqual([]);
     expect(state.log.at(-1)?.summary).toBe("Blue filled Military Affairs.");
   });
@@ -859,7 +875,7 @@ describe("command application", () => {
       actorId: "player-red",
     });
 
-    expect(state.players["player-blue"].familyMembers.officers.Madras.exhausted).toBe(0);
+    expect(playerOfficers(state, "player-blue").Madras.exhausted).toBe(0);
     expect(state.company.armies.Madras.officers["player-blue"].exhausted).toBe(0);
     expect(state.company.offices["military-affairs"].holder).toBe("player-blue");
   });
@@ -979,8 +995,8 @@ describe("command application", () => {
         created: true,
       }),
     );
-    expect(state.india.presidencies.Bombay.president).toBe("player-blue");
-    expect(state.players["player-blue"].familyMembers.writers.Bombay).toBe(0);
+    expect(presidentOf(state, "Bombay")).toBe("player-blue");
+    expect(playerWriters(state, "player-blue").Bombay).toBe(0);
     expect(state.india.presidencies.Bombay.writers["player-blue"]).toBe(0);
     expect(state.company.vacantOffices).toEqual([]);
   });
@@ -1029,9 +1045,9 @@ describe("command application", () => {
         fatigue: 0,
       }),
     );
-    expect(state.india.presidencies.Bombay.president).toBe("player-blue");
-    expect(state.players["player-blue"].familyMembers.offices).toContain("president-bombay");
-    expect(state.players["player-blue"].familyMembers.offices).not.toContain("governor-bombay");
+    expect(presidentOf(state, "Bombay")).toBe("player-blue");
+    expect(playerOffices(state, "player-blue")).toContain("president-bombay");
+    expect(playerOffices(state, "player-blue")).not.toContain("governor-bombay");
     expect(state.company.vacantOffices).toEqual(["governor-bombay"]);
   });
 
@@ -1106,19 +1122,22 @@ describe("command application", () => {
     });
   });
 
-  it("lets a President hire a regional order writer as Governor", () => {
+  it("lets a President hire a writer from their Presidency as Governor", () => {
+    // Governor card backs: "Chosen by: Its President. Candidates: Consider writers and officers
+    // in this Presidency."
     let state = advanceThroughFamilyFromSetup(
       createGameWithPresidentAndGovernorVacancy("governor-bombay", {
         presidentOfficeId: "president-bombay",
         president: "player-red",
         regionId: "bombay",
-        regionalWriterOwner: "player-blue",
-        regionalWriterPresidency: "Bombay",
+        regionPresidency: "Bombay",
+        writerOwner: "player-blue",
+        writerPresidency: "Bombay",
+        otherOfficerOwner: "player-yellow",
+        otherOfficerArmy: "Madras",
       }),
-      "hire-governor-regional-writer",
+      "hire-governor-presidency-writer",
     );
-
-    const orderId = state.india.regions.bombay.orders[0].id;
 
     expect(state.phase).toBe("hiring");
     expect(state.pendingDecision.step).toBe("hiring.hireOffice");
@@ -1130,9 +1149,7 @@ describe("command application", () => {
           officeId: "governor-bombay",
           candidateId: "player-blue",
           source: {
-            type: "regionalWriter",
-            regionId: "bombay",
-            orderId,
+            type: "writer",
             presidency: "Bombay",
           },
         },
@@ -1152,17 +1169,18 @@ describe("command application", () => {
         created: true,
       }),
     );
-    expect(state.india.regions.bombay.orders[0].writer).toBeUndefined();
-    expect(state.players["player-blue"].familyMembers.offices).toContain("governor-bombay");
+    expect(playerWriters(state, "player-blue").Bombay).toBe(0);
+    expect(playerOffices(state, "player-blue")).toContain("governor-bombay");
     expect(state.company.vacantOffices).toEqual([]);
   });
 
-  it("hires an associated Presidency officer as Governor when no regional writer is available", () => {
+  it("offers officers in the associated Presidency's Army as Governor candidates", () => {
     let state = advanceThroughFamilyFromSetup(
       createGameWithPresidentAndGovernorVacancy("governor-mysore", {
         presidentOfficeId: "president-madras",
         president: "player-red",
         regionId: "mysore",
+        regionPresidency: "Madras",
         officerOwner: "player-blue",
         officerArmy: "Madras",
         officerReadiness: "ready",
@@ -1193,10 +1211,36 @@ describe("command application", () => {
       actorId: "player-red",
     });
 
-    expect(state.players["player-blue"].familyMembers.officers.Madras.ready).toBe(0);
-    expect(state.company.armies.Madras.officers["player-blue"].ready).toBe(0);
-    expect(state.players["player-yellow"].familyMembers.officers.Bombay.ready).toBe(1);
+    expect(playerOfficers(state, "player-blue").Madras.ready).toBe(0);
+    expect(playerOfficers(state, "player-yellow").Bombay.ready).toBe(1);
     expect(state.company.offices["governor-mysore"].holder).toBe("player-blue");
+  });
+
+  it("has a conquered region's Governor hired by the President whose Army conquered it", () => {
+    // Regions join a Presidency on conquest (p.23), so Hyderabad taken by the Army of Bombay is
+    // governed from Bombay, not Madras.
+    const state = advanceThroughFamilyFromSetup(
+      createGameWithPresidentAndGovernorVacancy("governor-hyderabad", {
+        presidentOfficeId: "president-bombay",
+        president: "player-yellow",
+        regionId: "hyderabad",
+        regionPresidency: "Bombay",
+        writerOwner: "player-blue",
+        writerPresidency: "Bombay",
+        officerOwner: "player-red",
+        officerArmy: "Madras",
+      }),
+      "hire-governor-conquered-region",
+    );
+
+    expect(state.pendingDecision.actor).toBe("player-yellow");
+    expect(state.pendingDecision.legalCommands.map((command) => command.payload)).toEqual([
+      {
+        officeId: "governor-hyderabad",
+        candidateId: "player-blue",
+        source: { type: "writer", presidency: "Bombay" },
+      },
+    ]);
   });
 
   it("requests nepotism consent for Governor self-hires", () => {
@@ -1205,8 +1249,9 @@ describe("command application", () => {
         presidentOfficeId: "president-bengal",
         president: "player-red",
         regionId: "bengal",
-        regionalWriterOwner: "player-red",
-        regionalWriterPresidency: "Bengal",
+        regionPresidency: "Bengal",
+        writerOwner: "player-red",
+        writerPresidency: "Bengal",
       }),
       "hire-governor-self-hire",
     );
@@ -1228,9 +1273,7 @@ describe("command application", () => {
             officeId: "governor-bengal",
             candidateId: "player-red",
             source: {
-              type: "regionalWriter",
-              regionId: "bengal",
-              orderId: "bengal-order-test",
+              type: "writer",
               presidency: "Bengal",
             },
           },
@@ -1245,8 +1288,9 @@ describe("command application", () => {
         presidentOfficeId: "president-bombay",
         president: undefined,
         regionId: "punjab",
-        regionalWriterOwner: "player-blue",
-        regionalWriterPresidency: "Bombay",
+        regionPresidency: "Bombay",
+        writerOwner: "player-blue",
+        writerPresidency: "Bombay",
       }),
       "hire-governor-no-president",
     );
@@ -1257,46 +1301,24 @@ describe("command application", () => {
     });
   });
 
-  it("rejects regional writer payloads from the wrong Governor region", () => {
+  it("does not offer writers still sitting on orders as Governor candidates", () => {
+    // Writers return to their Presidency box during Refresh, before the next Hiring phase.
     const state = advanceThroughFamilyFromSetup(
-      createGameWithPresidentAndGovernorVacancy("governor-bombay", {
-        presidentOfficeId: "president-bombay",
-        president: "player-red",
-        regionId: "bombay",
-        regionalWriterOwner: "player-blue",
-        regionalWriterPresidency: "Bombay",
-      }),
-      "hire-governor-wrong-region",
+      withWriterOnOrder(
+        createGameWithPresidentAndGovernorVacancy("governor-bombay", {
+          presidentOfficeId: "president-bombay",
+          president: "player-red",
+          regionId: "bombay",
+          regionPresidency: "Bombay",
+        }),
+        "bombay-north-3",
+        "player-blue",
+        "Bombay",
+      ),
+      "hire-governor-order-writer",
     );
 
-    const result = applyCommand(state, {
-      id: "command-hire-governor-wrong-region",
-      gameId: state.gameId,
-      actorId: "player-red",
-      decisionId: state.pendingDecision.id,
-      type: "hiring.hireOffice",
-      payload: {
-        officeId: "governor-bombay",
-        candidateId: "player-blue",
-        source: {
-          type: "regionalWriter",
-          regionId: "madras",
-          orderId: state.india.regions.madras.orders[0].id,
-          presidency: "Madras",
-        },
-      },
-      clientTimestamp: "2026-06-13T12:04:00.000Z",
-    });
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.errors).toContainEqual(
-        expect.objectContaining({
-          code: "ILLEGAL_HIRING_CHOICE",
-          field: "payload",
-        }),
-      );
-    }
+    expect(state.pendingDecision.step).toBe("hiring.skipVacancy");
   });
 
   it("resolves lower-numbered vacancies before Chairman-hired writer offices", () => {
@@ -1382,7 +1404,7 @@ describe("command application", () => {
         holder: "player-blue",
         vacant: false,
         fatigue: 2,
-        familyMemberId: "officeholder-manager-of-shipping",
+        familyMemberId: "manager-of-shipping-test",
       }),
     );
     expect(state.company.offices["manager-of-shipping"]).toEqual(
@@ -1391,8 +1413,8 @@ describe("command application", () => {
         fatigue: 0,
       }),
     );
-    expect(state.players["player-blue"].familyMembers.offices).toContain("director-of-trade");
-    expect(state.players["player-blue"].familyMembers.offices).not.toContain("manager-of-shipping");
+    expect(playerOffices(state, "player-blue")).toContain("director-of-trade");
+    expect(playerOffices(state, "player-blue")).not.toContain("manager-of-shipping");
     expect(state.company.vacantOffices).toEqual(["manager-of-shipping"]);
     expect(state.pendingDecision.step).toBe("hiring.skipVacancy");
     expect(state.pendingDecision.legalCommands[0]?.payload).toEqual({
@@ -1440,9 +1462,9 @@ describe("command application", () => {
         fatigue: 0,
       }),
     );
-    expect(state.players["player-blue"].familyMembers.writers.Madras).toBe(0);
+    expect(playerWriters(state, "player-blue").Madras).toBe(0);
     expect(state.india.presidencies.Madras.writers["player-blue"]).toBe(0);
-    expect(state.players["player-blue"].familyMembers.offices).toContain("director-of-trade");
+    expect(playerOffices(state, "player-blue")).toContain("director-of-trade");
     expect(state.company.vacantOffices).toEqual([]);
     expect(state.log.at(-1)?.summary).toBe("Blue filled Director of Trade.");
   });
@@ -1493,8 +1515,8 @@ describe("command application", () => {
         fatigue: 0,
       }),
     );
-    expect(state.players["player-blue"].familyMembers.offices).toContain("governor-general");
-    expect(state.players["player-blue"].familyMembers.offices).not.toContain("manager-of-shipping");
+    expect(playerOffices(state, "player-blue")).toContain("governor-general");
+    expect(playerOffices(state, "player-blue")).not.toContain("manager-of-shipping");
     expect(state.company.vacantOffices).toEqual(["manager-of-shipping"]);
   });
 
@@ -1537,9 +1559,9 @@ describe("command application", () => {
         fatigue: 0,
       }),
     );
-    expect(state.players["player-blue"].familyMembers.writers.Bengal).toBe(0);
+    expect(playerWriters(state, "player-blue").Bengal).toBe(0);
     expect(state.india.presidencies.Bengal.writers["player-blue"]).toBe(0);
-    expect(state.players["player-blue"].familyMembers.offices).toContain("governor-general");
+    expect(playerOffices(state, "player-blue")).toContain("governor-general");
     expect(state.company.vacantOffices).toEqual([]);
   });
 
@@ -1594,9 +1616,9 @@ describe("command application", () => {
         created: true,
       }),
     );
-    expect(state.players["player-red"].familyMembers.writers.Bengal).toBe(0);
+    expect(playerWriters(state, "player-red").Bengal).toBe(0);
     expect(state.india.presidencies.Bengal.writers["player-red"]).toBe(0);
-    expect(state.players["player-red"].familyMembers.offices).toContain("director-of-trade");
+    expect(playerOffices(state, "player-red")).toContain("director-of-trade");
     expect(state.company.vacantOffices).toEqual([]);
     expect(state.log.at(-1)?.summary).toBe(
       "Nepotism consent accepted; Red filled Director of Trade.",
@@ -1635,9 +1657,9 @@ describe("command application", () => {
 
     expect(state.phase).toBe("companyOperation");
     expect(state.company.offices["superintendent-of-trade-in-china"].vacant).toBe(true);
-    expect(state.players["player-red"].familyMembers.writers.Bengal).toBe(1);
+    expect(playerWriters(state, "player-red").Bengal).toBe(1);
     expect(state.india.presidencies.Bengal.writers["player-red"]).toBe(1);
-    expect(state.players["player-red"].familyMembers.offices).not.toContain(
+    expect(playerOffices(state, "player-red")).not.toContain(
       "superintendent-of-trade-in-china",
     );
     expect(state.company.vacantOffices).toEqual([]);
@@ -1773,6 +1795,7 @@ describe("command application", () => {
         debtTaken: 1,
         allocations: {
           "manager-of-shipping": 4,
+          "president-bombay": 1,
         },
       },
     });
@@ -1780,13 +1803,14 @@ describe("command application", () => {
     expect(state.company.offices.chairman).toEqual(
       expect.objectContaining({
         holder: "player-red",
-        familyMemberId: "chairman-share-test",
         actedThisTurn: true,
       }),
     );
     expect(state.company.debt).toBe(1);
-    expect(state.company.balance).toBe(1);
-    expect(state.company.offices["manager-of-shipping"].treasury).toBe(4);
+    expect(state.company.balance).toBe(0);
+    // 1710 puts £3 in every Company treasury at setup.
+    expect(state.company.offices["manager-of-shipping"].treasury).toBe(7);
+    expect(state.company.offices["president-bombay"].treasury).toBe(4);
     expect(state.pendingDecision.step).toBe("companyOperation.skipOffice");
     expect(state.pendingDecision.legalCommands[0]?.payload).toEqual({
       officeId: "director-of-trade",
@@ -1796,8 +1820,8 @@ describe("command application", () => {
       expect.objectContaining({
         debtTaken: 1,
         debtProceeds: 5,
-        allocatedTotal: 4,
-        endingBalance: 1,
+        allocatedTotal: 5,
+        endingBalance: 0,
       }),
     );
 
@@ -1895,29 +1919,25 @@ describe("command application", () => {
           total: 1,
         },
       },
-      assumption:
-        "A shipyard pays if its matching ship is owned by the same player and located at shipyard:<enterprise id>.",
     });
   });
 
   it("pays Revenue expenses from Company Balance", () => {
+    // p.27: £1 per Debt, per regiment and officer in an Army, and per ship in the sea zones.
     let state = createRevenueState({
-      balance: 10,
+      balance: 18,
       debt: 2,
       bombayRegiments: { ready: 2, exhausted: 1 },
       bombayOfficerStack: { ready: 1, exhausted: 1 },
       ships: [
+        { id: "company-ship-bombay", kind: "company", location: "west-indian", fatigued: false },
+        { id: "company-ship-china", kind: "company", location: "china", fatigued: false },
         {
-          id: "company-ship-bombay",
-          owner: "company",
-          location: "bombay-sea-zone",
-          exhausted: false,
-        },
-        {
-          id: "company-ship-workshop",
-          owner: "company",
-          location: "shipyard:ignored",
-          exhausted: false,
+          id: "ship-shipyard-03",
+          kind: "player",
+          shipyardCardId: "shipyard-03",
+          location: "shipyard",
+          fatigued: false,
         },
       ],
     });
@@ -1933,42 +1953,40 @@ describe("command application", () => {
     expect(state.pendingDecision.step).toBe("revenue.chooseDividends");
     expect(state.pendingDecision.actor).toBe("system");
     expectSaveRoundTripPreservesPendingDecision(state);
-    expect(state.company.balance).toBe(2);
+    expect(state.company.balance).toBe(9);
     expect(state.company.debt).toBe(2);
-    expect(state.log.at(-1)?.summary).toBe("Revenue paid £8 in Company expenses.");
+    expect(state.company.standing).toBe(3);
+    expect(state.log.at(-1)?.summary).toBe("Revenue paid £9 in Company expenses.");
     expect(state.log.at(-1)?.details).toEqual(
       expect.objectContaining({
         emergencyLoans: 0,
-        endingBalance: 2,
+        endingBalance: 9,
         publicEmbarrassmentStandingLoss: 0,
+        expectationsStandingLoss: 1,
         expenses: {
           debt: 2,
           armies: 5,
-          ships: 1,
-          total: 8,
+          ships: 2,
+          total: 9,
         },
       }),
     );
   });
 
-  it("takes emergency loans when Revenue expenses exceed Company Balance", () => {
+  it("takes emergency loans, zeroes the Balance, and lowers Standing once for 1-2 loans", () => {
     let state = createRevenueState({
       balance: 1,
       debt: 1,
       bombayRegiments: { ready: 3, exhausted: 0 },
       bombayOfficerStack: { ready: 1, exhausted: 0 },
       ships: [
+        { id: "company-ship-madras", kind: "company", location: "south-indian", fatigued: true },
         {
-          id: "company-ship-madras",
-          owner: "company",
-          location: "madras-sea-zone",
-          exhausted: true,
-        },
-        {
-          id: "player-ship-bengal",
-          owner: "player-red",
-          location: "bengal-sea-zone",
-          exhausted: false,
+          id: "ship-shipyard-04",
+          kind: "player",
+          shipyardCardId: "shipyard-04",
+          location: "east-indian",
+          fatigued: false,
         },
       ],
     });
@@ -1978,17 +1996,21 @@ describe("command application", () => {
       actorId: "system",
     });
 
+    // Expenses £7 against £1: two £5 loans cover it; the £4 surplus is lost.
     expect(state.phase).toBe("revenue");
     expect(state.pendingDecision.step).toBe("revenue.chooseDividends");
-    expect(state.company.balance).toBe(4);
+    expect(state.company.balance).toBe(0);
     expect(state.company.debt).toBe(3);
-    expect(state.company.standing).toBe(-2);
+    // Standing 4 (£10): -1 for 1-2 loans, then -1 because £0 is below the new £8 Expectations.
+    expect(state.company.standing).toBe(2);
     expect(state.log.at(-1)?.details).toEqual(
       expect.objectContaining({
         emergencyLoans: 2,
         startingBalance: 1,
-        endingBalance: 4,
-        publicEmbarrassmentStandingLoss: 2,
+        endingBalance: 0,
+        publicEmbarrassmentStandingLoss: 1,
+        expectations: 8,
+        expectationsStandingLoss: 1,
         expenses: {
           debt: 1,
           armies: 4,
@@ -1999,11 +2021,33 @@ describe("command application", () => {
     );
   });
 
+  it("lowers Standing twice for three or more emergency loans and caps Debt at 8", () => {
+    let state = createRevenueState({
+      balance: 0,
+      debt: 7,
+      standing: 6,
+      bombayRegiments: { ready: 6, exhausted: 0 },
+    });
+
+    state = applyFirstLegalCommand(state, {
+      commandId: "command-revenue-three-loans",
+      actorId: "system",
+    });
+
+    // Expenses £13: three loans. Debt stops at the end of the track (8).
+    expect(state.company.debt).toBe(8);
+    expect(state.company.balance).toBe(0);
+    // Standing 6 (£14): -2 for 3+ loans to 4 (£10), then -1 for missing Expectations.
+    expect(state.company.standing).toBe(3);
+    expect(state.log.at(-1)?.details).toEqual(
+      expect.objectContaining({ emergencyLoans: 3, publicEmbarrassmentStandingLoss: 2, debtAfterLoans: 8 }),
+    );
+  });
+
   it("pays Revenue dividends to Company shareholders and advances Standing above Expectations", () => {
     let state = createRevenueState({
       balance: 8,
       debt: 0,
-      expectations: 3,
       standing: 1,
       courtShares: ["player-red", "player-blue"],
       chairman: "player-red",
@@ -2018,6 +2062,7 @@ describe("command application", () => {
     expect(state.pendingDecision.actor).toBe("player-red");
     expectSaveRoundTripPreservesPendingDecision(state);
 
+    // Two dividends, each £1 per share including the Chairman's: £6 > £4 Expectations (p.27).
     state = applyCommandOrThrow(state, {
       id: "command-revenue-pay-dividends",
       actorId: "player-red",
@@ -2042,68 +2087,61 @@ describe("command application", () => {
           "player-red": 4,
           "player-blue": 2,
         },
+        expectations: 4,
         standingGain: 1,
       }),
     );
   });
 
-  it("marks the Company failed when Revenue Standing pressure is not recovered by dividends", () => {
+  it("does not advance Standing when dividends only match Expectations", () => {
+    let state = createRevenueState({
+      balance: 6,
+      debt: 0,
+      standing: 1,
+      courtShares: ["player-red", "player-blue"],
+    });
+
+    state = applyFirstLegalCommand(state, { commandId: "command-revenue-match", actorId: "system" });
+    state = applyCommandOrThrow(state, {
+      id: "command-revenue-match-dividends",
+      actorId: "system",
+      type: "revenue.chooseDividends",
+      payload: { amountPerShare: 2 },
+    });
+
+    expect(state.company.standing).toBe(1);
+  });
+
+  it("fails the Company as soon as Standing reaches the leftmost space and goes to Final Scoring", () => {
+    // Standing 1 (£4): one emergency loan drops it onto the failure space (p.27, p.9).
     let state = createRevenueState({
       balance: 0,
       debt: 2,
-      expectations: 1,
       standing: 1,
       courtShares: ["player-yellow"],
     });
 
     state = applyFirstLegalCommand(state, {
-      commandId: "command-revenue-failure-pressure",
+      commandId: "command-revenue-failure",
       actorId: "system",
     });
 
-    expect(state.company.balance).toBe(3);
-    expect(state.company.debt).toBe(3);
     expect(state.company.standing).toBe(0);
-
-    state = applyCommandOrThrow(state, {
-      id: "command-revenue-no-dividends-fails",
-      actorId: "system",
-      type: "revenue.chooseDividends",
-      payload: { amountPerShare: 0 },
-    });
-
-    expect(state.phase).toBe("eventsInIndia");
-    expect(state.company.standing).toBe(0);
-    expect(state.company.failed).toBe(false);
-
-    state = createRevenueState({
-      balance: 0,
-      debt: 2,
-      expectations: 4,
-      standing: 1,
-      courtShares: ["player-yellow"],
-    });
-
-    state = applyFirstLegalCommand(state, {
-      commandId: "command-revenue-failure-pressure-expectations",
-      actorId: "system",
-    });
-
-    expect(state.company.standing).toBe(-1);
-
-    state = applyCommandOrThrow(state, {
-      id: "command-revenue-no-dividends-fails-after-expectations",
-      actorId: "system",
-      type: "revenue.chooseDividends",
-      payload: { amountPerShare: 0 },
-    });
-
     expect(state.company.failed).toBe(true);
-    expect(state.log.at(-1)?.details).toEqual(
-      expect.objectContaining({
-        failed: true,
-      }),
-    );
+    expect(state.phase).toBe("finalScoring");
+    expect(state.pendingDecision.step).toBe("finalScoring.confirm");
+    expect(state.log.at(-1)?.summary).toBe("The Company failed during Revenue.");
+  });
+
+  it("starts 1710 on the £10 Standing space, so a bad Revenue does not end the game", () => {
+    let state = createRevenueState({ balance: 0, debt: 0, bombayRegiments: { ready: 1, exhausted: 0 } });
+
+    expect(state.company.standing).toBe(4);
+    state = applyFirstLegalCommand(state, { commandId: "command-revenue-first-turn", actorId: "system" });
+
+    expect(state.company.failed).toBe(false);
+    expect(state.company.standing).toBe(2);
+    expect(state.phase).toBe("revenue");
   });
 
   it("rejects Revenue dividends above Company Balance", () => {
@@ -2188,7 +2226,7 @@ describe("command application", () => {
     const cleanedOrders = state.india.regions.bombay.orders;
     expect(state.phase).toBe("londonSeason");
     expect(state.turn).toBe(2);
-    expect(state.players["player-red"].familyMembers.writers.Bombay).toBe(1);
+    expect(playerWriters(state, "player-red").Bombay).toBe(1);
     expect(state.india.presidencies.Bombay.writers["player-red"]).toBe(1);
     expect(cleanedOrders[0].writer).toBeUndefined();
     expect(cleanedOrders[0].filledThisTurnBy).toEqual([]);
@@ -2200,10 +2238,10 @@ describe("command application", () => {
           {
             playerId: "player-red",
             presidency: "Bombay",
-            orderId: "bombay-order-1",
+            orderId: "bombay-north-3",
           },
         ],
-        cleanedOrderIds: ["bombay-order-1", "bombay-order-2"],
+        cleanedOrderIds: ["bombay-north-3", "bombay-home-4"],
       }),
     );
   });
@@ -2226,7 +2264,7 @@ describe("command application", () => {
       exhausted: 0,
     });
     expect(state.company.armies.Madras.regiments).toEqual({
-      ready: 0,
+      ready: 1,
       exhausted: 0,
     });
     expect(state.log.at(-1)?.details).toEqual(
@@ -2299,10 +2337,10 @@ describe("command application", () => {
     expect(state.phase).toBe("family");
     expect(state.pendingDecision.step).toBe("family.chooseAction");
     expect(state.pendingDecision.actor).toBe("player-red");
-    expect(state.log.at(-1)?.summary).toBe("London Season skipped on turn 1.");
+    expect(state.log.at(-1)?.summary).toBe("London Season skipped on the scenario's first turn (turn 1).");
     expect(state.log.at(-1)?.details).toEqual(
       expect.objectContaining({
-        note: "Rules skip London Season on the first turn.",
+        note: "Rules skip London Season on the game's first turn (p.11).",
       }),
     );
   });
@@ -2323,8 +2361,10 @@ describe("command application", () => {
     });
 
     expect(state.phase).toBe("family");
-    expect(state.players["player-blue"].familyMembers.pensioners).toBe(1);
-    expect(state.players["player-blue"].familyMembers.offices).not.toContain("manager-of-shipping");
+    // Prize retirements are not implemented, so the pensioner goes straight back to supply (p.12).
+    expect(state.players["player-blue"].familyMembers.pensioners).toBe(0);
+    expect(state.players["player-blue"].familyMembers.supply).toBe(18);
+    expect(playerOffices(state, "player-blue")).not.toContain("manager-of-shipping");
     expect(state.company.offices["manager-of-shipping"]).toEqual(
       expect.objectContaining({
         vacant: true,
@@ -2341,8 +2381,9 @@ describe("command application", () => {
           expect.objectContaining({
             officeId: "manager-of-shipping",
             holder: "player-blue",
-            fatigue: 5,
+            fatigueBefore: 4,
             stressModifier: 0,
+            outcome: "retired",
           }),
         ],
       }),
@@ -2362,8 +2403,8 @@ describe("command application", () => {
       actorId: "system",
     });
 
-    expect(state.players["player-red"].familyMembers.pensioners).toBe(1);
-    expect(state.players["player-red"].familyMembers.chairmanShare).toBe(false);
+    expect(state.players["player-red"].familyMembers.supply).toBe(18);
+    expect(chairmanHolder(state)).toBeUndefined();
     expect(state.company.offices.chairman.vacant).toBe(true);
     expect(state.log.at(-1)?.details).toEqual(
       expect.objectContaining({
@@ -2371,8 +2412,9 @@ describe("command application", () => {
           expect.objectContaining({
             officeId: "chairman",
             holder: "player-red",
-            fatigue: 4,
+            fatigueBefore: 3,
             stressModifier: 1,
+            outcome: "retired",
           }),
         ],
       }),
@@ -2458,45 +2500,17 @@ function createGameWithVacantOffice(
   officeId: string,
   options: {
     courtShares?: Array<{ id: string; owner: string }>;
-    playerCourtShares?: Record<string, number>;
   } = {},
 ): GameState {
-  const state = createHotseatGame({
+  let state = createHotseatGame({
     seed: `hiring-${officeId}`,
     gameId: `game-hiring-${officeId}`,
   });
+  state = withOffice(state, officeId, undefined);
+  if (options.courtShares) state = withCourtShares(state, options.courtShares);
 
-  return {
-    ...state,
-    players: Object.fromEntries(
-      Object.entries(state.players).map(([playerId, player]) => [
-        playerId,
-        {
-          ...player,
-          familyMembers: {
-            ...player.familyMembers,
-            courtShares: options.playerCourtShares?.[playerId] ?? player.familyMembers.courtShares,
-          },
-        },
-      ]),
-    ),
-    company: {
-      ...state.company,
-      court: options.courtShares ?? state.company.court,
-      offices: {
-        ...state.company.offices,
-        [officeId]: {
-          id: officeId,
-          treasury: 0,
-          fatigue: 0,
-          vacant: true,
-          created: true,
-          actedThisTurn: false,
-        },
-      },
-      vacantOffices: [officeId],
-    },
-  };
+  // Family actions in these tests should not place pieces that change candidate pools.
+  return withHiringQueue(withNoSupply(state), [officeId]);
 }
 
 function createGameWithChairmanAndWriterVacancy(
@@ -2506,62 +2520,11 @@ function createGameWithChairmanAndWriterVacancy(
     writerPresidency: "Bombay" | "Madras" | "Bengal";
   },
 ): GameState {
-  const state = createGameWithVacantOffice(officeId);
+  let state = createGameWithVacantOffice(officeId);
+  state = withOffice(state, "chairman", "player-red");
+  state = withWriters(state, options.writerOwner, options.writerPresidency, 1);
 
-  return {
-    ...state,
-    players: Object.fromEntries(
-      Object.entries(state.players).map(([playerId, player]) => [
-        playerId,
-        {
-          ...player,
-          familyMembers: {
-            ...player.familyMembers,
-            supply: 0,
-            chairmanShare: playerId === "player-red",
-            writers: {
-              ...player.familyMembers.writers,
-              [options.writerPresidency]: playerId === options.writerOwner ? 1 : 0,
-            },
-            offices:
-              playerId === "player-red"
-                ? [...new Set([...player.familyMembers.offices, "chairman"])]
-                : player.familyMembers.offices,
-          },
-        },
-      ]),
-    ),
-    company: {
-      ...state.company,
-      offices: {
-        ...state.company.offices,
-        chairman: {
-          id: "chairman",
-          holder: "player-red",
-          familyMemberId: "chairman-share-test",
-          treasury: 0,
-          fatigue: 0,
-          vacant: false,
-          created: true,
-          actedThisTurn: false,
-        },
-      },
-      vacantOffices: [officeId],
-    },
-    india: {
-      ...state.india,
-      presidencies: {
-        ...state.india.presidencies,
-        [options.writerPresidency]: {
-          ...state.india.presidencies[options.writerPresidency],
-          writers: {
-            ...state.india.presidencies[options.writerPresidency].writers,
-            [options.writerOwner]: 1,
-          },
-        },
-      },
-    },
-  };
+  return withHiringQueue(state, [officeId]);
 }
 
 function createGameWithChairmanAndOfficeholderVacancy(
@@ -2572,61 +2535,11 @@ function createGameWithChairmanAndOfficeholderVacancy(
     fatigue: number;
   },
 ): GameState {
-  const state = createGameWithChairmanAndWriterVacancy(officeId, {
-    writerOwner: "player-yellow",
-    writerPresidency: "Madras",
-  });
+  let state = createGameWithVacantOffice(officeId);
+  state = withOffice(state, "chairman", "player-red");
+  state = withOffice(state, options.sourceOfficeId, options.officeholder, { fatigue: options.fatigue });
 
-  return {
-    ...state,
-    players: Object.fromEntries(
-      Object.entries(state.players).map(([playerId, player]) => [
-        playerId,
-        {
-          ...player,
-          familyMembers: {
-            ...player.familyMembers,
-            writers: {
-              Bombay: 0,
-              Madras: 0,
-              Bengal: 0,
-            },
-            offices:
-              playerId === options.officeholder
-                ? [...new Set([...player.familyMembers.offices, options.sourceOfficeId])]
-                : player.familyMembers.offices,
-          },
-        },
-      ]),
-    ),
-    company: {
-      ...state.company,
-      offices: {
-        ...state.company.offices,
-        [options.sourceOfficeId]: {
-          id: options.sourceOfficeId,
-          holder: options.officeholder,
-          familyMemberId: `officeholder-${options.sourceOfficeId}`,
-          treasury: 0,
-          fatigue: options.fatigue,
-          vacant: false,
-          created: true,
-          actedThisTurn: false,
-        },
-      },
-      vacantOffices: [officeId],
-    },
-    india: {
-      ...state.india,
-      presidencies: {
-        ...state.india.presidencies,
-        Madras: {
-          ...state.india.presidencies.Madras,
-          writers: {},
-        },
-      },
-    },
-  };
+  return withHiringQueue(state, [officeId]);
 }
 
 function createGameWithChairmanAndMilitaryVacancy(options: {
@@ -2637,90 +2550,20 @@ function createGameWithChairmanAndMilitaryVacancy(options: {
   officerReadiness?: "ready" | "exhausted";
   officersInTraining?: Record<string, number>;
 }): GameState {
-  const state = createGameWithVacantOffice("military-affairs");
-  const commanderArmy = options.commanderArmy ?? "Bombay";
-  const officerArmy = options.officerArmy ?? "Bombay";
-  const officerReadiness = options.officerReadiness ?? "ready";
+  let state = createGameWithVacantOffice("military-affairs");
+  state = withOffice(state, "chairman", "player-red");
+  if (options.commanderOwner) {
+    state = withCommander(state, options.commanderArmy ?? "Bombay", options.commanderOwner);
+  }
+  if (options.officerOwner) {
+    const readiness = options.officerReadiness ?? "ready";
+    state = withOfficers(state, options.officerOwner, options.officerArmy ?? "Bombay", { [readiness]: 1 });
+  }
+  for (const [playerId, count] of Object.entries(options.officersInTraining ?? {})) {
+    state = withOfficersInTraining(state, playerId, count);
+  }
 
-  return {
-    ...state,
-    players: Object.fromEntries(
-      Object.entries(state.players).map(([playerId, player]) => [
-        playerId,
-        {
-          ...player,
-          familyMembers: {
-            ...player.familyMembers,
-            supply: 0,
-            chairmanShare: playerId === "player-red",
-            officersInTraining: options.officersInTraining?.[playerId] ?? 0,
-            commanders: {
-              Bombay: false,
-              Madras: false,
-              Bengal: false,
-              ...(playerId === options.commanderOwner
-                ? {
-                    [commanderArmy]: true,
-                  }
-                : {}),
-            },
-            officers: {
-              Bombay: { ready: 0, exhausted: 0 },
-              Madras: { ready: 0, exhausted: 0 },
-              Bengal: { ready: 0, exhausted: 0 },
-              ...(playerId === options.officerOwner
-                ? {
-                    [officerArmy]: {
-                      ready: officerReadiness === "ready" ? 1 : 0,
-                      exhausted: officerReadiness === "exhausted" ? 1 : 0,
-                    },
-                  }
-                : {}),
-            },
-            offices:
-              playerId === "player-red"
-                ? [...new Set([...player.familyMembers.offices, "chairman"])]
-                : player.familyMembers.offices,
-          },
-        },
-      ]),
-    ),
-    company: {
-      ...state.company,
-      offices: {
-        ...state.company.offices,
-        chairman: {
-          id: "chairman",
-          holder: "player-red",
-          familyMemberId: "chairman-share-test",
-          treasury: 0,
-          fatigue: 0,
-          vacant: false,
-          created: true,
-          actedThisTurn: false,
-        },
-      },
-      armies: Object.fromEntries(
-        Object.entries(state.company.armies).map(([armyId, army]) => [
-          armyId,
-          {
-            ...army,
-            commander: armyId === options.commanderArmy ? options.commanderOwner : undefined,
-            officers:
-              armyId === options.officerArmy && options.officerOwner
-                ? {
-                    [options.officerOwner]: {
-                      ready: officerReadiness === "ready" ? 1 : 0,
-                      exhausted: officerReadiness === "exhausted" ? 1 : 0,
-                    },
-                  }
-                : {},
-          },
-        ]),
-      ) as GameState["company"]["armies"],
-      vacantOffices: ["military-affairs"],
-    },
-  };
+  return withHiringQueue(state, ["military-affairs"]);
 }
 
 function createGameWithDirectorAndPresidentVacancy(
@@ -2735,120 +2578,29 @@ function createGameWithDirectorAndPresidentVacancy(
     governorOfficeId?: string;
     governor?: string;
     governorFatigue?: number;
+    /** The Presidency whose Army conquered the Governor's region; defaults to its home Presidency. */
+    governorRegionPresidency?: "Bombay" | "Madras" | "Bengal";
   },
 ): GameState {
-  const state = createGameWithVacantOffice(officeId);
-  const chairman = options.chairman ?? "player-red";
-  const director = options.director;
+  let state = createGameWithVacantOffice(officeId);
+  state = withOffice(state, "chairman", options.chairman ?? "player-red");
+  state = withOffice(state, "director-of-trade", options.director, { inHiringQueue: false });
+  if (options.writerOwner && options.writerPresidency) {
+    state = withWriters(state, options.writerOwner, options.writerPresidency, 1);
+  }
+  if (options.extraWriterOwner && options.extraWriterPresidency) {
+    state = withWriters(state, options.extraWriterOwner, options.extraWriterPresidency, 1);
+  }
+  if (options.governorOfficeId && options.governor) {
+    const regionId = options.governorOfficeId.replace("governor-", "");
+    const presidency = options.governorRegionPresidency ?? state.india.regions[regionId].homePresidency;
+    if (presidency) state = withAssociatedRegion(state, regionId, presidency);
+    state = withOffice(state, options.governorOfficeId, options.governor, {
+      fatigue: options.governorFatigue ?? 0,
+    });
+  }
 
-  return {
-    ...state,
-    players: Object.fromEntries(
-      Object.entries(state.players).map(([playerId, player]) => {
-        const writerCounts = {
-          Bombay: 0,
-          Madras: 0,
-          Bengal: 0,
-        };
-        if (playerId === options.writerOwner && options.writerPresidency) {
-          writerCounts[options.writerPresidency] += 1;
-        }
-        if (playerId === options.extraWriterOwner && options.extraWriterPresidency) {
-          writerCounts[options.extraWriterPresidency] += 1;
-        }
-
-        return [
-          playerId,
-          {
-            ...player,
-            familyMembers: {
-              ...player.familyMembers,
-              supply: 0,
-              chairmanShare: playerId === chairman,
-              writers: writerCounts,
-              offices: [
-                ...new Set(
-                  player.familyMembers.offices
-                    .concat(playerId === chairman ? ["chairman"] : [])
-                    .concat(playerId === director ? ["director-of-trade"] : [])
-                    .concat(playerId === options.governor ? [options.governorOfficeId ?? ""] : [])
-                    .filter(Boolean),
-                ),
-              ],
-            },
-          },
-        ];
-      }),
-    ),
-    company: {
-      ...state.company,
-      offices: {
-        ...state.company.offices,
-        chairman: {
-          id: "chairman",
-          holder: chairman,
-          familyMemberId: "chairman-share-test",
-          treasury: 0,
-          fatigue: 0,
-          vacant: false,
-          created: true,
-          actedThisTurn: false,
-        },
-        "director-of-trade": director
-          ? {
-              id: "director-of-trade",
-              holder: director,
-              familyMemberId: "director-test",
-              treasury: 0,
-              fatigue: 0,
-              vacant: false,
-              created: true,
-              actedThisTurn: false,
-            }
-          : {
-              id: "director-of-trade",
-              treasury: 0,
-              fatigue: 0,
-              vacant: true,
-              created: true,
-              actedThisTurn: false,
-            },
-        ...(options.governorOfficeId && options.governor
-          ? {
-              [options.governorOfficeId]: {
-                id: options.governorOfficeId,
-                holder: options.governor,
-                familyMemberId: `${options.governorOfficeId}-test`,
-                treasury: 0,
-                fatigue: options.governorFatigue ?? 0,
-                vacant: false,
-                created: true,
-                actedThisTurn: false,
-              },
-            }
-          : {}),
-      },
-      vacantOffices: [officeId],
-    },
-    india: {
-      ...state.india,
-      presidencies: Object.fromEntries(
-        Object.entries(state.india.presidencies).map(([presidency, presidencyState]) => [
-          presidency,
-          {
-            ...presidencyState,
-            writers: Object.fromEntries(
-              Object.keys(state.players).map((playerId) => [
-                playerId,
-                (playerId === options.writerOwner && presidency === options.writerPresidency ? 1 : 0) +
-                  (playerId === options.extraWriterOwner && presidency === options.extraWriterPresidency ? 1 : 0),
-              ]),
-            ),
-          },
-        ]),
-      ) as GameState["india"]["presidencies"],
-    },
-  };
+  return withHiringQueue(state, [officeId]);
 }
 
 function createGameWithPresidentAndGovernorVacancy(
@@ -2857,8 +2609,10 @@ function createGameWithPresidentAndGovernorVacancy(
     presidentOfficeId: string;
     president?: string;
     regionId: string;
-    regionalWriterOwner?: string;
-    regionalWriterPresidency?: "Bombay" | "Madras" | "Bengal";
+    /** The Presidency the region is associated with (by conquest); omit for an unconquered region. */
+    regionPresidency?: "Bombay" | "Madras" | "Bengal";
+    writerOwner?: string;
+    writerPresidency?: "Bombay" | "Madras" | "Bengal";
     officerOwner?: string;
     officerArmy?: "Bombay" | "Madras" | "Bengal";
     officerReadiness?: "ready" | "exhausted";
@@ -2866,133 +2620,29 @@ function createGameWithPresidentAndGovernorVacancy(
     otherOfficerArmy?: "Bombay" | "Madras" | "Bengal";
   },
 ): GameState {
-  const state = createGameWithVacantOffice(officeId);
-  const officerReadiness = options.officerReadiness ?? "ready";
-  const primaryRegion = state.india.regions[options.regionId] ?? createTestRegion(options.regionId);
-  const madrasRegion = state.india.regions.madras ?? createTestRegion("madras");
-  const regions = {
-    ...state.india.regions,
-    madras: madrasRegion,
-    [options.regionId]: {
-      ...primaryRegion,
-      orders: primaryRegion.orders.map((order, index) =>
-        index === 0 && options.regionalWriterOwner && options.regionalWriterPresidency
-          ? {
-              ...order,
-              writer: {
-                playerId: options.regionalWriterOwner,
-                presidency: options.regionalWriterPresidency,
-              },
-            }
-          : {
-              ...order,
-              writer: undefined,
-            },
-      ),
-    },
-  };
+  let state = createGameWithVacantOffice(officeId);
+  if (options.regionPresidency) {
+    state = withAssociatedRegion(state, options.regionId, options.regionPresidency);
+  }
+  state = withOffice(state, options.presidentOfficeId, options.president, { inHiringQueue: false });
+  if (options.writerOwner && options.writerPresidency) {
+    state = withWriters(state, options.writerOwner, options.writerPresidency, 1);
+  }
+  if (options.officerOwner && options.officerArmy) {
+    state = withOfficers(state, options.officerOwner, options.officerArmy, {
+      [options.officerReadiness ?? "ready"]: 1,
+    });
+  }
+  if (options.otherOfficerOwner && options.otherOfficerArmy) {
+    state = withOfficers(state, options.otherOfficerOwner, options.otherOfficerArmy, { ready: 1 });
+  }
 
-  return {
-    ...state,
-    players: Object.fromEntries(
-      Object.entries(state.players).map(([playerId, player]) => [
-        playerId,
-        {
-          ...player,
-          familyMembers: {
-            ...player.familyMembers,
-            supply: 0,
-            officers: {
-              Bombay: { ready: 0, exhausted: 0 },
-              Madras: { ready: 0, exhausted: 0 },
-              Bengal: { ready: 0, exhausted: 0 },
-              ...(playerId === options.officerOwner && options.officerArmy
-                ? {
-                    [options.officerArmy]: {
-                      ready: officerReadiness === "ready" ? 1 : 0,
-                      exhausted: officerReadiness === "exhausted" ? 1 : 0,
-                    },
-                  }
-                : {}),
-              ...(playerId === options.otherOfficerOwner && options.otherOfficerArmy
-                ? {
-                    [options.otherOfficerArmy]: {
-                      ready: 1,
-                      exhausted: 0,
-                    },
-                  }
-                : {}),
-            },
-            offices:
-              playerId === options.president
-                ? [...new Set([...player.familyMembers.offices, options.presidentOfficeId])]
-                : player.familyMembers.offices,
-          },
-        },
-      ]),
-    ),
-    company: {
-      ...state.company,
-      offices: {
-        ...state.company.offices,
-        [options.presidentOfficeId]: options.president
-          ? {
-              id: options.presidentOfficeId,
-              holder: options.president,
-              familyMemberId: `${options.presidentOfficeId}-test`,
-              treasury: 0,
-              fatigue: 0,
-              vacant: false,
-              created: true,
-              actedThisTurn: false,
-            }
-          : {
-              id: options.presidentOfficeId,
-              treasury: 0,
-              fatigue: 0,
-              vacant: true,
-              created: true,
-              actedThisTurn: false,
-            },
-      },
-      armies: Object.fromEntries(
-        Object.entries(state.company.armies).map(([armyId, army]) => [
-          armyId,
-          {
-            ...army,
-            officers: {
-              ...(armyId === options.officerArmy && options.officerOwner
-                ? {
-                    [options.officerOwner]: {
-                      ready: officerReadiness === "ready" ? 1 : 0,
-                      exhausted: officerReadiness === "exhausted" ? 1 : 0,
-                    },
-                  }
-                : {}),
-              ...(armyId === options.otherOfficerArmy && options.otherOfficerOwner
-                ? {
-                    [options.otherOfficerOwner]: {
-                      ready: 1,
-                      exhausted: 0,
-                    },
-                  }
-                : {}),
-            },
-          },
-        ]),
-      ) as GameState["company"]["armies"],
-      vacantOffices: [officeId],
-    },
-    india: {
-      ...state.india,
-      regions,
-    },
-  };
+  return withHiringQueue(state, [officeId]);
 }
 
-function createLondonSeasonState(options: { turn: number }): GameState {
+function createLondonSeasonState(options: { turn: number; seed?: string }): GameState {
   const state = createHotseatGame({
-    seed: `london-season-turn-${options.turn}`,
+    seed: options.seed ?? `london-season-turn-${options.turn}`,
     gameId: `game-london-season-turn-${options.turn}`,
   });
 
@@ -3024,87 +2674,14 @@ function createLondonSeasonStateWithOfficeholder(options: {
   officeId: string;
   holder: string;
   fatigue: number;
+  seed?: string;
 }): GameState {
-  const state = createLondonSeasonState({ turn: options.turn });
+  const state = createLondonSeasonState({ turn: options.turn, seed: options.seed });
 
-  return {
-    ...state,
-    players: Object.fromEntries(
-      Object.entries(state.players).map(([playerId, player]) => [
-        playerId,
-        {
-          ...player,
-          familyMembers: {
-            ...player.familyMembers,
-            chairmanShare: playerId === options.holder && options.officeId === "chairman",
-            offices:
-              playerId === options.holder
-                ? [...new Set([...player.familyMembers.offices, options.officeId])]
-                : player.familyMembers.offices.filter((officeId) => officeId !== options.officeId),
-          },
-        },
-      ]),
-    ),
-    company: {
-      ...state.company,
-      offices: {
-        ...state.company.offices,
-        [options.officeId]: {
-          id: options.officeId,
-          holder: options.holder,
-          familyMemberId: `officeholder-${options.officeId}`,
-          treasury: 0,
-          fatigue: options.fatigue,
-          vacant: false,
-          created: true,
-          actedThisTurn: false,
-        },
-      },
-      vacantOffices: state.company.vacantOffices.filter(
-        (officeId) => officeId !== options.officeId,
-      ),
-    },
-  };
-}
-
-function createTestRegion(regionId: string): GameState["india"]["regions"][string] {
-  const presidency =
-    regionId === "madras" || regionId === "mysore" || regionId === "hyderabad"
-      ? "Madras"
-      : regionId === "bengal" || regionId === "delhi"
-        ? "Bengal"
-        : "Bombay";
-
-  return {
-    id: regionId,
-    name: regionId,
-    presidency,
-    adjacent: [],
-    orders: [
-      {
-        id: `${regionId}-order-test`,
-        value: 1,
-        closed: false,
-        filledThisTurnBy: [],
-        connectedOrderIds: [],
-        boardPosition: { x: 0, y: 0 },
-      },
-    ],
-    towerLevels: 0,
-    hasDome: false,
-    isCapital: false,
-    companyControlled: true,
-    associatedPresidency: presidency,
-    governorOffice: `governor-${regionId}`,
-    unrest: 0,
-    lootToken: {
-      available: true,
-      value: 1,
-      face: "loot",
-    },
-    exportIcons: 0,
-    partialCompanyShip: false,
-  };
+  return withHiringQueue(
+    withOffice(state, options.officeId, options.holder, { fatigue: options.fatigue }),
+    [],
+  );
 }
 
 const COMPANY_OPERATION_OFFICE_ORDER = [
@@ -3136,10 +2713,14 @@ function createCompanyOperationStateAtOffice(
     holder: string;
   },
 ): GameState {
-  const state = createHotseatGame({
-    seed: `company-operation-${officeId}`,
-    gameId: `game-company-operation-${officeId}`,
-  });
+  const state = withOffice(
+    createHotseatGame({
+      seed: `company-operation-${officeId}`,
+      gameId: `game-company-operation-${officeId}`,
+    }),
+    officeId,
+    options.holder,
+  );
   const officeIndex = COMPANY_OPERATION_OFFICE_ORDER.indexOf(
     officeId as (typeof COMPANY_OPERATION_OFFICE_ORDER)[number],
   );
@@ -3164,19 +2745,10 @@ function createCompanyOperationStateAtOffice(
       ],
       canSave: true,
     },
-    players: {
-      ...state.players,
-      [options.holder]: {
-        ...state.players[options.holder],
-        familyMembers: {
-          ...state.players[options.holder].familyMembers,
-          offices: [...new Set([...state.players[options.holder].familyMembers.offices, officeId])],
-        },
-      },
-    },
     company: {
       ...state.company,
       offices: {
+        ...state.company.offices,
         ...Object.fromEntries(
           actedOfficeIds.map((actedOfficeId) => [
             actedOfficeId,
@@ -3190,16 +2762,6 @@ function createCompanyOperationStateAtOffice(
             },
           ]),
         ),
-        [officeId]: {
-          id: officeId,
-          holder: options.holder,
-          familyMemberId: `officeholder-${officeId}`,
-          treasury: 0,
-          fatigue: 0,
-          created: true,
-          vacant: false,
-          actedThisTurn: false,
-        },
       },
     },
   };
@@ -3269,15 +2831,17 @@ function createBonusesState(): GameState {
       ships: [
         {
           id: "ship-shipyard-01",
-          owner: "player-red",
-          location: "shipyard:shipyard-red-fitted",
-          exhausted: false,
+          kind: "player",
+          shipyardCardId: "shipyard-01",
+          location: "south-indian",
+          fatigued: false,
         },
         {
           id: "ship-shipyard-02",
-          owner: "player-red",
-          location: "south-indian",
-          exhausted: false,
+          kind: "player",
+          shipyardCardId: "shipyard-02",
+          location: "shipyard",
+          fatigued: false,
         },
       ],
     },
@@ -3287,7 +2851,6 @@ function createBonusesState(): GameState {
 function createRevenueState(options: {
   balance: number;
   debt: number;
-  expectations?: number;
   standing?: number;
   courtShares?: string[];
   chairman?: string;
@@ -3295,13 +2858,30 @@ function createRevenueState(options: {
   bombayOfficerStack?: { ready: number; exhausted: number };
   ships?: GameState["company"]["ships"];
 }): GameState {
-  const state = createHotseatGame({
+  let state = createHotseatGame({
     seed: "revenue-expenses",
     gameId: "game-revenue-expenses",
   });
+  state = withRegiments(state, {
+    Bombay: options.bombayRegiments ?? { ready: 0, exhausted: 0 },
+    Madras: { ready: 0, exhausted: 0 },
+    Bengal: { ready: 0, exhausted: 0 },
+  });
+  if (options.bombayOfficerStack) {
+    state = withOfficers(state, "player-red", "Bombay", options.bombayOfficerStack);
+  }
+  if (options.courtShares) {
+    state = withCourtShares(
+      state,
+      options.courtShares.map((owner, index) => ({ id: `revenue-share-${index + 1}`, owner })),
+    );
+  }
+  if (options.chairman) {
+    state = withHiringQueue(withOffice(state, "chairman", options.chairman), []);
+  }
 
   return {
-    ...state,
+    ...withCash(state, Object.fromEntries(Object.keys(state.players).map((playerId) => [playerId, 0]))),
     phase: "revenue",
     pendingDecision: {
       id: "decision-revenue-expenses-test",
@@ -3319,62 +2899,12 @@ function createRevenueState(options: {
       ],
       canSave: true,
     },
-    players: Object.fromEntries(
-      Object.entries(state.players).map(([playerId, player]) => [
-        playerId,
-        {
-          ...player,
-          cash: 0,
-          familyMembers: {
-            ...player.familyMembers,
-            courtShares: options.courtShares?.filter((owner) => owner === playerId).length ?? 0,
-            chairmanShare: options.chairman === playerId,
-            offices: options.chairman === playerId
-              ? [...new Set([...player.familyMembers.offices, "chairman"])]
-              : player.familyMembers.offices,
-          },
-        },
-      ]),
-    ),
     company: {
       ...state.company,
       standing: options.standing ?? state.company.standing,
       balance: options.balance,
       debt: options.debt,
-      expectations: options.expectations ?? state.company.expectations,
-      court:
-        options.courtShares?.map((owner, index) => ({
-          id: `revenue-share-${index + 1}`,
-          owner,
-        })) ?? state.company.court,
-      offices: options.chairman
-        ? {
-            ...state.company.offices,
-            chairman: {
-              id: "chairman",
-              holder: options.chairman,
-              familyMemberId: "revenue-chairman-share",
-              treasury: 0,
-              fatigue: 0,
-              vacant: false,
-              created: true,
-              actedThisTurn: false,
-            },
-          }
-        : state.company.offices,
       ships: options.ships ?? [],
-      armies: {
-        ...state.company.armies,
-        Bombay: {
-          ...state.company.armies.Bombay,
-          regiments: options.bombayRegiments ?? state.company.armies.Bombay.regiments,
-          officers: options.bombayOfficerStack
-            ? {
-                "player-red": options.bombayOfficerStack,
-              }
-            : state.company.armies.Bombay.officers,
-        },
-      },
     },
   };
 }
@@ -3416,10 +2946,12 @@ function mapExpectedTemporaryStormDie(roll: number) {
 }
 
 function createUpkeepStateWithFilledOrders(): GameState {
-  const state = createHotseatGame({
+  let state = createHotseatGame({
     seed: "upkeep-filled-orders",
     gameId: "game-upkeep-filled-orders",
   });
+  state = withWriterOnOrder(state, "bombay-north-3", "player-red", "Bombay");
+  state = withFilledOrder(state, "bombay-home-4", ["company"]);
 
   return {
     ...state,
@@ -3440,83 +2972,16 @@ function createUpkeepStateWithFilledOrders(): GameState {
       ],
       canSave: true,
     },
-    players: {
-      ...state.players,
-      "player-red": {
-        ...state.players["player-red"],
-        familyMembers: {
-          ...state.players["player-red"].familyMembers,
-          writers: {
-            ...state.players["player-red"].familyMembers.writers,
-            Bombay: 0,
-          },
-        },
-      },
-    },
-    india: {
-      ...state.india,
-      presidencies: {
-        ...state.india.presidencies,
-        Bombay: {
-          ...state.india.presidencies.Bombay,
-          writers: {
-            ...state.india.presidencies.Bombay.writers,
-            "player-red": 0,
-          },
-        },
-      },
-      regions: {
-        ...state.india.regions,
-        bombay: {
-          id: "bombay",
-          name: "Bombay",
-          presidency: "Bombay",
-          adjacent: [],
-          towerLevels: 0,
-          hasDome: false,
-          isCapital: false,
-          companyControlled: true,
-          unrest: 0,
-          lootToken: {
-            available: false,
-            value: 0,
-            face: "loot",
-          },
-          exportIcons: 0,
-          partialCompanyShip: false,
-          orders: [
-            {
-              id: "bombay-order-1",
-              value: 2,
-              closed: false,
-              filledThisTurnBy: ["company"],
-              writer: {
-                playerId: "player-red",
-                presidency: "Bombay",
-              },
-              connectedOrderIds: [],
-              boardPosition: { x: 0, y: 0 },
-            },
-            {
-              id: "bombay-order-2",
-              value: 3,
-              closed: false,
-              filledThisTurnBy: ["company"],
-              connectedOrderIds: [],
-              boardPosition: { x: 1, y: 1 },
-            },
-          ],
-        },
-      },
-    },
   };
 }
 
 function createUpkeepStateWithExhaustedArmies(): GameState {
-  const state = createHotseatGame({
+  let state = createHotseatGame({
     seed: "upkeep-army-refresh",
     gameId: "game-upkeep-army-refresh",
   });
+  state = withRegiments(state, { Bombay: { ready: 1, exhausted: 2 } });
+  state = withOfficers(state, "player-red", "Bombay", { ready: 1, exhausted: 2 });
 
   return {
     ...state,
@@ -3536,25 +3001,6 @@ function createUpkeepStateWithExhaustedArmies(): GameState {
         },
       ],
       canSave: true,
-    },
-    company: {
-      ...state.company,
-      armies: {
-        ...state.company.armies,
-        Bombay: {
-          ...state.company.armies.Bombay,
-          regiments: {
-            ready: 1,
-            exhausted: 2,
-          },
-          officers: {
-            "player-red": {
-              ready: 1,
-              exhausted: 2,
-            },
-          },
-        },
-      },
     },
   };
 }
@@ -3582,25 +3028,14 @@ function totalEnterprises(
 }
 
 function totalWriters(state: GameState): number {
-  return Object.values(state.players).reduce(
-    (total, player) =>
-      total +
-      player.familyMembers.writers.Bombay +
-      player.familyMembers.writers.Madras +
-      player.familyMembers.writers.Bengal,
-    0,
-  );
+  return Object.keys(state.players).reduce((total, playerId) => {
+    const writers = playerWriters(state, playerId);
+    return total + writers.Bombay + writers.Madras + writers.Bengal;
+  }, 0);
 }
 
 function totalCommanders(state: GameState): number {
-  return Object.values(state.players).reduce(
-    (total, player) =>
-      total +
-      Number(player.familyMembers.commanders.Bombay) +
-      Number(player.familyMembers.commanders.Madras) +
-      Number(player.familyMembers.commanders.Bengal),
-    0,
-  );
+  return Object.values(state.company.armies).filter((army) => army.commander).length;
 }
 
 function totalBlackmail(state: GameState): number {
@@ -3669,13 +3104,29 @@ function startFamilyWithRedCash(
       ];
     }),
   );
+  // A family with less supply has the difference parked in the Pensioners box.
+  const parkedPlayers = Object.fromEntries(
+    Object.entries(players).map(([playerId, player]) => {
+      const parked = state.players[playerId].familyMembers.supply - player.familyMembers.supply;
+      return [
+        playerId,
+        {
+          ...player,
+          familyMembers: {
+            ...player.familyMembers,
+            pensioners: player.familyMembers.pensioners + parked,
+          },
+        },
+      ];
+    }),
+  );
   const fundedState: GameState = {
     ...state,
     company: {
       ...state.company,
       debt: options.companyDebt ?? state.company.debt,
     },
-    players,
+    players: parkedPlayers,
   };
 
   return applyCommandOrThrow(fundedState, {

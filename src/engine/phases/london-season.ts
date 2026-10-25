@@ -29,26 +29,29 @@ export function confirmLondonSeason(
   if (!nextActor) {
     return noHumanActor("Cannot advance London Season because there is no human player.");
   }
-  const londonSeasonResult =
-    state.turn === 1 ? { state, retiredOffices: [], attritionedOffices: [], rolls: [] } : resolveOfficeAttrition(state);
+  // "This phase is skipped on the game's first turn" (p.11): the scenario's start turn.
+  const isFirstTurn = state.turn === state.startTurn;
+  const londonSeasonResult = isFirstTurn
+    ? { state, retiredOffices: [], attritionedOffices: [], rolls: [] }
+    : resolveOfficeAttrition(state);
   const resolvedState = londonSeasonResult.state;
 
   const logEntry = createCommandLogEntry({
     state: resolvedState,
     command,
     now,
-    type: state.turn === 1 ? "londonSeason.skipped" : "londonSeason.confirmed",
+    type: isFirstTurn ? "londonSeason.skipped" : "londonSeason.confirmed",
     summary:
-      state.turn === 1
-        ? "London Season skipped on turn 1."
+      isFirstTurn
+        ? `London Season skipped on the scenario's first turn (turn ${state.turn}).`
         : londonSeasonResult.retiredOffices.length > 0
           ? `London Season retired ${londonSeasonResult.retiredOffices.length} officeholder(s).`
           : "London Season resolved with no retirements.",
     details: {
       note:
-        state.turn === 1
-          ? "Rules skip London Season on the first turn."
-          : "Resolved office attrition and retirement rolls. Prize retirement and prestige/blackmail display rules remain TODO.",
+        isFirstTurn
+          ? "Rules skip London Season on the game's first turn (p.11)."
+          : "Resolved office attrition. Prize retirements and prestige/blackmail cards are TODO, so pensioners returned to supply.",
       attritionedOffices: londonSeasonResult.attritionedOffices,
       retiredOffices: londonSeasonResult.retiredOffices,
     },
@@ -92,35 +95,32 @@ function resolveOfficeAttrition(state: GameState): {
   let nextState = state;
   let nextRng = state.rng;
 
+  // Attrition (p.11): roll one die per office, adding existing fatigue and +1 for the Chairman.
+  // 1-2 nothing; 3-4 add a fatigue; 5+ the officeholder retires to the Pensioners box.
   for (const office of occupiedOffices) {
     const holder = office.holder as PlayerId;
-    const nextFatigue = office.fatigue + 1;
     const stressModifier = office.id === "chairman" ? 1 : 0;
-    const roll = rollDie(nextRng, 6, `londonSeason.retirement.${office.id}`);
+    const roll = rollDie(nextRng, 6, `londonSeason.attrition.${office.id}`);
     nextRng = roll.rng;
     rolls.push(roll.roll);
 
-    const total = roll.value + nextFatigue + stressModifier;
-    attritionedOffices.push({
+    const total = roll.value + office.fatigue + stressModifier;
+    const outcome: AttritionRecord["outcome"] = total >= 5 ? "retired" : total >= 3 ? "fatigued" : "none";
+    const record: AttritionRecord = {
       officeId: office.id,
       holder,
-      fatigue: nextFatigue,
+      fatigueBefore: office.fatigue,
       roll: roll.value,
       stressModifier,
       total,
-    });
+      outcome,
+    };
+    attritionedOffices.push(record);
 
-    if (total >= 5) {
-      retiredOffices.push({
-        officeId: office.id,
-        holder,
-        fatigue: nextFatigue,
-        roll: roll.value,
-        stressModifier,
-        total,
-      });
+    if (outcome === "retired") {
+      retiredOffices.push(record);
       nextState = retireOfficeholder(nextState, office.id, holder);
-    } else {
+    } else if (outcome === "fatigued") {
       nextState = {
         ...nextState,
         company: {
@@ -129,13 +129,33 @@ function resolveOfficeAttrition(state: GameState): {
             ...nextState.company.offices,
             [office.id]: {
               ...nextState.company.offices[office.id],
-              fatigue: nextFatigue,
+              fatigue: office.fatigue + 1,
             },
           },
         },
       };
     }
   }
+
+  // Prize retirements and prestige cards are not implemented yet, so the final step of the
+  // London Season runs straight away: "return any family members in the Pensioners box to their
+  // supplies" (p.12).
+  nextState = {
+    ...nextState,
+    players: Object.fromEntries(
+      Object.entries(nextState.players).map(([playerId, player]) => [
+        playerId,
+        {
+          ...player,
+          familyMembers: {
+            ...player.familyMembers,
+            supply: player.familyMembers.supply + player.familyMembers.pensioners,
+            pensioners: 0,
+          },
+        },
+      ]),
+    ),
+  };
 
   return {
     state: {
@@ -151,20 +171,21 @@ function resolveOfficeAttrition(state: GameState): {
 type AttritionRecord = {
   officeId: OfficeId;
   holder: PlayerId;
-  fatigue: number;
+  fatigueBefore: number;
   roll: number;
   stressModifier: number;
   total: number;
+  outcome: "none" | "fatigued" | "retired";
 };
 
 type RetirementRecord = AttritionRecord;
 
+// The retiring family member moves to the Pensioners box; the office card goes to the Vacant
+// Offices box and its fatigue returns to supply (p.11). A retiring Chairman takes the Chairman
+// slot's Company share with them.
 function retireOfficeholder(state: GameState, officeId: OfficeId, holder: PlayerId): GameState {
   const office = state.company.offices[officeId];
   const player = state.players[holder];
-  const nextVacantOffices = [...state.company.vacantOffices, officeId].filter(
-    (candidate, index, officeIds) => officeIds.indexOf(candidate) === index,
-  );
 
   return {
     ...state,
@@ -175,8 +196,6 @@ function retireOfficeholder(state: GameState, officeId: OfficeId, holder: Player
         familyMembers: {
           ...player.familyMembers,
           pensioners: player.familyMembers.pensioners + 1,
-          chairmanShare: officeId === "chairman" ? false : player.familyMembers.chairmanShare,
-          offices: player.familyMembers.offices.filter((candidate) => candidate !== officeId),
         },
       },
     },
@@ -193,13 +212,11 @@ function retireOfficeholder(state: GameState, officeId: OfficeId, holder: Player
           actedThisTurn: false,
         },
       },
-      vacantOffices: nextVacantOffices,
+      vacantOffices: [...new Set([...state.company.vacantOffices, officeId])],
     },
   };
 }
 
 function officeOrder(officeId: OfficeId): number {
-  if (officeId === "chairman") return 0;
-
-  return offices.find((office) => office.id === officeId)?.operationOrder ?? Number.MAX_SAFE_INTEGER;
+  return offices.find((office) => office.id === officeId)?.hiringOrder ?? Number.MAX_SAFE_INTEGER;
 }

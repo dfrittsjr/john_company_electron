@@ -1,0 +1,141 @@
+/* Content pages (home, how to play, credits). The game screen uses src/ui/styles.css. */
+:root {
+  color: #201b15;
+  background: #ede6d8;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #ede6d8;
+}
+
+a {
+  color: #8d1d34;
+}
+
+.site-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 24px;
+  border-bottom: 1px solid #cfc3b1;
+  background: #f7f1e6;
+}
+
+.site-name {
+  color: #201b15;
+  font-weight: 700;
+  font-size: 18px;
+  text-decoration: none;
+}
+
+.site-header nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.site-header nav a {
+  color: #4f3e2b;
+  text-decoration: none;
+}
+
+.site-header nav a[aria-current="page"],
+.site-header nav a:hover {
+  color: #8d1d34;
+  text-decoration: underline;
+}
+
+.site-main {
+  flex: 1;
+  width: min(760px, 100%);
+  margin: 0 auto;
+  padding: 32px 16px 48px;
+  line-height: 1.6;
+}
+
+.site-main h1 {
+  margin-top: 0;
+  font-size: clamp(30px, 5vw, 44px);
+  line-height: 1.1;
+}
+
+.site-main h2 {
+  margin-top: 32px;
+}
+
+.site-main code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: #e2d8c6;
+}
+
+.site-footer {
+  padding: 16px 24px;
+  border-top: 1px solid #cfc3b1;
+  color: #6c6155;
+  font-size: 14px;
+  text-align: center;
+}
+
+.hero {
+  display: grid;
+  gap: 16px;
+  padding: 32px;
+  border-radius: 8px;
+  color: #fff8ea;
+  background:
+    linear-gradient(90deg, rgba(30, 25, 19, 0.82), rgba(30, 25, 19, 0.35)),
+    url("/images/board.webp") center / cover;
+}
+
+.hero h1 {
+  margin: 0;
+}
+
+.hero p {
+  margin: 0;
+  max-width: 560px;
+  font-size: 18px;
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  border: 1px solid #f8f3e8;
+  border-radius: 6px;
+  padding: 0 18px;
+  color: #f8f3e8;
+  text-decoration: none;
+}
+
+.button-primary {
+  border-color: #4f3e2b;
+  background: #4f3e2b;
+}
+
+.button:hover {
+  background: #6a5238;
+}

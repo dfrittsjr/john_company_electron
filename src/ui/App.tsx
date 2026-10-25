@@ -1,8 +1,8 @@
 import { useState } from "react";
-import boardImage from "../../board_image-1.png";
 import {
   applyCommand,
   createNewGame,
+  standingLabel,
   type GameCommand,
   type GameState,
   type LegalCommand,
@@ -15,6 +15,10 @@ import {
   type ValidationIssue,
 } from "../data";
 import { deserializeGameState, serializeSave } from "../save";
+import { copyText, openTextFile, saveTextFile, TEXT_FILE_TYPE } from "./platform/files";
+import { nextActorName, suggestedSaveName, suggestedSummaryName } from "./save-names";
+
+const BOARD_IMAGE_URL = "/images/board.webp";
 
 type PlayerSetup = {
   id: string;
@@ -240,23 +244,18 @@ export function App() {
   async function saveGame() {
     if (!game) return;
 
-    if (!window.joco?.saveGame) {
-      setSaveStatus("Save dialogs are only available in the Electron app.");
-      return;
-    }
-
     const now = new Date().toISOString();
     const content = serializeSave(game, {
       saveId: `save-${Date.now()}`,
       now,
     });
-    const result = await window.joco.saveGame(
-      content,
-      `${game.scenario}-turn-${game.turn}-${game.phase}.joco`,
-    );
+    const result = await saveTextFile(content, suggestedSaveName(game));
+    const handoff = `Send it to ${nextActorName(game)}.`;
 
-    if (result.status === "success") {
-      setSaveStatus(`Saved ${result.filePath}`);
+    if (result.status === "saved") {
+      setSaveStatus(`Saved ${result.fileName}. ${handoff}`);
+    } else if (result.status === "downloaded") {
+      setSaveStatus(`Downloaded ${result.fileName} to your downloads folder. ${handoff}`);
     } else if (result.status === "cancel") {
       setSaveStatus("Save canceled.");
     } else {
@@ -265,12 +264,7 @@ export function App() {
   }
 
   async function loadGame() {
-    if (!window.joco?.loadGame) {
-      setSaveStatus("Load dialogs are only available in the Electron app.");
-      return;
-    }
-
-    const result = await window.joco.loadGame();
+    const result = await openTextFile();
     if (result.status === "cancel") {
       setSaveStatus("Load canceled.");
       return;
@@ -284,7 +278,7 @@ export function App() {
       const loadedGame = deserializeGameState(result.content);
       setGame(loadedGame);
       setCommandError(null);
-      setSaveStatus(`Loaded ${result.filePath}`);
+      setSaveStatus(`Loaded ${result.fileName}`);
       setScreen("board");
     } catch (error) {
       setSaveStatus(error instanceof Error ? error.message : "Failed to load save file.");
@@ -295,16 +289,26 @@ export function App() {
     if (!game) return;
 
     const summary = buildSaveSummary(game);
-    if (!window.joco?.copyText) {
-      setSaveStatus(summary);
-      return;
-    }
-
-    const result = await window.joco.copyText(summary);
+    const result = await copyText(summary);
     if (result.status === "success") {
       setSaveStatus("Save summary copied.");
+    } else {
+      setSaveStatus(`${result.message}\n${summary}`);
+    }
+  }
+
+  async function downloadSaveSummary() {
+    if (!game) return;
+
+    const result = await saveTextFile(
+      buildSaveSummary(game),
+      suggestedSummaryName(game),
+      TEXT_FILE_TYPE,
+    );
+    if (result.status === "saved" || result.status === "downloaded") {
+      setSaveStatus(`Saved summary ${result.fileName}.`);
     } else if (result.status === "cancel") {
-      setSaveStatus("Copy canceled.");
+      setSaveStatus("Summary save canceled.");
     } else {
       setSaveStatus(result.message);
     }
@@ -314,22 +318,25 @@ export function App() {
     return (
       <main className="start-screen">
         <section className="start-panel" aria-labelledby="title">
-          <p className="eyebrow">Local desktop implementation</p>
+          <p className="eyebrow">Unofficial browser edition</p>
           <h1 id="title">John Company: Second Edition</h1>
           <p>
-            A rules-enforced hotseat and async adaptation with Crown support planned from the engine
-            outward.
+            A rules-enforced adaptation for hotseat play or for passing a save file between
+            friends.
           </p>
           <div className="start-actions">
             <button type="button" onClick={() => setScreen("setup")}>
               New Game
             </button>
             <button type="button" onClick={loadGame}>
-              Load Game
+              Load Save
             </button>
-            <button type="button" disabled title="Rules reference arrives after data entry">
-              Rules Reference
-            </button>
+            <a className="button-link" href="/how-to-play/">
+              How to Play
+            </a>
+            <a className="button-link" href="/credits/">
+              Credits
+            </a>
           </div>
           {saveStatus ? <p className="status-note start-status">{saveStatus}</p> : null}
         </section>
@@ -532,7 +539,7 @@ export function App() {
           </div>
           <div>
             <dt>Standing</dt>
-            <dd>{game.company.standing}</dd>
+            <dd>{standingLabel(game)}</dd>
           </div>
           <div>
             <dt>Balance</dt>
@@ -580,14 +587,21 @@ export function App() {
           </div>
           {commandError ? <p className="error-note">{commandError}</p> : null}
           <div className="save-actions">
-            <button type="button" onClick={saveGame}>
-              Save Game
+            <button
+              type="button"
+              onClick={saveGame}
+              title="Save a .joco file named for whoever acts next, then send it to them."
+            >
+              Save &amp; pass
             </button>
             <button type="button" onClick={loadGame}>
-              Load Game
+              Load Save
             </button>
             <button type="button" onClick={copySaveSummary}>
               Copy Save Summary
+            </button>
+            <button type="button" onClick={downloadSaveSummary}>
+              Download Summary
             </button>
           </div>
           {saveStatus ? <p className="status-note">{saveStatus}</p> : null}
@@ -608,7 +622,7 @@ export function App() {
 
         <section className="board-stage" aria-label="Game board">
           <div className="board-frame">
-            <img src={boardImage} alt="John Company game board" />
+            <img src={BOARD_IMAGE_URL} alt="John Company game board" />
             <div className="board-overlay standing">Standing</div>
             <div className="board-overlay offices">Offices</div>
             <div className="board-overlay india">India</div>

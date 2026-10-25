@@ -6,7 +6,11 @@ import type {
   ValidationError,
 } from "./types";
 import { confirmBonuses } from "./phases/bonuses";
-import { passCompanyOperation, resolveChairmanOperation } from "./phases/company-operation";
+import {
+  passCompanyOperation,
+  resolveChairmanDebtConsent,
+  resolveChairmanOperation,
+} from "./phases/company-operation";
 import {
   confirmEventsInIndia,
   resolveRolledEventsInIndia,
@@ -40,6 +44,7 @@ const COMMAND_HANDLERS: Record<string, CommandHandler> = {
   "hiring.skipVacancy": skipHiringVacancy,
   "companyOperation.passOffice": passCompanyOperation,
   "companyOperation.resolveChairman": resolveChairmanOperation,
+  "companyOperation.resolveDebtConsent": resolveChairmanDebtConsent,
   "bonuses.confirm": confirmBonuses,
   "revenue.confirm": confirmRevenue,
   "revenue.chooseDividends": chooseRevenueDividends,

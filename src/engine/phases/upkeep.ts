@@ -4,7 +4,6 @@ import type {
   GameState,
   IndiaState,
   PlayerId,
-  PlayerState,
   PresidencyId,
 } from "../types";
 import { createCommandLogEntry, createSystemDecision, wrongPhase } from "./shared";
@@ -138,7 +137,6 @@ function cleanFilledOrders(state: GameState): {
     cleanedOrderIds: string[];
   };
 } {
-  let players = state.players;
   let india: IndiaState = state.india;
   const returnedWriters: Array<{ playerId: PlayerId; presidency: PresidencyId; orderId: string }> = [];
   const cleanedOrderIds: string[] = [];
@@ -159,14 +157,6 @@ function cleanFilledOrders(state: GameState): {
 
         regionChanged = true;
         const writer = order.writer;
-        const player = players[writer.playerId];
-        if (player) {
-          players = {
-            ...players,
-            [writer.playerId]: returnWriterToPlayer(player, writer.presidency),
-          };
-        }
-
         const presidency = india.presidencies[writer.presidency];
         india = {
           ...india,
@@ -209,7 +199,6 @@ function cleanFilledOrders(state: GameState): {
   return {
     state: {
       ...state,
-      players,
       india: {
         ...india,
         regions,
@@ -218,19 +207,6 @@ function cleanFilledOrders(state: GameState): {
     details: {
       returnedWriters,
       cleanedOrderIds,
-    },
-  };
-}
-
-function returnWriterToPlayer(player: PlayerState, presidency: keyof PlayerState["familyMembers"]["writers"]): PlayerState {
-  return {
-    ...player,
-    familyMembers: {
-      ...player.familyMembers,
-      writers: {
-        ...player.familyMembers.writers,
-        [presidency]: player.familyMembers.writers[presidency] + 1,
-      },
     },
   };
 }

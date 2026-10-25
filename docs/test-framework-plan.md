@@ -18,7 +18,7 @@ Recommended tools:
 - Unit and reducer tests: Vitest.
 - Static validation: TypeScript, ESLint, data schema validation with Zod or JSON Schema.
 - Property and invariant tests: `fast-check` or equivalent.
-- UI and Electron smoke tests: Playwright.
+- UI and browser smoke tests: Playwright.
 - Visual board checks: Playwright screenshots plus image-diff thresholds for critical screens.
 - Coverage: V8 coverage through Vitest.
 
@@ -297,7 +297,7 @@ Minimum final thresholds:
 Known acceptable gaps:
 
 - Pure styling code may be below engine thresholds.
-- Electron native dialog behavior can be covered through adapter mocks plus one smoke test.
+- Browser file save/load behavior can be covered through adapter mocks plus one smoke test.
 
 ## Full-Game Evaluation
 

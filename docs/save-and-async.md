@@ -7,8 +7,8 @@ The save system is a required feature, not an afterthought. A save file is the t
 ### Hotseat Save
 
 1. Any player clicks `Save Game`.
-2. The app opens a native save dialog.
-3. The game writes a `.joco` file containing the full state and log.
+2. The browser saves a `.joco` file containing the full state and log. Chromium browsers (Chrome, Edge) show a "Save as" dialog through the File System Access API; Firefox and Safari download the file to the downloads folder.
+3. The suggested file name names the player who acts next, e.g. `1710-t2-hiring-for-Yellow.joco`.
 4. Loading the file restores the exact pending decision.
 
 ### Async Handoff
@@ -20,7 +20,7 @@ The save system is a required feature, not an afterthought. A save file is the t
 5. Player sends that file to the next player by any external channel.
 6. Next player loads the file and continues.
 
-The app does not need networking. Do not build accounts, cloud sync, matchmaking, or a server for the first implementation.
+The app does not need networking. The site is static files served from a Cloudflare Worker; save files never touch the server. Do not build accounts, cloud sync, matchmaking, or server-held saves for the first implementation. (A later option is a Durable Object per game that stores the save and runs the same engine to validate moves.)
 
 ## Save File Extension
 

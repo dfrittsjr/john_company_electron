@@ -1,3 +1,4 @@
+import { isShipFitted, shipForShipyard } from "../selectors";
 import type { ApplyCommandResult, GameCommand, GameState } from "../types";
 import { createCommandLogEntry, createSystemDecision, wrongPhase } from "./shared";
 
@@ -33,8 +34,6 @@ export function confirmBonuses(state: GameState, command: GameCommand): ApplyCom
     summary: `Bonuses paid £${totalIncome}.`,
     details: {
       incomeByPlayer,
-      assumption:
-        "A shipyard pays if its matching ship is owned by the same player and located at shipyard:<enterprise id>.",
     },
   });
   const nextDecision = createSystemDecision({
@@ -74,12 +73,12 @@ function calculateBonusIncome(state: GameState): Record<
     if (player.isCrown) continue;
 
     const workshops = player.enterprises.filter((enterprise) => enterprise.type === "workshop").length;
+    // A shipyard pays £1 if its ship has been fitted, i.e. it is no longer on the shipyard (p.13, p.26).
     const fittedShipyards = player.enterprises.filter(
       (enterprise) =>
         enterprise.type === "shipyard" &&
-        state.company.ships.some(
-          (ship) => ship.owner === player.id && ship.location === `shipyard:${enterprise.id}`,
-        ),
+        enterprise.cardId !== undefined &&
+        isShipFitted(shipForShipyard(state, enterprise.cardId)),
     ).length;
     const total = workshops + fittedShipyards;
     if (total <= 0) continue;

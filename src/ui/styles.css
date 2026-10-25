@@ -44,6 +44,21 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  border: 1px solid #f8f3e8;
+  border-radius: 6px;
+  padding: 0 14px;
+  color: #f8f3e8;
+  text-decoration: none;
+}
+
+.button-link:hover {
+  background: rgba(248, 243, 232, 0.14);
+}
+
 .plain-button {
   color: #2c261f;
   background: transparent;
@@ -61,7 +76,7 @@ button:disabled {
   padding: 40px;
   background:
     linear-gradient(90deg, rgba(30, 25, 19, 0.72), rgba(30, 25, 19, 0.18)),
-    url("../../board_image-1.png") center / cover;
+    url("/images/board.webp") center / cover;
 }
 
 .start-panel {
@@ -175,6 +190,7 @@ button:disabled {
   display: block;
   color: #6c6155;
   line-height: 1.4;
+  white-space: pre-line;
 }
 
 .field {

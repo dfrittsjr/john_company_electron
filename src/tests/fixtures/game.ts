@@ -1,5 +1,12 @@
 import { expect } from "vitest";
-import { applyCommand, createNewGame, type ActorId, type GameCommand, type GameState } from "../../engine";
+import {
+  applyCommand,
+  createNewGame,
+  familyPieceTotal,
+  type ActorId,
+  type GameCommand,
+  type GameState,
+} from "../../engine";
 import { deserializeGameState, serializeSave } from "../../save";
 
 export const TEST_NOW = "2026-06-13T12:00:00.000Z";
@@ -22,6 +29,7 @@ const KNOWN_COMMAND_TYPES = new Set([
   "hiring.skipVacancy",
   "companyOperation.passOffice",
   "companyOperation.resolveChairman",
+  "companyOperation.resolveDebtConsent",
   "bonuses.confirm",
   "revenue.confirm",
   "revenue.chooseDividends",
@@ -50,7 +58,13 @@ export function createHotseatGame(
     players: HOTSEAT_PLAYERS.map((player) => ({ ...player })),
   });
 
-  return options.finalTurn === undefined ? state : { ...state, finalTurn: options.finalTurn };
+  // Starter fixtures skip setup cards, so every starting office is vacant. Leave the Hiring queue
+  // empty so tests opt into the vacancies they exercise (see fixtures/builders.ts).
+  const withoutHiringQueue: GameState = { ...state, company: { ...state.company, vacantOffices: [] } };
+
+  return options.finalTurn === undefined
+    ? withoutHiringQueue
+    : { ...withoutHiringQueue, finalTurn: options.finalTurn };
 }
 
 export function applyFirstLegalCommand(
@@ -151,6 +165,18 @@ export function expectGameInvariants(state: GameState): void {
   state.log.forEach((entry, index) => {
     expect(entry.sequence).toBe(index + 1);
   });
+
+  expectFamilyPiecesConserved(state);
+}
+
+/** Every family piece is in exactly one location: 18 per family, 36 for the Crown (p.2, p.43). */
+export function expectFamilyPiecesConserved(state: GameState): void {
+  for (const player of Object.values(state.players)) {
+    expect({ player: player.id, total: familyPieceTotal(state, player.id) }).toEqual({
+      player: player.id,
+      total: player.isCrown ? 36 : 18,
+    });
+  }
 }
 
 export function expectSaveRoundTripPreservesPendingDecision(state: GameState): void {

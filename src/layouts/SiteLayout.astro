@@ -1,0 +1,50 @@
+---
+import "../styles/site.css";
+
+type Props = {
+  title?: string;
+  frontmatter?: { title?: string };
+};
+
+const { title, frontmatter } = Astro.props;
+const pageTitle = title ?? frontmatter?.title;
+const fullTitle = pageTitle ? `${pageTitle} · John Company` : "John Company";
+const navLinks = [
+  { href: "/", label: "Home" },
+  { href: "/play/", label: "Play" },
+  { href: "/how-to-play/", label: "How to play" },
+  { href: "/credits/", label: "Credits" },
+];
+const currentPath = Astro.url.pathname;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{fullTitle}</title>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="site-name" href="/">John Company</a>
+      <nav aria-label="Site">
+        {
+          navLinks.map((link) => (
+            <a href={link.href} aria-current={currentPath === link.href ? "page" : undefined}>
+              {link.label}
+            </a>
+          ))
+        }
+      </nav>
+    </header>
+    <main class="site-main">
+      <slot />
+    </main>
+    <footer class="site-footer">
+      Unofficial fan implementation, not affiliated with or endorsed by Wehrlegig Games. Game
+      content used under <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a>;
+      see <a href="/credits/">Credits</a>.
+    </footer>
+  </body>
+</html>

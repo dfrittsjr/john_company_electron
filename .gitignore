@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.astro/
+.wrangler/
+.claude/
+
+# Print-and-play source material (kept locally, too large for git)
+Print and Play.zip
+printnplay/
+John Company Rules.pdf
+A Note.txt

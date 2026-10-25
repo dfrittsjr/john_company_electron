@@ -38,7 +38,10 @@ export type CrownDecisionProfileId = string;
 export type DataSourceRef =
   | "John-Company-Rules.txt"
   | "board_image-1.png"
-  | "game_bits/Cards/John Company Cards (MiniEuro, Fronts).pdf"
+  | "printnplay/Cards/John Company Cards (MiniEuro, Fronts).pdf"
+  | "printnplay/Cards/John Company Cards (Bridge, Fronts).pdf"
+  | "printnplay/Cards/John Company Cards (Bridge, Bridge).pdf"
+  | "printnplay/Rulebooks/John Company Rules.pdf"
   | "rulebook-scenario-1710"
   | "rulebook-scenario-1758"
   | "rulebook-scenario-1813"
@@ -75,17 +78,60 @@ export type ScenarioSetupSection =
   | "setupDeck"
   | "deregulation";
 
+export type StandingSpaceDefinition = {
+  /** 0 is the leftmost space; reaching it ends the game with Company failure. */
+  index: number;
+  label: string;
+  /** Expectations printed beneath the space; null on the failure space. */
+  expectations: number | null;
+  companyFails: boolean;
+  /** Lined spaces allow (and the starred space forces) the Vote to Deregulate. */
+  lined: boolean;
+  star: boolean;
+  /** The "S" space where Standing is placed when Deregulation passes. */
+  deregulationReset: boolean;
+};
+
+export type DebtSpaceDefinition = {
+  value: number;
+  lined: boolean;
+  star: boolean;
+};
+
+export type CompanyTracksDefinition = {
+  source: DataSourceRef;
+  standing: StandingSpaceDefinition[];
+  debt: DebtSpaceDefinition[];
+};
+
 export type CompanyTrackSetup = {
-  standingExpectationSpace?: number;
+  /** Index into the Standing track (see companyTracks.standing). */
+  standingSpace?: number;
   debt?: number;
-  balance?: number;
-  expectations?: number;
+  /** GBP placed in every Company treasury at setup. */
+  officeTreasury?: number;
+};
+
+export type ScenarioRegionSetup = {
+  towerLevels: number;
+  closedOrderIds: string[];
+};
+
+export type ScenarioMapSetup = {
+  regions: Record<RegionId, ScenarioRegionSetup>;
+  empires: Array<{ capital: RegionId; dominated: RegionId[] }>;
+  companyControlled: RegionId[];
+  /** The Elephant stands in `region`; with `facing` it is on that border, otherwise in the centre. */
+  elephant: { region: RegionId; facing?: RegionId };
 };
 
 export type ScenarioSetup = {
   companyTracks: CompanyTrackSetup;
   startingRegiments: Partial<Record<PresidencyId, number>>;
   startingCompanyShips: Partial<Record<PresidencyId, number>>;
+  /** Law names placed near the board at setup; law cards are not encoded yet. */
+  startingPassedLaws?: string[];
+  mapSetup?: ScenarioMapSetup;
   notes: string[];
   encodedSections: ScenarioSetupSection[];
   missingSections: ScenarioSetupSection[];
@@ -96,7 +142,10 @@ export type ScenarioDefinition = {
   name: string;
   displayYear: string;
   recommendedPlayerCounts: number[];
-  turnLimit?: number;
+  /** First game turn, from the date printed on the Turn track. */
+  startTurn: number;
+  /** Last game turn, from the scenario end marker on the Turn track. */
+  finalTurn: number;
   deregulationAvailable: boolean;
   startsDeregulated: boolean;
   completeness: ScenarioCompleteness;
@@ -217,7 +266,11 @@ export type OfficeDefinition = {
   id: string;
   label: string;
   category: OfficeCategory;
+  /** Red-ribbon Company Operation order. */
   operationOrder?: number;
+  /** Hiring order: the number printed on the back of the office card (p.14). */
+  hiringOrder: number;
+  /** The President's Presidency. Governors have no fixed Presidency; see `region`. */
   presidency?: PresidencyId;
   region?: RegionId;
   hiring?: {
@@ -226,7 +279,9 @@ export type OfficeDefinition = {
       | {
           type: "office";
           officeId: string;
-        };
+        }
+      /** The President of the Presidency the Governor's region is associated with. */
+      | "regionPresident";
     candidatePool:
       | {
           type: "writers";
@@ -246,6 +301,8 @@ export type OfficeDefinition = {
   notes: string[];
 };
 
+export type BorderShape = "circle" | "triangle" | "square";
+
 export type BoardPosition = {
   x: number;
   y: number;
@@ -255,6 +312,8 @@ export type OrderDefinition = {
   id: string;
   region: RegionId;
   value: number;
+  /** Small number printed beside the order; the rulebook says it is used in Deregulation. */
+  deregulationValue: number;
   connectedOrderIds: string[];
   isHomePortFor?: PresidencyId;
   boardPosition: BoardPosition;
@@ -265,9 +324,14 @@ export type OrderDefinition = {
 export type RegionDefinition = {
   id: RegionId;
   label: string;
-  presidency: PresidencyId;
+  /** Set only for the three Presidency home regions. Other regions are associated dynamically. */
+  homePresidency?: PresidencyId;
   adjacentRegionIds: RegionId[];
   governorOfficeId: string;
+  /** Crate icons printed in the region, used by Trade in China. */
+  exportIcons: number;
+  /** Which neighbour the Elephant faces from this region for each event-tile shape (rulebook p.30). */
+  borderShapes: Record<BorderShape, RegionId>;
   boardPosition: BoardPosition;
   orders: OrderDefinition[];
   source: DataSourceRef;
@@ -281,8 +345,6 @@ export type PresidencyDefinition = {
   homeRegion: RegionId;
   seaZone: "west-indian" | "south-indian" | "east-indian";
   presidentOfficeId: string;
-  governorOfficeIds: string[];
-  associatedRegionIds: RegionId[];
   source: DataSourceRef;
   notes: string[];
 };
@@ -416,6 +478,7 @@ export type StaticDataSet = {
   familyActions: FamilyActionDefinition[];
   enterpriseDecks: EnterpriseDeckDefinition[];
   stockExchange: StockExchangeTrackDefinition;
+  companyTracks: CompanyTracksDefinition;
   offices: OfficeDefinition[];
   map: MapDefinition;
   setupCardDecks: SetupCardDeckDefinition[];

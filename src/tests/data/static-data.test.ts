@@ -46,12 +46,12 @@ describe("scenario starter data", () => {
       expect.arrayContaining([
         expect.objectContaining({
           code: "scenario.setup-section-missing",
-          path: "scenarios.1710.setup.mapSetup",
-          message: expect.stringContaining("mapSetup"),
+          path: "scenarios.1710.setup.lawsAndDilemmas",
+          message: expect.stringContaining("lawsAndDilemmas"),
         }),
         expect.objectContaining({
           code: "scenario.setup-section-missing",
-          path: "scenarios.1758.setup.companyTracks",
+          path: "scenarios.1758.setup.mapSetup",
           message: expect.stringContaining("1758"),
         }),
       ]),
@@ -247,7 +247,7 @@ describe("core hotseat data", () => {
     ]);
     expect(homePorts).toEqual([
       ["bengal", "bengal-home-6"],
-      ["bombay", "bombay-home-3"],
+      ["bombay", "bombay-home-4"],
       ["madras", "madras-home-5"],
     ]);
     expect(mapData.regions.find((region) => region.id === "hyderabad")?.adjacentRegionIds.sort()).toEqual([
