@@ -30,6 +30,13 @@ import {
   startBlackmailPlay,
 } from "./negotiation-blackmail";
 import { createCommandLogEntry, createSystemDecision, wrongPhase } from "./shared";
+import {
+  FIRM_REVENUE_COMMAND_STEPS,
+  advanceFirmRevenue,
+  firmRevenueActions,
+  hasFirmsToSettle,
+  startFirmRevenue,
+} from "./revenue-firms";
 
 const EMERGENCY_LOAN = 5;
 
@@ -176,6 +183,12 @@ function progressRevenue(state: GameState, collector: Collector): { state: GameS
           continue;
         }
 
+        // Firms pay expenses and dividends before the Company pays expenses (p.41).
+        if (!progress.firmsSettled && hasFirmsToSettle(current)) {
+          current = patchRevenue(startFirmRevenue(current), { stage: "firms" });
+          continue;
+        }
+
         const expenses = calculateCompanyExpenses(current);
         const needsLoans = calculateEmergencyLoans(current.company.balance, expenses.total) > 0;
         const chairman = chairmanHolder(current);
@@ -184,6 +197,12 @@ function progressRevenue(state: GameState, collector: Collector): { state: GameS
           return { state: current, decision: royalProtectionDecision(current, chairman) };
         }
         current = patchRevenue(resolveExpenses(current, false, collector), { stage: "dividends" });
+        continue;
+      }
+      case "firms": {
+        const advanced = advanceFirmRevenue(current, collector);
+        if (advanced.decision) return advanced as { state: GameState; decision: PendingDecision };
+        current = patchRevenue(advanced.state, { stage: "companyFraud", firmsSettled: true });
         continue;
       }
       case "royalProtection":
@@ -610,6 +629,22 @@ function calculateDividendIncomeByPlayer(state: GameState, amountPerShare: numbe
   return incomeByPlayer;
 }
 
+/** The firm commands (pp.41-42): the dispatcher has matched each to a legal option of the pending decision. */
+function firmRevenueHandler(type: string): CommandHandler {
+  return (state, command) => {
+    if (
+      state.phase !== "revenue" ||
+      state.pendingDecision.step !== FIRM_REVENUE_COMMAND_STEPS[type] ||
+      !state.parliament.revenue?.firms
+    ) {
+      return wrongPhase(`"${type}" is not available now.`);
+    }
+    const collector = newCollector();
+    const next = firmRevenueActions[type](state, command.payload ?? {}, collector);
+    return complete(state, next, command, collector, type);
+  };
+}
+
 /** Commands this phase answers; composed by the dispatcher in ../commands.ts. */
 export const revenueCommandHandlers: Record<string, CommandHandler> = {
   "revenue.confirm": confirmRevenue,
@@ -617,4 +652,5 @@ export const revenueCommandHandlers: Record<string, CommandHandler> = {
   "revenue.royalProtection": royalProtection,
   "revenue.chooseDividends": chooseRevenueDividends,
   "revenue.playScandal": playScandal,
+  ...Object.fromEntries(Object.keys(FIRM_REVENUE_COMMAND_STEPS).map((type) => [type, firmRevenueHandler(type)])),
 };
