@@ -708,3 +708,76 @@
     height: clamp(300px, 50vw, calc(100vh - 150px));
   }
 }
+
+/* Governor General and China overlay tiles drawn under their ribbon spots. */
+.overlay-tile {
+  fill: #f3e6c8;
+  stroke: #7a1f1f;
+  stroke-width: 6;
+}
+
+.board-label.overlay-tile-text {
+  fill: #5a1414;
+  stroke: none;
+  font-weight: 700;
+}
+
+/* Laws tab: Prime Minister dial, proposal, passed laws. */
+.parliament-panel h3 {
+  margin: 12px 0 6px;
+  font-size: 0.95rem;
+}
+
+.parliament-facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0;
+}
+
+.parliament-facts dt {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  color: #6b5a45;
+}
+
+.parliament-facts dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.policy-dial {
+  margin: 0;
+  padding-left: 1.4rem;
+  font-size: 0.85rem;
+}
+
+.policy-dial .dial-current {
+  font-weight: 700;
+  color: #7a1f1f;
+}
+
+.policy-dial .dial-proposed {
+  font-weight: 700;
+  color: #1f4f7a;
+}
+
+.passed-laws {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.law-text {
+  margin: 2px 0 8px;
+  font-size: 0.85rem;
+}
+
+.law-name {
+  margin: 0;
+  font-weight: 700;
+}
+
+.law-kind {
+  font-weight: 400;
+  color: #6b5a45;
+}

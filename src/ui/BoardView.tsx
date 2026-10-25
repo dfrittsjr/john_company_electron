@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { localAlliances, mapData } from "../data";
 import {
   chairmanHolder,
@@ -50,8 +50,20 @@ const EMPIRE_COLORS: Record<string, string> = {
   "empire-flag-3": "#b0673a",
 };
 
+// Pieces keep a minimum on-screen size when the board is zoomed out, so family initials stay
+// readable on a laptop. The boost is capped so stacks laid out on 130-160px cells don't overlap.
+const MIN_PIECE_SCREEN_RADIUS = 10;
+const MAX_PIECE_BOOST = 1.6;
+const PieceBoost = createContext(1);
+
+function pieceBoost(scale: number): number {
+  return Math.min(MAX_PIECE_BOOST, Math.max(1, MIN_PIECE_SCREEN_RADIUS / (36 * scale)));
+}
+
 type Props = {
   game: GameState;
+  /** Changing this value refits the whole board, e.g. after loading a save. */
+  resetKey?: number;
   /** Board elements the current decision's options refer to. */
   highlights: Set<string>;
   /** Elements the hovered option refers to. */
@@ -62,7 +74,7 @@ type Props = {
 
 type View = { scale: number; x: number; y: number };
 
-export function BoardView({ game, highlights, focus, selected, onSelect }: Props) {
+export function BoardView({ game, resetKey, highlights, focus, selected, onSelect }: Props) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [view, setView] = useState<View>({ scale: 0.2, x: 0, y: 0 });
   const viewRef = useRef(view);
@@ -90,6 +102,10 @@ export function BoardView({ game, highlights, focus, selected, onSelect }: Props
       showBox(BOARD_VIEWS.board);
     }
   }, [showBox]);
+
+  useEffect(() => {
+    if (resetKey !== undefined) showBox(BOARD_VIEWS.board);
+  }, [resetKey, showBox]);
 
   useEffect(() => {
     const stage = stageRef.current;
@@ -192,7 +208,9 @@ export function BoardView({ game, highlights, focus, selected, onSelect }: Props
           }}
         >
           <img src={BOARD_IMAGE_URL} alt="John Company game board" width={BOARD_WIDTH} height={BOARD_HEIGHT} draggable={false} />
-          <BoardOverlay game={game} highlights={highlights} focus={focus} selected={selected} onSelect={select} />
+          <PieceBoost.Provider value={pieceBoost(view.scale)}>
+            <BoardOverlay game={game} highlights={highlights} focus={focus} selected={selected} onSelect={select} />
+          </PieceBoost.Provider>
         </div>
       </div>
     </div>
@@ -283,7 +301,8 @@ function Target({
   );
 }
 
-function Piece({ x, y, color, text, r = 36 }: { x: number; y: number; color: string; text?: string; r?: number }) {
+function Piece({ x, y, color, text, r: baseRadius = 36 }: { x: number; y: number; color: string; text?: string; r?: number }) {
+  const r = baseRadius * useContext(PieceBoost);
   return (
     <g className="piece">
       <circle cx={x} cy={y} r={r} fill={color} stroke="#fffaf0" strokeWidth={7} />
@@ -320,10 +339,11 @@ function Label({
 
 /** A stack of one family's pieces: a disc with initials and a count beside it. */
 function Stack({ ctx, x, y, playerId, count, r = 36, faded = false }: { ctx: DrawContext; x: number; y: number; playerId: PlayerId; count: number; r?: number; faded?: boolean }) {
+  const shown = r * useContext(PieceBoost);
   return (
     <g opacity={faded ? 0.55 : 1}>
       <Piece x={x} y={y} color={ctx.colors[playerId] ?? "#555"} text={playerInitials(ctx.game, playerId)} r={r} />
-      {count > 1 ? <Label x={x + r + 8} y={y + r * 0.45} text={`×${count}`} size={r * 1.25} anchor="start" /> : null}
+      {count > 1 ? <Label x={x + shown + 8} y={y + shown * 0.45} text={`×${count}`} size={shown * 1.25} anchor="start" /> : null}
     </g>
   );
 }
@@ -591,8 +611,15 @@ function Offices({ ctx }: { ctx: DrawContext }) {
         const created = office.created !== false && !game.company.unusedOffices.includes(officeId);
         const holder = officeId === "chairman" ? chairman : !office.vacant ? office.holder : undefined;
         const treasurySpot = TREASURY_SPOTS[officeId];
+        const overlayTile = OVERLAY_TILES[officeId];
         return (
           <Target key={officeId} ctx={ctx} target={`office:${officeId}`} ring={{ cx: spot.x, cy: spot.y, r: 80 }} label={officeLabel(officeId)}>
+            {overlayTile && created ? (
+              <g>
+                <rect x={spot.x - 150} y={spot.y + 40} width={300} height={78} rx={18} className="overlay-tile" />
+                <Label x={spot.x} y={spot.y + 94} text={overlayTile} size={40} className="overlay-tile-text" />
+              </g>
+            ) : null}
             {holder ? (
               <Piece x={spot.x + 60} y={spot.y - 60} color={ctx.colors[holder]} text={playerInitials(game, holder)} r={44} />
             ) : created ? (
@@ -608,6 +635,12 @@ function Offices({ ctx }: { ctx: DrawContext }) {
     </g>
   );
 }
+
+/** Offices that enter play with their own overlay tile (rulebook p.3): label drawn under the spot. */
+const OVERLAY_TILES: Record<string, string> = {
+  "governor-general": "Governor General",
+  "superintendent-of-trade-in-china": "China",
+};
 
 function FatigueCubes({ x, y, count }: { x: number; y: number; count: number }) {
   return (

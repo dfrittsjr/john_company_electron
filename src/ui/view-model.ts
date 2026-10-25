@@ -1,6 +1,6 @@
 // Read-only helpers that turn game state into things the UI draws. No game rules live here.
 
-import { blackmailCards, offices, prestigeCards } from "../data";
+import { blackmailCards, enterpriseDecks, offices, prestigeCards } from "../data";
 import type { ActorId, GameLogEntry, GameState, LegalCommand, PlayerId } from "../engine";
 
 /** Six family colours that stay distinct on the parchment board; text labels back them up. */
@@ -62,6 +62,17 @@ const cardNames = new Map<string, string>([
 
 export function cardName(cardId: string): string {
   return cardNames.get(cardId) ?? humanize(cardId);
+}
+
+const enterpriseNames = new Map<string, string>(
+  enterpriseDecks.flatMap((deck) =>
+    deck.cards.map((card) => [card.id, deck.type === "shipyard" ? `Shipyard: ${card.label}` : card.label] as const),
+  ),
+);
+
+/** "Shipyard: Atlas", "Workshop 03", "Luxury 12"; falls back to the enterprise type. */
+export function enterpriseName(cardId: string | undefined, type: string): string {
+  return (cardId && enterpriseNames.get(cardId)) ?? humanize(type);
 }
 
 export function isBlackmailCard(cardId: string): boolean {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   applyCommand,
   createNewGame,
@@ -24,8 +24,10 @@ import { FinalScoringView } from "./FinalScoringView";
 import { HandoffBanner } from "./HandoffBanner";
 import { LogPanel } from "./LogPanel";
 import { NegotiationPanel } from "./NegotiationPanel";
+import { ParliamentPanel } from "./ParliamentPanel";
 import { PlayerDashboards } from "./PlayerDashboards";
 import { copyText, openTextFile, saveTextFile, TEXT_FILE_TYPE } from "./platform/files";
+import { installFlexGapFallback } from "./platform/flex-gap-fallback";
 import { nextActorName, suggestedSaveName, suggestedSummaryName } from "./save-names";
 import { FAMILY_PALETTE, commandTargets, handoffTarget, humanize, phaseLabel, playerName } from "./view-model";
 
@@ -168,7 +170,10 @@ export function App() {
   const [handoff, setHandoff] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string[]>([]);
-  const [sideTab, setSideTab] = useState<"log" | "deals">("log");
+  const [sideTab, setSideTab] = useState<"log" | "deals" | "laws">("log");
+  const [boardResetKey, setBoardResetKey] = useState(0);
+
+  useEffect(() => installFlexGapFallback(), []);
   const [finalScoringDismissed, setFinalScoringDismissed] = useState(false);
   const [setup, setSetup] = useState<SetupState>({
     scenario: "1710",
@@ -327,6 +332,7 @@ export function App() {
     try {
       const loadedGame = deserializeGameState(result.content);
       setGame(loadedGame);
+      setBoardResetKey((key) => key + 1);
       setCommandError(null);
       setRevealedPlayer(null);
       setHandoff(null);
@@ -649,6 +655,7 @@ export function App() {
           <div className="board-area">
             <BoardView
               game={game}
+              resetKey={boardResetKey}
               highlights={highlights}
               focus={new Set(hovered)}
               selected={selected}
@@ -680,10 +687,15 @@ export function App() {
             <button type="button" role="tab" aria-selected={sideTab === "deals"} className={sideTab === "deals" ? "tab tab-active" : "tab"} onClick={() => setSideTab("deals")}>
               Deals &amp; Cards
             </button>
+            <button type="button" role="tab" aria-selected={sideTab === "laws"} className={sideTab === "laws" ? "tab tab-active" : "tab"} onClick={() => setSideTab("laws")}>
+              Laws
+            </button>
           </div>
           <div className="sidebar-tab-body">
             {sideTab === "log" ? (
               <LogPanel game={game} />
+            ) : sideTab === "laws" ? (
+              <ParliamentPanel game={game} />
             ) : (
               <NegotiationPanel game={game} revealedPlayer={revealedPlayer} onReveal={setRevealedPlayer} onCommand={runAnytimeCommand} />
             )}
