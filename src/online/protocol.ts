@@ -139,8 +139,8 @@ export const ONLINE_LIMITS = {
   maxPlayers: 6,
   maxNameLength: 40,
   /** Per-seat token bucket: this many requests in a burst, refilled at `ratePerSecond`. */
-  rateBurst: 40,
-  ratePerSecond: 1,
+  rateBurst: 60,
+  ratePerSecond: 2,
   /** How many of a seat's latest commands the server can still undo, one at a time. */
   undoDepth: 20,
 } as const;

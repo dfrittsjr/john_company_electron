@@ -18,6 +18,6 @@
     "types": ["vitest/globals"]
   },
   "include": [".astro/types.d.ts", "src", "vitest.config.ts"],
-  "exclude": ["dist", "node_modules"],
+  "exclude": ["dist", "node_modules", "src/worker"],
   "references": []
 }

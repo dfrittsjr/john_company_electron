@@ -11,6 +11,8 @@ Rules coverage and assumptions per phase: `phases/*.md`. Plans for what's left: 
 | `src/data/` | Transcribed components: map, tracks, scenarios, setup cards, offices, laws, cards, India events, board pieces. Validated by `validate.ts`. |
 | `src/engine/` | The rules: a pure, deterministic engine. `commands.ts` dispatches; each phase lives in `phases/`. |
 | `src/save/` | The `.joco` save envelope: serialization, checksums, validation. |
+| `src/online/` | The online client/server contract (`protocol.ts`). |
+| `src/worker/` | The online server: Worker entry and the `GameRoom` Durable Object. See `online/server.md`. |
 | `src/ui/` | The React game screen (board, decision panel, dashboards, negotiation, laws, log). |
 | `src/pages/` | The Astro site: landing, play, how-to-play, credits. |
 | `scripts/harness.ts` | Plays the engine from the command line (`npm run harness`), including random and greedy bots. |
@@ -54,6 +56,8 @@ Office treasuries live on the office (`company.offices[...].treasury`).
   are refused with a readable message; there is no migration.
 - Hidden information uses a trusted-table model: face-down blackmail and the deck orders are in
   the file, and the UI hides them from other players behind a pass-the-device reveal.
+- Online games keep the full state on the server and send each seat a projected view without
+  other players' secrets (`src/engine/projection.ts`, `online/server.md`).
 - Saving: Chromium browsers get a real "Save as" dialog; others download the file. The default
   name says whose turn is next, e.g. `1710-t2-hiring-for-Yellow.joco`.
 
