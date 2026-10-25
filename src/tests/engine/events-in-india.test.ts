@@ -321,6 +321,14 @@ describe("Elephant placement (p.30)", () => {
     expect(elephantPosition(company, "bombay", "circle")).toEqual({ regionId: "bombay" });
   });
 
+  it("faces a dominated region's capital even when they share no border (assumption)", () => {
+    let state = withoutEmpires(base);
+    state = withRegion(state, "bengal", { empireFlag: "empire-flag-1", isCapital: true });
+    state = withRegion(state, "mysore", { empireFlag: "empire-flag-1" });
+
+    expect(elephantPosition(state, "mysore", "circle")).toEqual({ regionId: "mysore", facing: "bengal" });
+  });
+
   it("points back at the capital when its empire covers every neighbour (Fully-Formed Empires)", () => {
     let state = withoutEmpires(base);
     state = withRegion(state, "bengal", { empireFlag: "empire-flag-1", isCapital: true });
@@ -481,6 +489,21 @@ describe("attacks against the Company and Region Loss (pp.29, 32)", () => {
     expect(state.india.regions.bombay.companyControlled).toBe(true);
     expect(state.players[RED].trophies).toBe(2);
     expect(state.phase).toBe("parliament");
+  });
+
+  it("treats an attack of strength 0 or less as failed: unrest clears and the Commander takes a trophy (assumption)", () => {
+    // Crisis −1 with the Elephant fully within Company-held Bombay and no unrest: strength −1.
+    let state = eventsInIndiaState({ drawPile: ["crisis-punjab", "peace-mysore"] });
+    state = withAssociatedRegion(state, "bombay", "Bombay");
+    state = withCommander(state, "Bombay", RED);
+    state = withRegiments(state, { Bombay: { ready: 2, exhausted: 0 } });
+    state = withElephant(state, "bombay");
+
+    state = resolve(state);
+
+    expect(state.india.regions.bombay.companyControlled).toBe(true);
+    expect(state.company.armies.Bombay.regiments).toEqual({ ready: 2, exhausted: 0 });
+    expect(state.players[RED].trophies).toBe(1);
   });
 
   it("lets Military Affairs defend for a vacant Commander without gaining trophies", () => {
