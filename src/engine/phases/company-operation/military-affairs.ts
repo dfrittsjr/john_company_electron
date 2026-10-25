@@ -1,6 +1,7 @@
+import { CROWN_PLAYER_ID, isCrownGame } from "../../crown/state";
 import { PRESIDENCY_IDS, officeHolder } from "../../selectors";
 import type { ArmyId, ArmyState, GameState, LegalCommand, PendingDecision, PlayerId } from "../../types";
-import type { OfficeProgress } from "../company-operation.state";
+import type { OfficeMove, OfficeProgress } from "../company-operation.state";
 import { coState, decisionId, playerName, withCo } from "./context";
 import { finishOffice, type OperationStep, type StepResult } from "./step";
 
@@ -125,7 +126,11 @@ export function militaryDecision(state: GameState): PendingDecision {
   } else {
     const army = PRESIDENCY_IDS.find((id) => !current.armiesResolved.includes(id))!;
     prompt = `Military Affairs: appoint the Commander of the Army of ${army} from the players tied for the most pieces there.`;
-    for (const playerId of commanderCandidates(state.company.armies[army])) {
+    const candidates = commanderCandidates(state.company.armies[army]);
+    // Handbook p.9: a human Military Affairs "always" assigns the Crown as Commander when able.
+    const crownFirst =
+      isCrownGame(state) && officeHolder(state, OFFICE_ID) !== CROWN_PLAYER_ID && candidates.includes(CROWN_PLAYER_ID);
+    for (const playerId of crownFirst ? [CROWN_PLAYER_ID] : candidates) {
       commands.push({
         type: "companyOperation.militaryAffairs",
         label: `Appoint a ${playerName(state, playerId)} officer as Commander of the Army of ${army}`,
@@ -154,16 +159,18 @@ export const militaryStep: OperationStep = (state, command) => {
     case "moveOfficer": {
       const next = moveOfficer(state, payload.playerId, payload.from, payload.to);
       const made = current.transfersMade + 1;
+      const moves = recordMove(state, current, { kind: "officer", playerId: payload.playerId, from: payload.from, to: payload.to });
       return advance(
-        withCo(next, { current: { ...current, transfersMade: made, stage: made >= MAX_TRANSFERS ? "assign" : "transfers" } }),
+        withCo(next, { current: { ...current, ...moves, transfersMade: made, stage: made >= MAX_TRANSFERS ? "assign" : "transfers" } }),
         `Military Affairs moved a ${playerName(state, payload.playerId)} officer from the Army of ${payload.from} to ${payload.to}.`,
       );
     }
     case "moveRegiment": {
       const next = moveRegiment(state, payload.from, payload.to);
       const made = current.transfersMade + 1;
+      const moves = recordMove(state, current, { kind: "regiment", from: payload.from, to: payload.to });
       return advance(
-        withCo(next, { current: { ...current, transfersMade: made, stage: made >= MAX_TRANSFERS ? "assign" : "transfers" } }),
+        withCo(next, { current: { ...current, ...moves, transfersMade: made, stage: made >= MAX_TRANSFERS ? "assign" : "transfers" } }),
         `Military Affairs moved a regiment from the Army of ${payload.from} to ${payload.to}.`,
       );
     }
@@ -183,6 +190,11 @@ export const militaryStep: OperationStep = (state, command) => {
     }
   }
 };
+
+/** Crown games remember each transfer, so nobody (Crown or favour) undoes one this turn (p.9). */
+function recordMove(state: GameState, current: MilitaryProgress, move: OfficeMove): { moves?: OfficeMove[] } {
+  return isCrownGame(state) ? { moves: [...(current.moves ?? []), move] } : {};
+}
 
 /**
  * Move through the automatic parts: once no officers-in-training remain, go to Commanders; resolve

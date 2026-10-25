@@ -11,6 +11,8 @@ import {
 } from "./context";
 import type { OperationStep } from "./step";
 import { finishOffice } from "./step";
+import { CROWN_PLAYER_ID, flipAiCard, isCrownGame } from "../../crown/state";
+import { registerDecisionRefresher } from "../negotiation";
 
 // Chairman (p.18): may advance Debt (+£5 each; three freely, each further advance needs consent from
 // players holding a majority of Company shares, Chairman included; never past the end of the track),
@@ -55,6 +57,19 @@ function emptyPresidentsWarning(state: GameState, officeId: OfficeId): string | 
   return `Warning: this leaves ${empty.map(officeLabel).join(" and ")} with £0, so ${empty.length === 1 ? "that President" : "those Presidents"} can't Trade.`;
 }
 
+/**
+ * The amounts the Chairman may give one office. In a Crown game the Crown Handbook's priority lists
+ * need every amount (£4 to a Presidency, whatever remains), and a human Chairman may give the £4
+ * that earns a promise cube (pp.4-5).
+ */
+function allocationAmounts(state: GameState, balance: number): number[] {
+  if (isCrownGame(state) && chairmanHolder(state) === CROWN_PLAYER_ID) {
+    return Array.from({ length: balance }, (_, index) => index + 1);
+  }
+  const amounts = [1, 2, 3, 5, 10, balance, ...(isCrownGame(state) ? [4] : [])];
+  return [...new Set(amounts)].filter((amount) => amount <= balance).sort((a, b) => a - b);
+}
+
 export function chairmanDecision(state: GameState): PendingDecision {
   const current = progress(state);
   const balance = state.company.balance;
@@ -74,7 +89,7 @@ export function chairmanDecision(state: GameState): PendingDecision {
 
   if (balance > 0) {
     for (const officeId of chairmanAllocationTargets(state)) {
-      const amounts = [...new Set([1, 2, 3, 5, 10, balance])].filter((amount) => amount <= balance).sort((a, b) => a - b);
+      const amounts = allocationAmounts(state, balance);
       for (const amount of amounts) {
         commands.push({
           type: "companyOperation.chairman",
@@ -144,19 +159,33 @@ export const chairmanStep: OperationStep = (state, command) => {
         offices: { ...state.company.offices, [payload.officeId]: { ...office, treasury: office.treasury + payload.amount } },
       },
     };
+    const allocated = isCrownGame(state)
+      ? { ...current, allocated: { ...current.allocated, [payload.officeId]: (current.allocated?.[payload.officeId] ?? 0) + payload.amount } }
+      : current;
     return {
-      state: withCo(next, { current }),
+      state: withCo(next, { current: allocated }),
       summary: `The Chairman gave £${payload.amount} to ${officeLabel(payload.officeId)}.`,
       details: { officeId: payload.officeId, amount: payload.amount, balanceLeft: next.company.balance },
     };
   }
 
+  // Handbook p.4: a human Chairman, "after you have finished acting, flip a new AI card and set the
+  // climate". It happens in this command, so nothing can change before the new climate is known.
+  // (A Crown Chairman flips before it acts: beginCompanyOperation.)
+  const finished = finishOffice(state, "chairman");
+  const flip = isCrownGame(state) && chairmanHolder(state) !== CROWN_PLAYER_ID;
   return {
-    state: finishOffice(state, "chairman"),
+    state: flip ? flipAiCard(finished, command.clientTimestamp) : finished,
     summary: `The Chairman finished (${current.debtAdvances} Debt advance${current.debtAdvances === 1 ? "" : "s"}).`,
     details: { debtAdvances: current.debtAdvances },
   };
 };
+
+// A favour can take money out of the Company Balance under the Crown Chairman's decision (p.5).
+registerDecisionRefresher("companyOperation.chairman", (state) => ({
+  ...chairmanDecision(state),
+  id: state.pendingDecision.id,
+}));
 
 function advanceDebt(state: GameState, current: ChairmanProgress) {
   const next: GameState = {
