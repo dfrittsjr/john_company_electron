@@ -90,6 +90,10 @@ export type CommanderActivity = {
   stage: "alliances" | "deploy" | "exhaust";
   target?: RegionId;
   selection?: DeploySelection;
+  /** Deploys rolled so far (the Crown's "deploy again?" chart reads it). */
+  deploys?: number;
+  /** Local Alliance purchases asked for so far (the Crown buys at most one, or two with a favour). */
+  alliancesAsked?: number;
 };
 
 export type GovernorActivity = {

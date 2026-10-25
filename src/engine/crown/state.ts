@@ -384,6 +384,17 @@ export function clearCrownEffects(state: GameState, remove: (effect: CrownFavorE
   return { ...state, crown: { ...crown, favorEffects: crown.favorEffects.filter((effect) => !remove(effect)) } };
 }
 
+/**
+ * Ends the effects of favours whose id starts with `favorIdPrefix` and whose option names `scope`
+ * ({ scope: "trade:Madras" }): phases call this when the action they were bought for is over.
+ */
+export function clearScopedCrownEffects(state: GameState, favorIdPrefix: string, scope: string): GameState {
+  return clearCrownEffects(
+    state,
+    (effect) => effect.favorId.startsWith(favorIdPrefix) && (effect.option as { scope?: string } | undefined)?.scope === scope,
+  );
+}
+
 // --- Log ---
 
 export function appendCrownLog(

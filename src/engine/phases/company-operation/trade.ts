@@ -1,4 +1,5 @@
 import { rollCheck } from "../../checks";
+import { clearScopedCrownEffects } from "../../crown/state";
 import { presidentOf } from "../../selectors";
 import type {
   GameState,
@@ -294,7 +295,11 @@ export function tradeStep(state: GameState, presidency: PresidencyId, activity: 
     case "roll": {
       const penalty = activity.declared.length - 1;
       const dice = payload.spend - penalty;
-      const paid = changeOfficeTreasury(state, presidentOfficeId(presidency), -payload.spend);
+      const paid = clearScopedCrownEffects(
+        changeOfficeTreasury(state, presidentOfficeId(presidency), -payload.spend),
+        "presidencies.trade.dice",
+        `trade:${presidency}`,
+      );
       const check = rollCheck(paid.rng, dice, `companyOperation.trade.${presidency}`);
       const rolled: GameState = { ...paid, rng: check.rng };
       const pending: PendingCheck = {
