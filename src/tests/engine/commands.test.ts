@@ -2180,6 +2180,7 @@ describe("command application", () => {
   it("rolls the Events in India storm die and saves before resolving follow-up events", () => {
     let state = createEventsInIndiaState("events-storm-roll");
     const expectedRoll = rollDie(state.rng, 6, "eventsInIndia.stormDie");
+    const counterBefore = state.rng.counter;
 
     expectSaveRoundTripPreservesPendingDecision(state);
 
@@ -2190,7 +2191,7 @@ describe("command application", () => {
 
     expect(state.phase).toBe("eventsInIndia");
     expect(state.pendingDecision.step).toBe("eventsInIndia.resolveRolledEvents");
-    expect(state.rng.counter).toBe(1);
+    expect(state.rng.counter).toBe(counterBefore + 1);
     expect(state.log.at(-1)?.type).toBe("eventsInIndia.stormDieRolled");
     expect(state.log.at(-1)?.rngRolls).toEqual([expectedRoll.roll]);
 
@@ -2352,6 +2353,7 @@ describe("command application", () => {
       holder: "player-blue",
       fatigue: 4,
     });
+    const counterBefore = state.rng.counter;
 
     expectSaveRoundTripPreservesPendingDecision(state);
 
@@ -2372,7 +2374,7 @@ describe("command application", () => {
       }),
     );
     expect(state.company.vacantOffices).toContain("manager-of-shipping");
-    expect(state.rng.counter).toBe(1);
+    expect(state.rng.counter).toBe(counterBefore + 1);
     expect(state.log.at(-1)?.summary).toBe("London Season retired 1 officeholder(s).");
     expect(state.log.at(-1)?.rngRolls).toHaveLength(1);
     expect(state.log.at(-1)?.details).toEqual(

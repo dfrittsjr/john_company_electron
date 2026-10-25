@@ -3,7 +3,6 @@ import {
   applyCommand,
   companyExpectations,
   createNewGame,
-  createRngState,
   familyPieceLocations,
   playerOffices,
   rollDie,
@@ -211,7 +210,8 @@ describe("London Season attrition (p.11)", () => {
   function seedWithRoll(predicate: (roll: number) => boolean): string {
     for (let index = 0; index < 200; index += 1) {
       const seed = `attrition-${index}`;
-      const roll = rollDie(createRngState(seed), 6, "londonSeason.attrition.manager-of-shipping").value;
+      // Roll from the RNG as it stands after setup (setup shuffles decks, e.g. the law deck).
+      const roll = rollDie(createHotseatGame({ seed, gameId: `game-${seed}` }).rng, 6, "attrition").value;
       if (predicate(roll)) return seed;
     }
     throw new Error("No seed found");

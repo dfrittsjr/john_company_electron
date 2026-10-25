@@ -3,6 +3,7 @@ import type { EventsInIndiaState } from "./phases/events-in-india.state";
 import type { FinalScoringState } from "./phases/final-scoring.state";
 import type { LondonSeasonState } from "./phases/london-season.state";
 import type { NegotiationState } from "./phases/negotiation.state";
+import type { ParliamentState } from "./phases/parliament.state";
 
 import type { ScenarioId as DataScenarioId } from "../data/types";
 
@@ -301,17 +302,8 @@ export type LawInstance = {
   lawId: string;
 };
 
-export type ParliamentState = {
-  primeMinister?: PlayerId;
-  policyDialPosition: PolicySpaceId;
-  selectedLaw?: LawInstance;
-  voteMarker: number;
-  currentVotingRound: number;
-  oppositionLeader?: PlayerId;
-  votesByPlayer: Record<PlayerId, { for: number; against: number }>;
-  passedLaws: LawInstance[];
-  deregulated: boolean;
-};
+/** Parliament (and Revenue) state is owned by phases/parliament.state.ts. */
+export type { ParliamentState } from "./phases/parliament.state";
 
 export type FirmState = {
   id: FirmId;
