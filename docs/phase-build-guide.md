@@ -59,10 +59,11 @@ promise-card effects. Each area writes its notes in `docs/phases/<area>.md`, not
 | Events in India (EV) | `phases/events-in-india*.ts` (+ `phases/events-in-india/`) | Events in India, Region Loss |
 | Parliament (PA) | `phases/parliament*.ts`, `phases/revenue.ts`, `ParliamentState` in `types.ts` | Parliament, Revenue; law pass/fail and immediate effects |
 | London Season and scoring (LS) | `phases/london-season*.ts`, `phases/upkeep.ts`, `phases/final-scoring*.ts` | London Season, Upkeep, Final Scoring |
-| Negotiation, Family, and Hiring (NG) | `phases/negotiation.state.ts`, `phases/anytime.ts`, `phases/family.ts`, `phases/hiring.ts`, `src/ui/**` | Family, Hiring, anything played "anytime" |
+| Negotiation (NG) | `phases/negotiation*.ts`, `phases/anytime.ts`, `src/ui/**` | Transfers, promise cards, consent requests, anything played "anytime", the blackmail-play framework |
+| Family and Hiring (FH) | `phases/family.ts`, `phases/hiring.ts` | Family, Hiring |
 
 Ongoing law effects follow the same rule: Military Oversight is CO's, Sepoy Recruitment's unrest
-part is EV's and its expense part is PA's, and extra family actions from laws are NG's.
+part is EV's and its expense part is PA's, and extra family actions from laws are FH's.
 
 If you need something from another area (a hook, a helper, a state field), do the smallest local
 version you can, mark it `// TODO(<area>):` with what the owner should do, and list it in your final
