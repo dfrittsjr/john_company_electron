@@ -360,9 +360,11 @@ describe("Crown starter data", () => {
     );
   });
 
-  test("blocks the Crown modes until the Crown's behaviour is built", () => {
-    const result = validateNewGameStaticData({ scenarioId: "1710", mode: "soloCrown", humanPlayerCount: 1 });
-    expect(result.valid).toBe(false);
-    expect(result.issues).toEqual(expect.arrayContaining([expect.objectContaining({ code: "new-game.crown-not-built" })]));
+  test("allows the Crown modes now the Crown's behaviour is built", () => {
+    for (const [mode, humanPlayerCount] of [["soloCrown", 1], ["twoPlayerCrown", 2]] as const) {
+      const result = validateNewGameStaticData({ scenarioId: "1710", mode, humanPlayerCount });
+      expect(result.valid).toBe(true);
+      expect(result.issues.map((issue) => issue.code)).not.toContain("new-game.crown-not-built");
+    }
   });
 });
