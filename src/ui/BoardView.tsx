@@ -348,15 +348,33 @@ function playerStacks(ctx: DrawContext, area: Box, counts: Array<[PlayerId, numb
 // ---------------------------------------------------------------------------------------------
 // Layers
 
+const RIBBON_ORDER = [
+  "chairman",
+  "director-of-trade",
+  "manager-of-shipping",
+  "military-affairs",
+  "president-bombay",
+  "president-madras",
+  "president-bengal",
+  "superintendent-of-trade-in-china",
+];
+
+/** The ribbon spot for the current phase, or during Company Operation the office now acting. */
 function activeSpot(game: GameState): Point | undefined {
   if (game.phase !== "companyOperation") return PHASE_MARKERS[game.phase];
   const current = game.companyOperation.current;
   if (current?.office === "presidency") return OFFICE_SPOTS[`president-${current.presidency.toLowerCase()}`];
   if (current) return OFFICE_SPOTS[current.office];
   const step = game.pendingDecision.step;
+  const presidency = game.pendingDecision.legalCommands
+    .map((command) => (command.payload as { presidency?: unknown } | undefined)?.presidency)
+    .find((value): value is string => typeof value === "string");
+  if (step.startsWith("companyOperation.presidency") && presidency) return OFFICE_SPOTS[`president-${presidency.toLowerCase()}`];
   if (step.includes("shipping")) return OFFICE_SPOTS["manager-of-shipping"];
   if (step.includes("china")) return OFFICE_SPOTS["superintendent-of-trade-in-china"];
-  return OFFICE_SPOTS.chairman;
+  const acted = game.companyOperation.turn === game.turn ? game.companyOperation.actedOffices ?? [] : [];
+  const next = RIBBON_ORDER.find((officeId) => !acted.includes(officeId));
+  return next ? OFFICE_SPOTS[next] : undefined;
 }
 
 function PhaseMarker({ ctx }: { ctx: DrawContext }) {

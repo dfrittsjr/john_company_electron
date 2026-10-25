@@ -643,7 +643,6 @@ export function App() {
       {handoff && game.players[handoff] ? (
         <HandoffBanner game={game} target={handoff} onSave={saveGame} onDismiss={() => setHandoff(null)} />
       ) : null}
-      {saveStatus ? <p className="status-strip">{saveStatus}</p> : null}
 
       <div className="game-body">
         <div className="board-column">
@@ -663,6 +662,7 @@ export function App() {
         </div>
 
         <aside className="sidebar">
+          {saveStatus ? <p className="status-strip">{saveStatus}</p> : null}
           <DecisionPanel
             game={game}
             hidden={decisionHidden}
