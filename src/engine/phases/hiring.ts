@@ -418,7 +418,7 @@ export function declareChairmanSupport(state: GameState, command: GameCommand): 
     now,
     type: "hiring.chairmanSupport",
     summary: candidateId
-      ? `${state.players[supporter].name} backed ${state.players[candidateId].name} for Chairman with ${counts.get(supporter) ?? 0} share(s).`
+      ? `${state.players[supporter].name} backed ${candidateId === supporter ? "themselves" : state.players[candidateId].name} for Chairman with ${counts.get(supporter) ?? 0} share(s).`
       : `${state.players[supporter].name} backed no candidate for Chairman.`,
     details: { candidateId, tally: Object.fromEntries(tally) },
   });

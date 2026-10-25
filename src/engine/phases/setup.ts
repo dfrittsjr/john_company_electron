@@ -6,7 +6,6 @@ import type {
   ApplyCommandResult,
   GameCommand,
   GameState,
-  PendingDecision,
   PlayerId,
   PlayerState,
   PresidencyId,
