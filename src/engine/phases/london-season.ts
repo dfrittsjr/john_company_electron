@@ -2,7 +2,14 @@ import type { CommandHandler } from "../command-handler";
 import { blackmailCards, prestigeCards } from "../../data";
 import type { BlackmailCard, CardEffect, PrestigeCard } from "../../data";
 import { rollDie, shuffle } from "../rng";
-import { chairmanHolder, officeDefinition, playerHasPrestigeCard, playerSpouses, playerWindowIcons, primeMinisterOrder } from "../selectors";
+import {
+  chairmanHolder,
+  officeDefinition,
+  playerForbidsHolding,
+  playerHasPrestigeCard,
+  playerWindowIcons,
+  primeMinisterOrder,
+} from "../selectors";
 import type {
   ApplyCommandResult,
   CardInstance,
@@ -216,11 +223,8 @@ function beginPrestigeCards(state: GameState): GameState {
   };
 }
 
-function forbidsHolding(state: GameState, playerId: PlayerId, holding: "blackmail" | "workshop" | "shipyard" | "companyShare"): boolean {
-  return playerSpouses(state, playerId).some((spouse) =>
-    spouse.effects.some((effect) => effect.type === "forbidHolding" && effect.holding === holding),
-  );
-}
+// The Crown ignores Spouse text effects (Crown Handbook p.2), which playerForbidsHolding allows for.
+const forbidsHolding = playerForbidsHolding;
 
 function prestigeDecision(state: GameState, playerId: PlayerId): PendingDecision {
   const player = state.players[playerId];
@@ -251,7 +255,8 @@ function prestigeDecision(state: GameState, playerId: PlayerId): PendingDecision
   // Becky Sharp: "you may take a card from the top of the deck instead as long as there is at
   // least one card in the display." Offered whatever the top card is, so the option itself never
   // hints at a hidden card; Esther Summerson's restriction applies when the card is drawn.
-  if (playerHasPrestigeCard(state, playerId, BECKY_SHARP) && state.londonSeason.deck.length > 0) {
+  // The Crown ignores Spouse text effects (Crown Handbook p.2), Becky Sharp's included.
+  if (!player.isCrown && playerHasPrestigeCard(state, playerId, BECKY_SHARP) && state.londonSeason.deck.length > 0) {
     legalCommands.push({
       type: "londonSeason.choosePrestigeCard",
       label: "Take the top card of the deck, unseen (Becky Sharp's ability)",
@@ -354,7 +359,9 @@ function takeCard(state: GameState, playerId: PlayerId, cardId: string): GameSta
     victoryPoints: player.victoryPoints + prestige.victoryPoints,
   });
 
-  if (prestige.prestigeType !== "spouse") return next;
+  // The Crown "ignores any text effects on Spouse cards but receives retirement discounts and
+  // victory points" (Crown Handbook p.2).
+  if (prestige.prestigeType !== "spouse" || player.isCrown) return next;
 
   for (const effect of prestige.effects) next = applySpouseEffect(next, playerId, prestige, effect);
   if (cardId === JOSEPH_SEDLEY) next = sedleyLeavesChairman(next, playerId);

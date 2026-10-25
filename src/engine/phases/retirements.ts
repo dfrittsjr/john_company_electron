@@ -267,6 +267,25 @@ function retirementDecision(state: GameState, playerId: PlayerId): PendingDecisi
 
 type Discount = { key: DiscountKey; amount: number; label: string };
 
+/** Whether this step is a special retirement (Deregulation, p.37) rather than a pensioner's. */
+export function isSpecialRetirementStage(progress: RetirementProgress): boolean {
+  return inSpecialStage(progress);
+}
+
+/** What a listed retirement option costs the player after its discounts (the Crown's policy reads this). */
+export function retirementOptionCost(
+  state: GameState,
+  playerId: PlayerId,
+  payload: { prizeId: string; discounts: DiscountKey[] },
+): number {
+  const progress = state.londonSeason.retirement as RetirementProgress;
+  const prize = prizeById.get(payload.prizeId) as PrizeDefinition;
+  const discountTotal = availableDiscounts(state, progress, playerId)
+    .filter((discount) => payload.discounts.includes(discount.key))
+    .reduce((sum, discount) => sum + discount.amount, 0);
+  return Math.max(0, prize.cost - discountTotal);
+}
+
 function availableDiscounts(state: GameState, progress: RetirementProgress, playerId: PlayerId): Discount[] {
   const used = new Set(progress.usedDiscounts[playerId] ?? []);
   const discounts: Discount[] = playerSpouses(state, playerId)
@@ -294,6 +313,8 @@ function availableDiscounts(state: GameState, progress: RetirementProgress, play
 
 /** Lord Highgate: "You may only retire to the 8 or 12 victory point prizes." */
 function allowedPrizes(state: GameState, playerId: PlayerId): PrizeDefinition[] {
+  // The Crown ignores text effects on Spouse cards (Crown Handbook p.2).
+  if (state.players[playerId]?.isCrown) return prizes;
   const allowedVp = playerSpouses(state, playerId)
     .flatMap((spouse) => spouse.effects)
     .flatMap((effect) => (effect.type === "restrictRetirementPrizes" ? [effect.allowedPrizeVictoryPoints] : []));

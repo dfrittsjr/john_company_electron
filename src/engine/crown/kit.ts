@@ -44,7 +44,14 @@ export type CrownArea = {
 };
 
 /** Where a favour is printed: a Handbook page and the start of its text, or the Crown's board. */
-export type CrownFavorSource = { page: number; text: string } | { board: string; take?: boolean };
+export type CrownFavorSource =
+  | {
+      page: number;
+      text: string;
+      /** Which one (0-based, in print order) when several favours on the page start with the same text. */
+      nth?: number;
+    }
+  | { board: string; take?: boolean };
 
 export type CrownFavorDefinition = {
   /** Stable and readable, e.g. "chairman.seekDebt.extra". */
@@ -142,8 +149,10 @@ export function printedFavor(source: CrownFavorSource): { text: string; cost: st
     return { text: favor.text, cost: source.take ? favor.take ?? "—" : favor.gain };
   }
   const matches = handbookFavors.filter(({ page, favor }) => page === source.page && favor.text.startsWith(source.text));
-  if (matches.length !== 1) throw new Error(`${matches.length} Handbook favours on p.${source.page} start "${source.text}".`);
-  const { favor } = matches[0];
+  if (source.nth === undefined ? matches.length !== 1 : !matches[source.nth]) {
+    throw new Error(`${matches.length} Handbook favours on p.${source.page} start "${source.text}".`);
+  }
+  const { favor } = matches[source.nth ?? 0];
   return { text: favor.text, cost: typeof favor.cost === "string" ? favor.cost : JSON.stringify(favor.cost) };
 }
 
@@ -153,7 +162,7 @@ export function printedCost(state: GameState, source: CrownFavorSource): number 
   if ("board" in source) {
     cost = printedFavor(source).cost;
   } else {
-    const { favor } = handbookFavors.find(({ page, favor }) => page === source.page && favor.text.startsWith(source.text))!;
+    const { favor } = handbookFavors.filter(({ page, favor }) => page === source.page && favor.text.startsWith(source.text))[source.nth ?? 0];
     cost = typeof favor.cost === "string" ? favor.cost : favor.cost[crownClimate(state)];
   }
   const text = cost.trim();

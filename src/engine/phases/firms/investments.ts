@@ -28,6 +28,7 @@ import {
   registerStateRefresher,
   requestConsent,
 } from "../negotiation";
+import { CROWN_PLAYER_ID } from "../../crown/state";
 import { nameOf, rejectFirms, sameJson, shipFitCost } from "./common";
 import type { FirmsPhaseState, MergeDraft } from "./state";
 import { startFirmStrategy } from "./strategy";
@@ -41,6 +42,8 @@ import { startFirmStrategy } from "./strategy";
 const SHIPPING_OFFICE = "manager-of-shipping";
 
 export const INVESTMENTS_STEP = "firms.investments";
+/** The Crown's one investment after every player has finished (Crown Handbook p.3). */
+export const CROWN_INVESTMENT_STEP = "firms.crownInvestment";
 export const MERGE_BUILD_STEP = "firms.mergeBuild";
 export const MERGE_PRIMARY_STEP = "firms.mergePrimary";
 export const MERGE_RETURN_STEP = "firms.mergeReturn";
@@ -92,6 +95,8 @@ function logIdlePlayers(state: GameState, order: PlayerId[]): GameState {
 /** Moves to the next player who has something to do; players with nothing pass automatically. */
 function nextInvestmentTurn(state: GameState): GameState {
   const fp = state.firmsPhase as FirmsPhaseState;
+  // The Crown invests once, after every player has finished, and nobody acts after it (Handbook p.3).
+  if (fp.crownActed) return startFirmStrategy(state);
   let index = fp.index;
   let passes = fp.passes;
   const count = fp.order.length;
@@ -104,7 +109,17 @@ function nextInvestmentTurn(state: GameState): GameState {
     }
     passes += 1; // "No dead actions": a player with nothing to do but pass is skipped.
   }
-  return startFirmStrategy({ ...state, firmsPhase: { ...fp, index, passes } });
+  return crownInvestmentTurn({ ...state, firmsPhase: { ...fp, index, passes } });
+}
+
+/** "Only once all players have finished investing, the Crown may seek to invest in a firm" (Handbook p.3). */
+function crownInvestmentTurn(state: GameState): GameState {
+  const fp = state.firmsPhase as FirmsPhaseState;
+  const crownId = state.crown ? CROWN_PLAYER_ID : undefined;
+  // "No dead actions": the Crown is asked only when it could invest somewhere.
+  if (!crownId || fp.crownActed || investmentCommands(state, crownId).length <= 1) return startFirmStrategy(state);
+  const next: GameState = { ...state, phase: "firms", firmsPhase: { ...fp, crownActed: true, merge: undefined } };
+  return { ...next, pendingDecision: investmentsDecision(next, crownId) };
 }
 
 /** After a turn's action (`acted`) or a pass / refusal: record it and move on. */
@@ -117,22 +132,27 @@ function finishInvestmentTurn(state: GameState, acted: boolean): GameState {
 }
 
 function investmentsDecision(state: GameState, playerId: PlayerId): PendingDecision {
+  const crown = Boolean(state.players[playerId]?.isCrown);
   return {
     id: `decision-firms-investments-turn-${state.turn}-${playerId}-${state.log.length}`,
     phase: "firms",
-    step: INVESTMENTS_STEP,
+    step: crown ? CROWN_INVESTMENT_STEP : INVESTMENTS_STEP,
     actor: playerId,
     visibility: "public",
-    prompt: `Firm Investments: ${nameOf(state, playerId)}, take one action or pass.`,
+    prompt: crown
+      ? "Firm Investments: the Crown may invest in a firm, or pass."
+      : `Firm Investments: ${nameOf(state, playerId)}, take one action or pass.`,
     legalCommands: investmentCommands(state, playerId),
     canSave: true,
   };
 }
 
-registerDecisionRefresher(INVESTMENTS_STEP, (state) => {
-  const decision = state.pendingDecision;
-  return { ...decision, legalCommands: investmentCommands(state, decision.actor as PlayerId) };
-});
+for (const step of [INVESTMENTS_STEP, CROWN_INVESTMENT_STEP]) {
+  registerDecisionRefresher(step, (state) => {
+    const decision = state.pendingDecision;
+    return { ...decision, legalCommands: investmentCommands(state, decision.actor as PlayerId) };
+  });
+}
 
 // ---------------------------------------------------------------------------------------------
 // What a player may do
@@ -181,8 +201,10 @@ export function investmentCommands(state: GameState, playerId: PlayerId): LegalC
   const commands: LegalCommand[] = [];
   const mine = firmManagedBy(state, playerId);
   const sources = distinctSources(firmInvestmentSources(state, playerId));
+  // "The Crown never creates a private firm" (Handbook p.3): it only invests, once, after the players.
+  const isCrown = Boolean(state.players[playerId]?.isCrown);
 
-  if (!mine) {
+  if (!mine && !isCrown) {
     for (const source of sources) {
       if (formFirmBlockReason(state, playerId, source)) continue;
       commands.push({
@@ -207,7 +229,9 @@ export function investmentCommands(state: GameState, playerId: PlayerId): LegalC
     }
   }
 
-  if (mine) {
+  if (isCrown) {
+    // Only investing (above) and passing.
+  } else if (mine) {
     for (const ship of fittableShips(state)) {
       if (mine.londonTreasury < ship.cost) continue;
       commands.push({
@@ -484,7 +508,11 @@ registerConsentResolver("firms.action", (state, requestRecord, accepted) => {
 // Commands
 
 function guard(state: GameState, actorId: PlayerId): string | undefined {
-  if (!state.firmsPhase || state.firmsPhase.step !== "investments" || state.pendingDecision.step !== INVESTMENTS_STEP) {
+  if (
+    !state.firmsPhase ||
+    state.firmsPhase.step !== "investments" ||
+    ![INVESTMENTS_STEP, CROWN_INVESTMENT_STEP].includes(state.pendingDecision.step)
+  ) {
     return "No Firm Investments action is being asked for.";
   }
   if (state.pendingDecision.actor !== actorId) return "It is not your turn in Firm Investments.";

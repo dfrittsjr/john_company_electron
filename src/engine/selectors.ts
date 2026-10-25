@@ -266,6 +266,8 @@ export function playerForbidsHolding(
   playerId: PlayerId,
   holding: "blackmail" | "workshop" | "shipyard" | "companyShare",
 ): boolean {
+  // The Crown ignores any text effects on Spouse cards (Crown Handbook p.2).
+  if (state.players[playerId]?.isCrown) return false;
   return playerSpouses(state, playerId).some((spouse) =>
     spouse.effects.some((effect) => effect.type === "forbidHolding" && effect.holding === holding),
   );
