@@ -101,6 +101,18 @@ export function unplayedBlackmailHolder(state: GameState, cardId: string): Playe
 }
 
 /** Played blackmail goes face up in its owner's play area (p.12). */
+/**
+ * Whether forcing a reroll with half the dice (Mercantile or Diplomatic Connection) could change
+ * anything, so the holder should be asked. Not when the reroll would have no dice and the roll
+ * already failed (zero dice is a failure), and not for the player who made a successful roll:
+ * offering it then only stalls the table ("no dead actions", p.17).
+ */
+export function connectionCouldMatter(check: { dice: number; outcome: string }, holder: PlayerId, roller: PlayerId | undefined): boolean {
+  if (Math.floor(check.dice / 2) === 0 && check.outcome === "failure") return false;
+  if (holder === roller && check.outcome === "success") return false;
+  return true;
+}
+
 export function markBlackmailPlayed(state: GameState, playerId: PlayerId, cardId: string): GameState {
   const player = state.players[playerId];
   let flipped = false;

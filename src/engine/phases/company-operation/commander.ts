@@ -23,6 +23,7 @@ import {
   playersClockwiseFrom,
   presidentOfficeId,
   regionPresidencyId,
+  connectionCouldMatter,
   unplayedBlackmailHolder,
   withCo,
 } from "./context";
@@ -306,7 +307,7 @@ function rollDeploy(state: GameState, presidency: PresidencyId, activity: Comman
 
   // Diplomatic Connection (blackmail #9) may force a reroll after any Deploy check.
   const holder = unplayedBlackmailHolder(rolled, "diplomatic-connection");
-  if (holder) {
+  if (holder && connectionCouldMatter(pending, holder, commanderOf(rolled, presidency))) {
     return {
       state: withCo(rolled, { interrupt: { kind: "connection", cardId: "diplomatic-connection", holder, check: pending } }),
       summary,

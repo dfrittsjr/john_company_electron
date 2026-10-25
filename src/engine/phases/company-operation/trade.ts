@@ -22,6 +22,7 @@ import {
   payPlayer,
   playerName,
   presidentOfficeId,
+  connectionCouldMatter,
   unplayedBlackmailHolder,
   vacateAfterCatastrophe,
   withCo,
@@ -308,7 +309,7 @@ export function tradeStep(state: GameState, presidency: PresidencyId, activity: 
 
       // Mercantile Connection (blackmail #8) may force a reroll after any Trade check.
       const holder = unplayedBlackmailHolder(rolled, "mercantile-connection");
-      if (holder) {
+      if (holder && connectionCouldMatter(pending, holder, presidentOf(rolled, presidency))) {
         return {
           state: withCo(rolled, { interrupt: { kind: "connection", cardId: "mercantile-connection", holder, check: pending } }),
           summary,

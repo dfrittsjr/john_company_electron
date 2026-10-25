@@ -487,13 +487,23 @@ function completeFinalScoring(state: GameState): GameState {
   });
 
   const winner = settled.players[ranking[0]];
+  // Say how a tie for first was broken, so the result doesn't look arbitrary.
+  const tied = ranking.filter((playerId) => settled.players[playerId].victoryPoints === winner?.victoryPoints);
+  let tieNote = "";
+  if (winner && tied.length > 1) {
+    const others = tied.slice(1).map((playerId) => settled.players[playerId].name).join(" and ");
+    const byWindows = playerWindowIcons(settled, ranking[0]) > playerWindowIcons(settled, tied[1]);
+    tieNote = byWindows
+      ? ` Tied with ${others}; ${winner.name} has the most window icons (p.9).`
+      : ` Tied with ${others} on VP and window icons; ${winner.name} comes first in Prime Minister order (p.9).`;
+  }
   const decision: PendingDecision = {
     id: `decision-final-scoring-complete-turn-${settled.turn}`,
     phase: "finalScoring",
     step: "finalScoring.complete",
     actor: "system",
     visibility: "public",
-    prompt: `Final Scoring is complete: ${winner?.name ?? "nobody"} wins with ${winner?.victoryPoints ?? 0} VP.`,
+    prompt: `Final Scoring is complete: ${winner?.name ?? "nobody"} wins with ${winner?.victoryPoints ?? 0} VP.${tieNote}`,
     legalCommands: [],
     canSave: true,
   };

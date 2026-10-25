@@ -3,7 +3,7 @@ import { allFirms, firmById, firmName, firmShips, firmStrategy, isDeregulated } 
 import { chairmanTitleHolder, presidentOf } from "../../selectors";
 import type { FirmId, FirmState, GameState, LegalCommand, OrderState, PendingDecision, PlayerId, PresidencyId } from "../../types";
 import type { FirmFillState, PendingCheck, TradeActivity } from "../company-operation.state";
-import { coState, decisionId, presidentOfficeId, unplayedBlackmailHolder, withCo } from "./context";
+import { coState, connectionCouldMatter, decisionId, presidentOfficeId, unplayedBlackmailHolder, withCo } from "./context";
 import { withActivity } from "./presidency-progress";
 import { finishOffice, type OperationStep, type StepResult } from "./step";
 import { homePort, orderNodes } from "./trade";
@@ -109,7 +109,7 @@ export const firmTradeStep: OperationStep = (state, command) => {
 
   // Mercantile Connection: "force a President or firm to reroll any Trade roll".
   const holder = unplayedBlackmailHolder(rolled, "mercantile-connection");
-  if (holder) {
+  if (holder && connectionCouldMatter(pending, holder, firm.manager)) {
     return {
       state: withCo(rolled, { interrupt: { kind: "connection", cardId: "mercantile-connection", holder, check: pending } }),
       summary,

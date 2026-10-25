@@ -54,3 +54,15 @@ describe("Firm rescue prompt (p.41)", () => {
     expect(state.pendingDecision.prompt).toMatch(/Dissolve it \(p\.41\)\. No emergency investment is possible: .*No merger is possible/);
   });
 });
+
+describe("Connections are offered only when the reroll could matter (p.17, blackmail #8 and #9)", () => {
+  test("not for a failed roll whose reroll would have no dice, nor for the roller's own success", async () => {
+    const { connectionCouldMatter } = await import("../../engine/phases/company-operation/context");
+    expect(connectionCouldMatter({ dice: 1, outcome: "failure" }, RED, BLUE)).toBe(false);
+    expect(connectionCouldMatter({ dice: 1, outcome: "success" }, RED, BLUE)).toBe(true);
+    expect(connectionCouldMatter({ dice: 1, outcome: "catastrophe" }, RED, BLUE)).toBe(true);
+    expect(connectionCouldMatter({ dice: 4, outcome: "failure" }, RED, BLUE)).toBe(true);
+    expect(connectionCouldMatter({ dice: 4, outcome: "success" }, RED, RED)).toBe(false);
+    expect(connectionCouldMatter({ dice: 4, outcome: "failure" }, RED, RED)).toBe(true);
+  });
+});

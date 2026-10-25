@@ -172,7 +172,7 @@ export function createNewGame(options: NewGameOptions): GameState {
         state,
         now: createdAt,
         type: "game.created",
-        summary: `${modeLabel(options.mode)} game created for the ${scenarios.find((scenario) => scenario.id === options.scenario)?.name ?? options.scenario} scenario.`,
+        summary: `${options.mode === "hotseat" ? "Game" : `${modeLabel(options.mode)} game`} created for the ${scenarios.find((scenario) => scenario.id === options.scenario)?.name ?? options.scenario} scenario.`,
         details: {
           mode: options.mode,
           scenario: options.scenario,
