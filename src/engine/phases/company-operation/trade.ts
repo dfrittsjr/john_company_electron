@@ -130,7 +130,10 @@ export function tradeUnavailableReason(state: GameState, presidency: PresidencyI
   if (!presidentOf(state, presidency)) return "the President is vacant";
   if ((coState(state).tradedPresidencies ?? []).includes(presidency)) return "this Presidency has already traded this turn (p.20)";
   const port = homePort(state, presidency);
-  if (!port || !isOrderAvailable(port)) return "its home port is closed or filled";
+  if (!port || port.closed) {
+    return `its home port (the £${port?.value ?? "?"} order in ${presidency}) is closed; the Director of Trade can reopen it with a Special Envoy (p.18)`;
+  }
+  if (!isOrderAvailable(port)) return `its home port (the £${port.value} order in ${presidency}) is already filled this turn`;
   if (shipsInPresidencyZone(state, presidency) === 0) {
     return `there are no ships in the ${SEA_ZONE_LABEL[SEA_ZONE_BY_PRESIDENCY[presidency]]} sea zone (the Manager of Shipping places them)`;
   }
