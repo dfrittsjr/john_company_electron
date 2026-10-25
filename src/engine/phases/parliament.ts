@@ -7,6 +7,7 @@ import type { ApplyCommandResult, GameCommand, GameState, LegalCommand, PendingD
 import type { ParliamentSession, PolicyTarget } from "./parliament.state";
 import { createFinalScoringDecision } from "./revenue";
 import { createCommandLogEntry, createSystemDecision, wrongPhase } from "./shared";
+import { registerStateRefresher } from "./negotiation";
 import { newCollector, nextDecisionId, playerName, primeMinisterOrder, updatePlayer, type Collector } from "./parliament/common";
 import { prestigeCardOwners } from "./parliament/holdings";
 import {
@@ -182,6 +183,12 @@ export function refreshParliamentDecision(state: GameState): GameState {
   const progressed = progressParliament(state, newCollector());
   return { ...progressed.state, phase: progressed.decision.phase, pendingDecision: progressed.decision };
 }
+
+// Votes come from cash and from cards in the voter's area (p.35), both of which can change hands
+// mid-vote; rebuild the vote options after any transfer.
+registerStateRefresher("parliament.vote", refreshParliamentDecision);
+// A player returning taxed items may borrow first (p.8); re-settling the tax lets them pay instead.
+registerStateRefresher("parliament.surrender", refreshParliamentDecision);
 
 function complete(
   before: GameState,

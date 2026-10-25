@@ -263,8 +263,8 @@ describe("command application", () => {
     if (!result.ok) {
       expect(result.errors).toContainEqual(
         expect.objectContaining({
-          code: "ILLEGAL_FAMILY_ACTION",
-          field: "payload.action",
+          code: "ILLEGAL_PAYLOAD_FOR_DECISION",
+          field: "payload",
         }),
       );
     }
@@ -610,7 +610,7 @@ describe("command application", () => {
     if (!result.ok) {
       expect(result.errors).toContainEqual(
         expect.objectContaining({
-          code: "ILLEGAL_HIRING_CHOICE",
+          code: "ILLEGAL_PAYLOAD_FOR_DECISION",
         }),
       );
     }
@@ -786,7 +786,7 @@ describe("command application", () => {
     if (!wrongPayloadResult.ok) {
       expect(wrongPayloadResult.errors).toContainEqual(
         expect.objectContaining({
-          code: "ILLEGAL_HIRING_CHOICE",
+          code: "ILLEGAL_PAYLOAD_FOR_DECISION",
           field: "payload",
         }),
       );
@@ -940,7 +940,7 @@ describe("command application", () => {
     if (!result.ok) {
       expect(result.errors).toContainEqual(
         expect.objectContaining({
-          code: "ILLEGAL_HIRING_CHOICE",
+          code: "ILLEGAL_PAYLOAD_FOR_DECISION",
           field: "payload",
         }),
       );
@@ -1873,7 +1873,7 @@ describe("command application", () => {
     if (!result.ok) {
       expect(result.errors).toContainEqual(
         expect.objectContaining({
-          code: "ILLEGAL_COMPANY_OPERATION_CHOICE",
+          code: "ILLEGAL_PAYLOAD_FOR_DECISION",
           field: "payload",
         }),
       );
@@ -2173,8 +2173,8 @@ describe("command application", () => {
     if (!result.ok) {
       expect(result.errors).toContainEqual(
         expect.objectContaining({
-          code: "ILLEGAL_REVENUE_DIVIDEND",
-          field: "payload.amountPerShare",
+          code: "ILLEGAL_PAYLOAD_FOR_DECISION",
+          field: "payload",
         }),
       );
     }

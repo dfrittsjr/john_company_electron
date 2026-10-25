@@ -5,6 +5,11 @@ import type { ArmyId, GameState, OfficeId, PlayerId, PresidencyId, ShareInstance
 
 function takeFromSupply(state: GameState, playerId: PlayerId, count: number): GameState {
   const player = state.players[playerId];
+  const members = player.familyMembers;
+  // withNoSupply parks the supply as pensioners; draw from there once the supply is empty, so no
+  // count ever goes negative (the engine rejects states with negative piece counts).
+  const fromSupply = count > 0 ? Math.min(count, members.supply) : count;
+  const fromPensioners = count - fromSupply;
 
   return {
     ...state,
@@ -12,7 +17,11 @@ function takeFromSupply(state: GameState, playerId: PlayerId, count: number): Ga
       ...state.players,
       [playerId]: {
         ...player,
-        familyMembers: { ...player.familyMembers, supply: player.familyMembers.supply - count },
+        familyMembers: {
+          ...members,
+          supply: members.supply - fromSupply,
+          pensioners: members.pensioners - fromPensioners,
+        },
       },
     },
   };

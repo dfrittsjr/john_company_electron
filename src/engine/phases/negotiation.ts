@@ -10,13 +10,13 @@ import type {
   ActorId,
   ApplyCommandResult,
   CardInstance,
+  GameCommand,
   GameLogEntry,
   GameState,
   PendingDecision,
   PlayerId,
   ValidationError,
 } from "../types";
-import { createFamilyActionCommands } from "./family";
 import type {
   ConsentRequest,
   InterruptFrame,
@@ -109,19 +109,68 @@ export function registerDecisionRefresher(step: string, refresher: DecisionRefre
   decisionRefreshers.set(step, refresher);
 }
 
-export function refreshPendingDecision(state: GameState): GameState {
-  const refresher = decisionRefreshers.get(state.pendingDecision.step);
-  return refresher ? { ...state, pendingDecision: refresher(state) } : state;
+type StateRefresher = (state: GameState) => GameState;
+
+const stateRefreshers = new Map<string, StateRefresher>();
+
+/**
+ * Like registerDecisionRefresher, for steps whose decision is rebuilt by re-running the phase's own
+ * progress logic, which returns a whole state (e.g. Parliament's voting rounds).
+ */
+export function registerStateRefresher(step: string, refresher: StateRefresher): void {
+  stateRefreshers.set(step, refresher);
 }
 
-// The Family action list depends on cash and supply. TODO(FH): move this registration into
-// family.ts (and add one for family.chooseRepeatAction) if the command builder changes.
-registerDecisionRefresher("family.chooseAction", (state) => {
-  const actor = state.pendingDecision.actor;
-  return actor === "simultaneous"
-    ? state.pendingDecision
-    : { ...state.pendingDecision, legalCommands: createFamilyActionCommands(state, actor) };
-});
+type CommandDryRun = (state: GameState, command: GameCommand) => ApplyCommandResult;
+
+let commandDryRun: CommandDryRun | undefined;
+
+/** The dispatcher registers how to try a command without keeping the result (commands.ts). */
+export function registerCommandDryRun(dryRun: CommandDryRun): void {
+  commandDryRun = dryRun;
+}
+
+/**
+ * Rebuild the pending decision after an anytime command changed cash or holdings. A step's own
+ * refresher (if registered) recomputes its options, which can add newly affordable choices; then
+ * every remaining option is tried and dropped if it would now be rejected, so a stale option can
+ * never be applied. If nothing would survive, the original options are kept.
+ */
+export function refreshPendingDecision(state: GameState): GameState {
+  const step = state.pendingDecision.step;
+  const stateRefresher = stateRefreshers.get(step);
+  const refresher = decisionRefreshers.get(step);
+  const refreshed = stateRefresher
+    ? stateRefresher(state)
+    : refresher
+      ? { ...state, pendingDecision: refresher(state) }
+      : state;
+  return pruneUnplayableOptions(refreshed);
+}
+
+function pruneUnplayableOptions(state: GameState): GameState {
+  const decision = state.pendingDecision;
+  if (!commandDryRun || decision.actor === "simultaneous" || decision.legalCommands.length === 0) {
+    return state;
+  }
+
+  const playable = decision.legalCommands.filter((legal, index) => {
+    const result = commandDryRun!(state, {
+      id: `dry-run-${index}`,
+      gameId: state.gameId,
+      actorId: decision.actor,
+      decisionId: decision.id,
+      type: legal.type,
+      payload: legal.payload ?? {},
+      clientTimestamp: state.updatedAt,
+    });
+    return result.ok;
+  });
+
+  return playable.length === 0 || playable.length === decision.legalCommands.length
+    ? state
+    : { ...state, pendingDecision: { ...decision, legalCommands: playable } };
+}
 
 // ---------------------------------------------------------------------------------------------
 // Interrupts: a response owed by another player before the interrupted decision continues.

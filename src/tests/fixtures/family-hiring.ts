@@ -35,14 +35,19 @@ export function withPassedLaws(state: GameState, lawIds: string[]): GameState {
 }
 
 export function withPiecesOnPrize(state: GameState, playerId: PlayerId, prizeId: string, count: number): GameState {
-  return updatePlayer(state, playerId, (player) => ({
-    ...player,
-    familyMembers: {
-      ...player.familyMembers,
-      supply: player.familyMembers.supply - count,
-      prizes: { ...player.familyMembers.prizes, [prizeId]: (player.familyMembers.prizes[prizeId] ?? 0) + count },
-    },
-  }));
+  return updatePlayer(state, playerId, (player) => {
+    // Draw from supply first, then from pieces parked as pensioners (withSupply), never below zero.
+    const fromSupply = Math.min(count, player.familyMembers.supply);
+    return {
+      ...player,
+      familyMembers: {
+        ...player.familyMembers,
+        supply: player.familyMembers.supply - fromSupply,
+        pensioners: player.familyMembers.pensioners - (count - fromSupply),
+        prizes: { ...player.familyMembers.prizes, [prizeId]: (player.familyMembers.prizes[prizeId] ?? 0) + count },
+      },
+    };
+  });
 }
 
 export function withOpportunityMarker(

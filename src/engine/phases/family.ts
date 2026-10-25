@@ -20,6 +20,7 @@ import type {
 } from "../types";
 import type { FamilyState, FamilyTurnStage, FamilyTurnState } from "./family.state";
 import { startHiringPhase } from "./hiring";
+import { registerDecisionRefresher } from "./negotiation";
 import { createCommandLogEntry } from "./shared";
 
 // The Family phase (rulebook pp.13-14). Starting with the Chairman and going clockwise, each
@@ -221,6 +222,29 @@ function createStageDecision(
       };
     }
   }
+}
+
+// After an anytime transfer (p.8) the actor's cash or holdings may have changed: rebuild the
+// Family options so newly affordable actions appear and unaffordable ones disappear.
+registerDecisionRefresher("family.chooseAction", (state) => {
+  const actor = state.pendingDecision.actor;
+  return actor === "system" || actor === "simultaneous" ? state.pendingDecision : createMainActionDecision(state, actor);
+});
+
+for (const [step, stage, keep] of [
+  ["family.chooseRepeatAction", "repeat", "family.finishAction"],
+  ["family.chooseExtraAction", "lawExtraAction", "family.skipExtraAction"],
+] as const) {
+  registerDecisionRefresher(step, (state) => {
+    const turn = state.family.turn;
+    const rebuilt = turn ? createStageDecision(state, turn, stage) : undefined;
+    return (
+      rebuilt ?? {
+        ...state.pendingDecision,
+        legalCommands: state.pendingDecision.legalCommands.filter((command) => command.type === keep),
+      }
+    );
+  });
 }
 
 function createExtraWriterDecision(

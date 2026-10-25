@@ -13,6 +13,7 @@ import type {
   RngRollRecord,
 } from "../types";
 import type { DiscountKey, RetirementContext, RetirementProgress } from "./london-season.state";
+import { registerDecisionRefresher } from "./negotiation";
 
 // Attrition and pensioner retirements, shared by the London Season (p.11) and the final
 // retirement in Final Scoring (p.9).
@@ -184,6 +185,14 @@ export function advanceRetirements(state: GameState): { state: GameState; decisi
 
   return { state: nextState, decision: retirementDecision(nextState, progress.order[current]) };
 }
+
+// Cash can change hands mid-retirement (p.8): rebuild the affordable prizes after a transfer.
+registerDecisionRefresher("retirement.retirePensioner", (state) => {
+  const actor = state.pendingDecision.actor;
+  return state.londonSeason.retirement && actor !== "system" && actor !== "simultaneous"
+    ? retirementDecision(state, actor)
+    : state.pendingDecision;
+});
 
 function retirementDecision(state: GameState, playerId: PlayerId): PendingDecision {
   const progress = state.londonSeason.retirement as RetirementProgress;
