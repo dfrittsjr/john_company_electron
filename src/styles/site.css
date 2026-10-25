@@ -139,3 +139,51 @@ a {
 .button:hover {
   background: #6a5238;
 }
+
+.rules-contents ol {
+  columns: 2;
+  padding-left: 1.4rem;
+}
+
+.rules-contents-child {
+  margin-left: 1rem;
+  font-size: 0.95em;
+}
+
+.rules-section {
+  scroll-margin-top: 16px;
+}
+
+.rules-section h4 {
+  margin: 20px 0 4px;
+}
+
+.rules-section ul.rules-numbered {
+  padding-left: 0;
+  list-style: none;
+}
+
+.rules-pages,
+.rules-badge {
+  color: #6c6155;
+  font-size: 14px;
+}
+
+.rules-badge {
+  color: #8d1d34;
+  font-weight: 700;
+}
+
+.rules-attribution {
+  margin-top: 40px;
+  border-top: 1px solid #cfc3b1;
+  padding-top: 12px;
+  color: #6c6155;
+  font-size: 14px;
+}
+
+@media (max-width: 600px) {
+  .rules-contents ol {
+    columns: 1;
+  }
+}

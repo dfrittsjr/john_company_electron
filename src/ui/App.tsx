@@ -27,6 +27,7 @@ import { LogPanel } from "./LogPanel";
 import { NegotiationPanel } from "./NegotiationPanel";
 import { ParliamentPanel } from "./ParliamentPanel";
 import { PlayerDashboards } from "./PlayerDashboards";
+import { RulesPanel } from "./RulesPanel";
 import { copyText, openTextFile, saveTextFile, TEXT_FILE_TYPE } from "./platform/files";
 import { installFlexGapFallback } from "./platform/flex-gap-fallback";
 import { nextActorName, suggestedSaveName, suggestedSummaryName } from "./save-names";
@@ -172,6 +173,7 @@ export function App() {
   const [selected, setSelected] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string[]>([]);
   const [sideTab, setSideTab] = useState<"log" | "deals" | "laws">("log");
+  const [rulesOpen, setRulesOpen] = useState<{ sectionId?: string } | null>(null);
   const [boardResetKey, setBoardResetKey] = useState(0);
   // Earlier states of this browser session, oldest first. Cleared whenever the game is saved,
   // loaded, or created, so a file that has been passed on can never be taken back.
@@ -703,6 +705,9 @@ export function App() {
               Final scores
             </button>
           ) : null}
+          <button type="button" onClick={() => setRulesOpen({})}>
+            Rules
+          </button>
           <button type="button" className="plain-button" onClick={() => setScreen("start")}>
             Menu
           </button>
@@ -747,6 +752,7 @@ export function App() {
             filter={filter}
             onClearFilter={() => setSelected(null)}
             error={commandError}
+            onOpenRules={(sectionId) => setRulesOpen({ sectionId })}
           />
           <div className="sidebar-tabs" role="tablist" aria-label="Side panels">
             <button type="button" role="tab" aria-selected={sideTab === "log"} className={sideTab === "log" ? "tab tab-active" : "tab"} onClick={() => setSideTab("log")}>
@@ -780,6 +786,7 @@ export function App() {
       </div>
 
       {showFinalScoring ? <FinalScoringView game={game} onClose={() => setFinalScoringDismissed(true)} /> : null}
+      {rulesOpen ? <RulesPanel initialSectionId={rulesOpen.sectionId} onClose={() => setRulesOpen(null)} /> : null}
     </main>
   );
 }
