@@ -2360,10 +2360,11 @@ describe("command application", () => {
       actorId: "system",
     });
 
-    expect(state.phase).toBe("family");
-    // Prize retirements are not implemented, so the pensioner goes straight back to supply (p.12).
-    expect(state.players["player-blue"].familyMembers.pensioners).toBe(0);
-    expect(state.players["player-blue"].familyMembers.supply).toBe(18);
+    // The retired officeholder is now a pensioner who may retire to a prize (p.11).
+    expect(state.phase).toBe("londonSeason");
+    expect(state.pendingDecision.step).toBe("retirement.retirePensioner");
+    expect(state.pendingDecision.actor).toBe("player-blue");
+    expect(state.players["player-blue"].familyMembers.pensioners).toBe(1);
     expect(playerOffices(state, "player-blue")).not.toContain("manager-of-shipping");
     expect(state.company.offices["manager-of-shipping"]).toEqual(
       expect.objectContaining({
@@ -2388,6 +2389,18 @@ describe("command application", () => {
         ],
       }),
     );
+
+    // Declining to retire sends the pensioner back to supply at the end of the season (p.12).
+    state = applyCommandOrThrow(state, {
+      id: "command-london-season-decline-retirement",
+      actorId: "player-blue",
+      type: "retirement.stop",
+      payload: {},
+    });
+
+    expect(state.phase).toBe("family");
+    expect(state.players["player-blue"].familyMembers.pensioners).toBe(0);
+    expect(state.players["player-blue"].familyMembers.supply).toBe(18);
   });
 
   it("applies the Chairman stress modifier to London Season retirement", () => {
@@ -2403,7 +2416,8 @@ describe("command application", () => {
       actorId: "system",
     });
 
-    expect(state.players["player-red"].familyMembers.supply).toBe(18);
+    expect(state.players["player-red"].familyMembers.supply).toBe(17);
+    expect(state.players["player-red"].familyMembers.pensioners).toBe(1);
     expect(chairmanHolder(state)).toBeUndefined();
     expect(state.company.offices.chairman.vacant).toBe(true);
     expect(state.log.at(-1)?.details).toEqual(
@@ -2456,7 +2470,9 @@ describe("command application", () => {
 
     expect(state.phase).toBe("finalScoring");
     expect(state.pendingDecision.step).toBe("finalScoring.complete");
-    expect(state.log.at(-1)?.summary).toBe("Starter Final Scoring confirmed.");
+    expect(state.log.at(-1)?.summary).toMatch(/^Final Scoring: the Company survived\./);
+    expect(state.finalScoring.complete).toBe(true);
+    expect(state.finalScoring.ranking).toHaveLength(3);
   });
 
   it("keeps command invariants and save round trips valid through the starter sequence", () => {

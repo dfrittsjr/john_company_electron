@@ -12,6 +12,7 @@ import type {
   PresidencyId,
 } from "../types";
 import { createFamilyActionCommands } from "./family";
+import { buildLondonSeasonDisplay, drawSetupBlackmail } from "./london-season";
 import { createCommandLogEntry } from "./shared";
 
 export function confirmStart(state: GameState, command: GameCommand): ApplyCommandResult {
@@ -21,7 +22,8 @@ export function confirmStart(state: GameState, command: GameCommand): ApplyComma
     setupDistribution === "random" && state.mode === "hotseat" && setupDeckIdForScenario(state) === "1710"
       ? applyRandomHotseat1710SetupCards(state)
       : { state, details: undefined };
-  const setupState = setupResult.state;
+  // Setup step 12: build the London Season Display after setup cards have taken their blackmail.
+  const setupState = buildLondonSeasonDisplay(setupResult.state);
   const nextActor = setupState.seatingOrder.find((playerId) => !setupState.players[playerId].isCrown);
 
   if (!nextActor) {
@@ -184,7 +186,7 @@ function applySetupCardEffect(
     case "primeMinister":
       return { ...state, parliament: { ...state.parliament, primeMinister: playerId } };
     case "randomBlackmail":
-      return addPlaceholderBlackmail(state, playerId, effect.count, card.id);
+      return drawSetupBlackmail(state, playerId, effect.count);
     case "writer":
       return addWriters(state, playerId, normalizePresidency(effect.presidency), effect.count);
     case "commander":
@@ -262,38 +264,6 @@ function addCompanyShares(
     },
     playerId,
     count,
-  );
-}
-
-function addPlaceholderBlackmail(
-  state: GameState,
-  playerId: PlayerId,
-  count: number,
-  sourceCardId: string,
-): GameState {
-  const existingCount = state.players[playerId]?.blackmailCards.length ?? 0;
-  const cards = Array.from({ length: count }, (_, index) => ({
-    id: `setup-blackmail-${sourceCardId}-${existingCount + index + 1}`,
-    cardId: "blackmail-placeholder",
-    facedown: true,
-  }));
-
-  return updatePlayer(
-    {
-      ...state,
-      hidden: {
-        ...state.hidden,
-        privateCards: {
-          ...state.hidden.privateCards,
-          [playerId]: [...(state.hidden.privateCards[playerId] ?? []), ...cards],
-        },
-      },
-    },
-    playerId,
-    (player) => ({
-      ...player,
-      blackmailCards: [...player.blackmailCards, ...cards],
-    }),
   );
 }
 

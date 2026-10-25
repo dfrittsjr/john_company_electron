@@ -1,11 +1,15 @@
 import {
   companyTracks,
+  enterpriseDecks,
   offices,
   powerTrack,
+  prestigeCards,
+  prizes,
   scenarios,
   type PowerTargetId,
   type PowerTrackPositionId,
 } from "../data";
+import type { PowerTargetId as PowerTargetKind, PrestigeCard } from "../data";
 import type { OfficeDefinition, ScenarioDefinition } from "../data/types";
 import type {
   ArmyId,
@@ -197,6 +201,76 @@ export function shipForShipyard(state: GameState, shipyardCardId: string): ShipS
 
 export function isShipFitted(ship: ShipState | undefined): boolean {
   return Boolean(ship && ship.location !== "shipyard");
+}
+
+// --- London Season, Upkeep and Final Scoring views (LS) ---
+
+const enterpriseCardById = new Map(enterpriseDecks.flatMap((deck) => deck.cards).map((card) => [card.id, card]));
+const prestigeCardById = new Map(prestigeCards.map((card) => [card.id, card]));
+const prizeById = new Map(prizes.map((prize) => [prize.id, prize]));
+
+/** Seating order rotated so `first` leads, continuing clockwise. Unknown `first` keeps seat order. */
+export function clockwiseFrom(state: GameState, first: PlayerId | undefined): PlayerId[] {
+  const index = first ? state.seatingOrder.indexOf(first) : -1;
+  if (index <= 0) return [...state.seatingOrder];
+  return [...state.seatingOrder.slice(index), ...state.seatingOrder.slice(0, index)];
+}
+
+/** "Prime Minister order (clockwise, starting with the Prime Minister)" (p.9, p.12). */
+export function primeMinisterOrder(state: GameState): PlayerId[] {
+  return clockwiseFrom(state, state.parliament.primeMinister);
+}
+
+/**
+ * Window tax icons a family has: luxuries, prestige cards with window icons, and each family
+ * member on a prize (p.11, p.13). Used for tie-breaks (p.9, p.12) and window taxes (p.34).
+ */
+export function playerWindowIcons(state: GameState, playerId: PlayerId): number {
+  const player = state.players[playerId];
+  if (!player) return 0;
+
+  const enterpriseWindows = player.enterprises.reduce(
+    (total, enterprise) => total + (enterpriseCardById.get(enterprise.cardId ?? "")?.windowTaxIcons ?? 0),
+    0,
+  );
+  const prestigeWindows = player.prestigeCards.reduce(
+    (total, card) => total + (prestigeCardById.get(card.cardId)?.windowTaxIcons ?? 0),
+    0,
+  );
+  const prizeWindows = Object.entries(player.familyMembers.prizes).reduce(
+    (total, [prizeId, count]) => total + count * (prizeById.get(prizeId)?.windowTaxIcons ?? 0),
+    0,
+  );
+
+  return enterpriseWindows + prestigeWindows + prizeWindows;
+}
+
+/** Spouse cards a family holds (they cannot be transferred, p.12). */
+export function playerSpouses(state: GameState, playerId: PlayerId): PrestigeCard[] {
+  return (state.players[playerId]?.prestigeCards ?? [])
+    .map((card) => prestigeCardById.get(card.cardId))
+    .filter((card): card is PrestigeCard => card?.prestigeType === "spouse");
+}
+
+export function playerHasPrestigeCard(state: GameState, playerId: PlayerId, cardId: string): boolean {
+  return (state.players[playerId]?.prestigeCards ?? []).some((card) => card.cardId === cardId);
+}
+
+/**
+ * Power of each Power track marker (p.9). `company.powerTrack` stores the power value of the box
+ * each marker sits in; missing entries fall back to the printed starting boxes.
+ */
+export function powerTrackValue(state: GameState, target: PowerTargetKind): number {
+  const stored = state.company.powerTrack[target];
+  if (typeof stored === "number") return stored;
+
+  const startBox = powerTrack.startingPositions[target];
+  return powerTrack.positions.find((position) => position.id === startBox)?.power ?? 0;
+}
+
+/** True once the game has ended: no negotiation, promises or blackmail except as cards allow (p.9). */
+export function isGameOver(state: GameState): boolean {
+  return state.phase === "finalScoring";
 }
 
 /** Ships that pay Company expenses: everything in the three sea zones, plus China (counts as Eastern, p.25). */
