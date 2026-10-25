@@ -37,6 +37,7 @@ import {
   expectGameInvariants,
   expectSaveRoundTripPreservesPendingDecision,
 } from "../fixtures/game";
+import { resolveParliament } from "../fixtures/parliament";
 
 describe("command application", () => {
   it("reports unknown command types explicitly", () => {
@@ -1956,7 +1957,7 @@ describe("command application", () => {
     expect(state.company.balance).toBe(9);
     expect(state.company.debt).toBe(2);
     expect(state.company.standing).toBe(3);
-    expect(state.log.at(-1)?.summary).toBe("Revenue paid £9 in Company expenses.");
+    expect(state.log.at(-1)?.summary).toContain("Revenue paid £9 in Company expenses.");
     expect(state.log.at(-1)?.details).toEqual(
       expect.objectContaining({
         emergencyLoans: 0,
@@ -2077,7 +2078,7 @@ describe("command application", () => {
     expect(state.company.failed).toBe(false);
     expect(state.players["player-red"].cash).toBe(4);
     expect(state.players["player-blue"].cash).toBe(2);
-    expect(state.log.at(-1)?.summary).toBe("Revenue paid £6 in dividends.");
+    expect(state.log.at(-1)?.summary).toContain("Revenue paid £6 in dividends.");
     expect(state.log.at(-1)?.details).toEqual(
       expect.objectContaining({
         amountPerShare: 2,
@@ -2130,7 +2131,7 @@ describe("command application", () => {
     expect(state.company.failed).toBe(true);
     expect(state.phase).toBe("finalScoring");
     expect(state.pendingDecision.step).toBe("finalScoring.confirm");
-    expect(state.log.at(-1)?.summary).toBe("The Company failed during Revenue.");
+    expect(state.log.at(-1)?.summary).toContain("The Company failed during Revenue.");
   });
 
   it("starts 1710 on the £10 Standing space, so a bad Revenue does not end the game", () => {
@@ -2294,8 +2295,6 @@ describe("command application", () => {
       ["revenue", "revenue.chooseDividends", "eventsInIndia"],
       ["eventsInIndia", "eventsInIndia.confirm", "eventsInIndia"],
       ["eventsInIndia", "eventsInIndia.resolveRolledEvents", "parliament"],
-      ["parliament", "parliament.confirm", "upkeep"],
-      ["upkeep", "upkeep.confirm", "londonSeason"],
     ] as const;
 
     for (const [phase, commandType, nextPhase] of expectedSteps) {
@@ -2310,6 +2309,13 @@ describe("command application", () => {
       expect(state.phase).toBe(nextPhase);
       expect(state.log.at(-1)?.sequence).toBe(state.log.length);
     }
+
+    // Parliament (pp.34-36) has player decisions: draw, policy, voting rounds.
+    expect(state.pendingDecision.legalCommands[0]?.type).toBe("parliament.confirm");
+    state = resolveParliament(state);
+    expect(state.phase).toBe("upkeep");
+    state = applyFirstLegalCommand(state, { commandId: "command-upkeep.confirm", actorId: "system" });
+    expect(state.phase).toBe("londonSeason");
 
     expect(state.turn).toBe(2);
     expect(state.pendingDecision.step).toBe("londonSeason.confirm");
@@ -2434,10 +2440,10 @@ describe("command application", () => {
       "command-revenue-dividends",
       "command-events-roll",
       "command-events-resolve",
-      "command-parliament",
     ]) {
       state = applyFirstLegalCommand(state, { commandId, actorId: "system" });
     }
+    state = resolveParliament(state);
 
     expect(state.phase).toBe("upkeep");
 

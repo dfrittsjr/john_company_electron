@@ -13,7 +13,7 @@ export type PolicyTarget = "social" | "companyShare" | "shipping" | "manufacturi
 export type ParliamentResolutionStep =
   | { kind: "policy"; space: number; actor?: PlayerId; extraWindowTax: boolean }
   | { kind: "tax"; target: PolicyTarget; players: PlayerId[] }
-  | { kind: "windowTax"; players: PlayerId[] }
+  | { kind: "windowTax"; players: PlayerId[]; exemptFromRepeal: boolean }
   | { kind: "bonus"; target: PolicyTarget }
   | { kind: "power"; target: PolicyTarget; actor?: PlayerId }
   | { kind: "lawPassed"; lawId: string }
@@ -22,8 +22,7 @@ export type ParliamentResolutionStep =
   | { kind: "warShips"; remaining: number }
   | { kind: "warPieces"; remaining: number }
   | { kind: "changePrimeMinister" }
-  | { kind: "movePolicyAfterFailure"; actor?: PlayerId }
-  | { kind: "oppositionWindowTax"; actor: PlayerId }
+  | { kind: "movePolicyAfterFailure"; taxCollectorsMayAdd: boolean }
   | { kind: "finish" };
 
 export type ParliamentStage =
@@ -78,7 +77,7 @@ export type ParliamentSession = {
   queue: ParliamentResolutionStep[];
 };
 
-export type RevenueStage = "companyFraud" | "royalProtection" | "scandal";
+export type RevenueStage = "companyFraud" | "royalProtection" | "dividends" | "scandal";
 
 /** In-flight Revenue phase choices (Revenue's rules live with the Parliament area). */
 export type RevenueProgress = {
