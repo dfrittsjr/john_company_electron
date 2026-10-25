@@ -3,6 +3,7 @@ import {
   applyCommand,
   createNewGame,
   standingLabel,
+  undoBlockReason,
   type GameCommand,
   type GameState,
   type LegalCommand,
@@ -172,8 +173,45 @@ export function App() {
   const [hovered, setHovered] = useState<string[]>([]);
   const [sideTab, setSideTab] = useState<"log" | "deals" | "laws">("log");
   const [boardResetKey, setBoardResetKey] = useState(0);
+  // Earlier states of this browser session, oldest first. Cleared whenever the game is saved,
+  // loaded, or created, so a file that has been passed on can never be taken back.
+  const [history, setHistory] = useState<GameState[]>([]);
+  const [undoStatus, setUndoStatus] = useState<string | null>(null);
 
   useEffect(() => installFlexGapFallback(), []);
+
+  const previous = history.at(-1);
+  const undoBlocked = !previous ? "Nothing to undo." : game ? undoBlockReason(previous, game) : "Nothing to undo.";
+
+  function undo() {
+    if (!game || !previous || undoBlocked) return;
+
+    setUndoStatus(`Undid: ${game.log.at(-1)?.summary ?? "the last action"}`);
+    setGame(previous);
+    setHistory((current) => current.slice(0, -1));
+    setCommandError(null);
+    setHovered([]);
+    setSelected(null);
+    // The restored decision may belong to someone else: hide private information again.
+    setHandoff(null);
+    setRevealedPlayer(null);
+  }
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key.toLowerCase() !== "z" || !(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey) {
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      if (target && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))) return;
+
+      event.preventDefault();
+      undo();
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  });
   const [finalScoringDismissed, setFinalScoringDismissed] = useState(false);
   const [setup, setSetup] = useState<SetupState>({
     scenario: "1710",
@@ -230,6 +268,8 @@ export function App() {
     });
 
     setGame(nextGame);
+    setHistory([]);
+    setUndoStatus(null);
     setCommandError(null);
     setSaveStatus(null);
     setHandoff(null);
@@ -269,6 +309,8 @@ export function App() {
     }
 
     const next = handoffTarget(result.state, command.actorId);
+    setHistory((current) => [...current, game]);
+    setUndoStatus(null);
     setGame(result.state);
     setCommandError(null);
     setHovered([]);
@@ -307,6 +349,11 @@ export function App() {
     const result = await saveTextFile(content, suggestedSaveName(game));
     const handoff = `Send it to ${nextActorName(game)}.`;
 
+    if (result.status === "saved" || result.status === "downloaded") {
+      // The file is on its way to the next player: it can no longer be taken back.
+      setHistory([]);
+      setUndoStatus(null);
+    }
     if (result.status === "saved") {
       setSaveStatus(`Saved ${result.fileName}. ${handoff}`);
     } else if (result.status === "downloaded") {
@@ -332,6 +379,8 @@ export function App() {
     try {
       const loadedGame = deserializeGameState(result.content);
       setGame(loadedGame);
+      setHistory([]);
+      setUndoStatus(null);
       setBoardResetKey((key) => key + 1);
       setCommandError(null);
       setRevealedPlayer(null);
@@ -623,6 +672,20 @@ export function App() {
           </div>
         </dl>
         <div className="header-actions">
+          <button
+            type="button"
+            onClick={undo}
+            disabled={Boolean(undoBlocked)}
+            title={undoBlocked ?? "Undo the last action (Ctrl+Z)."}
+            aria-describedby={undoBlocked ? "undo-reason" : undefined}
+          >
+            Undo
+          </button>
+          {undoBlocked ? (
+            <span id="undo-reason" className="visually-hidden">
+              {undoBlocked}
+            </span>
+          ) : null}
           <button type="button" onClick={saveGame} title="Save a .joco file named for whoever acts next, then send it to them.">
             Save &amp; pass
           </button>
@@ -670,6 +733,11 @@ export function App() {
 
         <aside className="sidebar">
           {saveStatus ? <p className="status-strip">{saveStatus}</p> : null}
+          {undoStatus ? (
+            <p className="status-strip" role="status">
+              {undoStatus}
+            </p>
+          ) : null}
           <DecisionPanel
             game={game}
             hidden={decisionHidden}

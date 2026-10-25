@@ -4,6 +4,7 @@ export * from "./setup";
 export * from "./types";
 export * from "./selectors";
 export * from "./command-handler";
+export { undoBlockReason } from "./undo";
 export {
   applyTransfer,
   enterpriseVoteGuarantors,
