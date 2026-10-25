@@ -12,3 +12,8 @@ A Note.txt
 
 # Local deployment notes (kept out of the repo)
 DEPLOY.md
+
+# Local scratch scripts and Wrangler local secrets
+scratch/
+.dev.vars*
+!.dev.vars.example

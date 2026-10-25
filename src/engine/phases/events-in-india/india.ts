@@ -1,5 +1,6 @@
 import { indiaEventTiles, mapData } from "../../../data";
 import type { ElephantShape } from "../../../data/india-events";
+import { hiddenEventTileRegion, isHiddenId } from "../../hidden";
 import type { ElephantState, GameState, OrderState, RegionId, RegionState } from "../../types";
 import type { ResolutionContext } from "./context";
 import { log, playerName, regionName } from "./context";
@@ -329,10 +330,14 @@ export function describeElephant(state: GameState, elephant: ElephantState): str
   return `in ${name} facing ${state.india.regions[elephant.facing]?.name ?? elephant.facing}`;
 }
 
-/** The region whose tile is on top of the draw stack. */
+/**
+ * The region whose tile is on top of the draw stack. Also works on a projected view, where the
+ * top tile is a placeholder that keeps only its region side (see ../../hidden.ts).
+ */
 export function topOfStackRegion(state: GameState): RegionId | undefined {
   const tileId = state.eventsInIndia.drawPile[0];
-  return tileId ? tileRegion(tileId) : undefined;
+  if (!tileId) return undefined;
+  return isHiddenId(tileId) ? hiddenEventTileRegion(tileId) : tileRegion(tileId);
 }
 
 const tileRegions = new Map(indiaEventTiles.map((tile) => [tile.id, tile.region as RegionId]));
