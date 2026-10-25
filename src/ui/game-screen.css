@@ -454,6 +454,38 @@
   gap: 4px;
 }
 
+.command-item {
+  display: grid;
+  gap: 2px;
+  align-content: start;
+}
+
+.command-item .command-button {
+  width: 100%;
+}
+
+/* Hover tooltips don't exist on phones, so narrow screens print the description under the option.
+   A warning is always printed. */
+.command-description {
+  display: none;
+  padding: 0 4px;
+  font-size: 0.78rem;
+  line-height: 1.25;
+  color: #5b4a32;
+}
+
+.command-description.command-warning {
+  display: block;
+  color: #8a2a12;
+  font-weight: 600;
+}
+
+@media (max-width: 900px) {
+  .command-description {
+    display: block;
+  }
+}
+
 .command-button {
   min-height: 34px;
   padding: 6px 10px;

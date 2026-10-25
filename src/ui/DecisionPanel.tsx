@@ -80,19 +80,26 @@ export function DecisionPanel({ game, hidden, onReveal, onRun, onHover, filter, 
             <div key={group.key} className="command-group">
               {groups.length > 1 || group.commands.length > 1 ? <h3>{group.title}</h3> : null}
               <div className={group.commands.length >= COMPACT_GROUP_SIZE ? "command-grid" : "command-list"}>
-                {group.commands.map(({ command }) => (
-                  <button
-                    key={originalIndex.get(command)}
-                    type="button"
-                    className="command-button"
-                    title={command.description}
-                    onClick={() => onRun(command)}
-                    onMouseEnter={() => onHover(commandTargets(command))}
-                    onFocus={() => onHover(commandTargets(command))}
-                  >
-                    {command.label}
-                  </button>
-                ))}
+                {group.commands.map(({ command }) => {
+                  const warning = Boolean(command.description?.startsWith("Warning"));
+                  return (
+                    <div key={originalIndex.get(command)} className="command-item">
+                      <button
+                        type="button"
+                        className="command-button"
+                        title={command.description}
+                        onClick={() => onRun(command)}
+                        onMouseEnter={() => onHover(commandTargets(command))}
+                        onFocus={() => onHover(commandTargets(command))}
+                      >
+                        {command.label}
+                      </button>
+                      {command.description ? (
+                        <small className={warning ? "command-description command-warning" : "command-description"}>{command.description}</small>
+                      ) : null}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           ))}
