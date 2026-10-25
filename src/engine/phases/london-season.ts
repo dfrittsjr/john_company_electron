@@ -254,7 +254,7 @@ function prestigeDecision(state: GameState, playerId: PlayerId): PendingDecision
   if (playerHasPrestigeCard(state, playerId, BECKY_SHARP) && state.londonSeason.deck.length > 0) {
     legalCommands.push({
       type: "londonSeason.choosePrestigeCard",
-      label: "Take the top card of the deck (Becky Sharp)",
+      label: "Take the top card of the deck, unseen (Becky Sharp's ability)",
       payload: { action: "takeTopOfDeck" },
     });
   }

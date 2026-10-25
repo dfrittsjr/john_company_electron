@@ -66,3 +66,52 @@ describe("Connections are offered only when the reroll could matter (p.17, black
     expect(connectionCouldMatter({ dice: 4, outcome: "failure" }, RED, RED)).toBe(true);
   });
 });
+
+describe("Company Operation warnings from the end-of-game playtest", () => {
+  test("the Director of Trade sees closed home ports, home ports come first after a success, and stopping warns (p.18, p.20)", async () => {
+    const { operationGame, enterOperation, choose: coChoose, withDice, RED: CO_RED, BLUE: CO_BLUE } = await import("../fixtures/company-operation");
+    const { withOffice } = await import("../fixtures/builders");
+    let state = operationGame("envoy-warnings");
+    state = withOffice(state, "chairman", CO_RED);
+    state = withOffice(state, "director-of-trade", CO_BLUE, { treasury: 4 });
+    const bombay = Object.values(state.india.regions).find((region) => region.homePresidency === "Bombay")!;
+    state = {
+      ...state,
+      india: {
+        ...state.india,
+        regions: {
+          ...state.india.regions,
+          [bombay.id]: { ...bombay, orders: bombay.orders.map((order) => (order.isHomePortFor === "Bombay" ? { ...order, closed: true } : order)) },
+        },
+      },
+    };
+    state = enterOperation(state, ["chairman"]);
+    expect(state.pendingDecision.prompt).toMatch(/Closed home ports: Bombay\./);
+    const stop = state.pendingDecision.legalCommands.find((command) => (command.payload as { action: string }).action === "stopEnvoys")!;
+    expect(stop.description).toMatch(/^Warning: the home port of Bombay is still closed/);
+
+    const succeeded = withDice(
+      state,
+      (seeded) => coChoose(seeded, { action: "envoy", spend: 4 }),
+      (next) => next.pendingDecision.step === "companyOperation.directorOfTrade.envoyEffect",
+    );
+    const labels = succeeded.pendingDecision.legalCommands.map((command) => command.label);
+    expect(labels[0]).toMatch(/^Reopen Bombay's home port \(the £\d+ order in Bombay\)/);
+    expect(labels[labels.length - 1]).toBe("Open trade with China");
+  });
+
+  test("giving the whole Balance away warns when a seated President would be left with nothing", async () => {
+    const { operationGame, enterOperation, RED: CO_RED, BLUE: CO_BLUE } = await import("../fixtures/company-operation");
+    const { withOffice } = await import("../fixtures/builders");
+    let state = operationGame("chairman-warning");
+    state = withOffice(state, "chairman", CO_RED);
+    state = withOffice(state, "president-madras", CO_BLUE, { treasury: 0 });
+    state = withOffice(state, "manager-of-shipping", CO_BLUE, { treasury: 0 });
+    state = { ...state, company: { ...state.company, balance: 6 } };
+    state = enterOperation(state);
+    const giveAll = state.pendingDecision.legalCommands.find((command) => command.label === "Give all £6 to Manager of Shipping")!;
+    expect(giveAll.description).toMatch(/^Warning: this leaves Presidency of Madras with £0/);
+    const toMadras = state.pendingDecision.legalCommands.find((command) => command.label === "Give all £6 to Presidency of Madras")!;
+    expect(toMadras.description).toBeUndefined();
+  });
+});

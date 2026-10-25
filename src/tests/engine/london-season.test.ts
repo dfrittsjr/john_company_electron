@@ -246,7 +246,7 @@ describe("London Season (pp.11-12)", () => {
     state = withDisplay(state, ["foundry", "stock-broker", "tax-collectors"], ["social-magazine", "rotten-borough-2", "rotten-borough-3", "shipbuilders"]);
     state = confirm(state);
     state = choose(state, "Retire to the £2 prize");
-    state = choose(state, "Take the top card of the deck (Becky Sharp)");
+    state = choose(state, "Take the top card of the deck, unseen (Becky Sharp's ability)");
 
     expect(state.players[RED].prestigeCards.map((card) => card.cardId)).toContain("social-magazine");
     expect(state.londonSeason.display).toEqual(["rotten-borough-2", "rotten-borough-3", "shipbuilders"]);

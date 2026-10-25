@@ -43,6 +43,18 @@ function canAdvanceDebt(state: GameState, current: ChairmanProgress): boolean {
   return current.debtAdvances < FREE_DEBT_ADVANCES || !current.consentRefused;
 }
 
+const PRESIDENT_OFFICE_IDS = ["president-bombay", "president-madras", "president-bengal"];
+
+/** Giving away the rest of the Balance would leave these seated Presidents with nothing to Trade with. */
+function emptyPresidentsWarning(state: GameState, officeId: OfficeId): string | undefined {
+  const empty = PRESIDENT_OFFICE_IDS.filter((id) => {
+    const office = state.company.offices[id];
+    return id !== officeId && office && !office.vacant && office.holder && office.treasury === 0;
+  });
+  if (empty.length === 0) return undefined;
+  return `Warning: this leaves ${empty.map(officeLabel).join(" and ")} with £0, so ${empty.length === 1 ? "that President" : "those Presidents"} can't Trade.`;
+}
+
 export function chairmanDecision(state: GameState): PendingDecision {
   const current = progress(state);
   const balance = state.company.balance;
@@ -67,6 +79,7 @@ export function chairmanDecision(state: GameState): PendingDecision {
         commands.push({
           type: "companyOperation.chairman",
           label: amount === balance ? `Give all £${amount} to ${officeLabel(officeId)}` : `Give £${amount} to ${officeLabel(officeId)}`,
+          description: amount === balance ? emptyPresidentsWarning(state, officeId) : undefined,
           payload: { action: "allocate", officeId, amount } satisfies ChairmanPayload,
         });
       }
