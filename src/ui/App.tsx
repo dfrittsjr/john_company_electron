@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   applyCommand,
   createNewGame,
@@ -8,6 +8,7 @@ import {
   type LegalCommand,
 } from "../engine";
 import {
+  policyDial,
   validateNewGameStaticData,
   type CrownDifficulty,
   type PlayMode,
@@ -15,11 +16,20 @@ import {
   type ValidationIssue,
 } from "../data";
 import { deserializeGameState, serializeSave } from "../save";
+import "./game-screen.css";
+import { BoardView } from "./BoardView";
+import { DecisionPanel } from "./DecisionPanel";
+import { DetailsPanel } from "./DetailsPanel";
+import { FinalScoringView } from "./FinalScoringView";
+import { HandoffBanner } from "./HandoffBanner";
+import { LogPanel } from "./LogPanel";
 import { NegotiationPanel } from "./NegotiationPanel";
+import { ParliamentPanel } from "./ParliamentPanel";
+import { PlayerDashboards } from "./PlayerDashboards";
 import { copyText, openTextFile, saveTextFile, TEXT_FILE_TYPE } from "./platform/files";
+import { installFlexGapFallback } from "./platform/flex-gap-fallback";
 import { nextActorName, suggestedSaveName, suggestedSummaryName } from "./save-names";
-
-const BOARD_IMAGE_URL = "/images/board.webp";
+import { FAMILY_PALETTE, commandTargets, handoffTarget, humanize, phaseLabel, playerName } from "./view-model";
 
 type PlayerSetup = {
   id: string;
@@ -62,13 +72,12 @@ const scenarioOptions: Array<{
   },
 ];
 
-const playerColors = ["#8d1d34", "#b88a1d", "#b9483f", "#6f5aa7", "#2f6f73", "#4f6732"];
 
 function createPlayers(count: number): PlayerSetup[] {
   return Array.from({ length: count }, (_, index) => ({
     id: `player-${index + 1}`,
     name: `Player ${index + 1}`,
-    color: playerColors[index],
+    color: FAMILY_PALETTE[index],
   }));
 }
 
@@ -157,6 +166,15 @@ export function App() {
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   // The player who has confirmed they hold the device; private cards and decisions show only to them.
   const [revealedPlayer, setRevealedPlayer] = useState<string | null>(null);
+  // The player who should receive the save after the last move, when it is someone else.
+  const [handoff, setHandoff] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [hovered, setHovered] = useState<string[]>([]);
+  const [sideTab, setSideTab] = useState<"log" | "deals" | "laws">("log");
+  const [boardResetKey, setBoardResetKey] = useState(0);
+
+  useEffect(() => installFlexGapFallback(), []);
+  const [finalScoringDismissed, setFinalScoringDismissed] = useState(false);
   const [setup, setSetup] = useState<SetupState>({
     scenario: "1710",
     playerCount: 4,
@@ -214,6 +232,10 @@ export function App() {
     setGame(nextGame);
     setCommandError(null);
     setSaveStatus(null);
+    setHandoff(null);
+    setSelected(null);
+    setRevealedPlayer(null);
+    setFinalScoringDismissed(false);
     setScreen("board");
   }
 
@@ -234,20 +256,36 @@ export function App() {
       payload: legalCommand.payload ?? {},
       clientTimestamp: new Date().toISOString(),
     };
+    applyAndHandOff(command);
+  }
+
+  function applyAndHandOff(command: GameCommand) {
+    if (!game) return;
     const result = applyCommand(game, command);
 
-    if (result.ok) {
-      setGame(result.state);
-      setCommandError(null);
-    } else {
+    if (!result.ok) {
       setCommandError(result.errors.map((error) => error.message).join(" "));
+      return;
+    }
+
+    const next = handoffTarget(result.state, command.actorId);
+    setGame(result.state);
+    setCommandError(null);
+    setHovered([]);
+    setSelected(null);
+    if (next) {
+      // Someone else decides next: hide private information until they reveal it.
+      setHandoff(next);
+      setRevealedPlayer(null);
+    } else {
+      setHandoff(null);
     }
   }
 
   function runAnytimeCommand(actorId: string, type: string, payload: unknown) {
     if (!game) return;
 
-    const result = applyCommand(game, {
+    applyAndHandOff({
       id: `cmd-${Date.now()}`,
       gameId: game.gameId,
       actorId,
@@ -256,13 +294,6 @@ export function App() {
       payload,
       clientTimestamp: new Date().toISOString(),
     });
-
-    if (result.ok) {
-      setGame(result.state);
-      setCommandError(null);
-    } else {
-      setCommandError(result.errors.map((error) => error.message).join(" "));
-    }
   }
 
   async function saveGame() {
@@ -301,8 +332,12 @@ export function App() {
     try {
       const loadedGame = deserializeGameState(result.content);
       setGame(loadedGame);
+      setBoardResetKey((key) => key + 1);
       setCommandError(null);
       setRevealedPlayer(null);
+      setHandoff(null);
+      setSelected(null);
+      setFinalScoringDismissed(false);
       setSaveStatus(`Loaded ${result.fileName}`);
       setScreen("board");
     } catch (error) {
@@ -539,161 +574,144 @@ export function App() {
     return null;
   }
 
-  const pendingActor = actorLabel(game);
   const decisionActor = game.pendingDecision.actor;
   const decisionHidden =
     game.pendingDecision.visibility === "private" &&
     decisionActor !== "system" &&
     decisionActor !== "simultaneous" &&
     revealedPlayer !== decisionActor;
-  const playerRows = game.seatingOrder.map((playerId) => game.players[playerId]);
+  const highlights = new Set(decisionHidden ? [] : game.pendingDecision.legalCommands.flatMap(commandTargets));
+  const filter = selected && highlights.has(selected) ? selected : null;
+  const optionCount = selected
+    ? game.pendingDecision.legalCommands.filter((command) => commandTargets(command).includes(selected)).length
+    : 0;
+  const policySpace = policyDial.spaces[game.parliament.policyDialPosition];
+  const showFinalScoring = Boolean(game.finalScoring.complete) && !finalScoringDismissed;
 
   return (
     <main className="game-screen">
       <header className="game-header">
-        <div>
-          <p className="eyebrow">John Company</p>
-          <h1>{game.scenario}</h1>
+        <div className="game-title">
+          <p className="eyebrow">John Company · {game.scenario}</p>
+          <h1>
+            Turn {game.turn} · {phaseLabel(game.phase)}
+          </h1>
         </div>
         <dl className="track-strip">
           <div>
-            <dt>Mode</dt>
-            <dd>{game.mode}</dd>
-          </div>
-          <div>
-            <dt>Turn</dt>
-            <dd>{game.turn}</dd>
-          </div>
-          <div>
-            <dt>Phase</dt>
-            <dd>{game.phase}</dd>
-          </div>
-          <div>
             <dt>Standing</dt>
-            <dd>{standingLabel(game)}</dd>
-          </div>
-          <div>
-            <dt>Balance</dt>
-            <dd>GBP {game.company.balance}</dd>
+            <dd>
+              {standingLabel(game)}
+              {game.company.failed ? " (failed)" : ""}
+            </dd>
           </div>
           <div>
             <dt>Debt</dt>
             <dd>{game.company.debt}</dd>
           </div>
+          <div>
+            <dt>Balance</dt>
+            <dd>£{game.company.balance}</dd>
+          </div>
+          <div>
+            <dt>Prime Minister</dt>
+            <dd>{playerName(game, game.parliament.primeMinister)}</dd>
+          </div>
+          <div>
+            <dt>Policy</dt>
+            <dd>{policySpace ? `${humanize(policySpace.consequence)} · ${humanize(policySpace.target)}` : "-"}</dd>
+          </div>
         </dl>
-        <button type="button" onClick={() => setScreen("setup")}>
-          Setup
-        </button>
+        <div className="header-actions">
+          <button type="button" onClick={saveGame} title="Save a .joco file named for whoever acts next, then send it to them.">
+            Save &amp; pass
+          </button>
+          <button type="button" onClick={loadGame}>
+            Load
+          </button>
+          <button type="button" onClick={copySaveSummary}>
+            Copy summary
+          </button>
+          <button type="button" onClick={downloadSaveSummary}>
+            Summary file
+          </button>
+          {game.finalScoring.complete ? (
+            <button type="button" onClick={() => setFinalScoringDismissed(false)}>
+              Final scores
+            </button>
+          ) : null}
+          <button type="button" className="plain-button" onClick={() => setScreen("start")}>
+            Menu
+          </button>
+        </div>
       </header>
 
-      <section className="game-layout">
-        <aside className="side-panel">
-          <h2>Pending Decision</h2>
-          <p>{game.pendingDecision.prompt}</p>
-          <dl className="decision-meta">
-            <div>
-              <dt>Actor</dt>
-              <dd>{pendingActor}</dd>
-            </div>
-            <div>
-              <dt>Step</dt>
-              <dd>{game.pendingDecision.step}</dd>
-            </div>
-          </dl>
-          <div className="legal-command-list">
-            {decisionHidden ? (
-              <div className="privacy-curtain">
-                <p className="status-note">This choice is private. Pass the device to {pendingActor}.</p>
-                <button type="button" onClick={() => setRevealedPlayer(decisionActor)}>
-                  I am {pendingActor}: reveal
-                </button>
-              </div>
-            ) : game.pendingDecision.legalCommands.length > 0 ? (
-              game.pendingDecision.legalCommands.map((legalCommand, index) => (
-                <button
-                  key={`${legalCommand.type}-${index}`}
-                  type="button"
-                  onClick={() => executeLegalCommand(legalCommand)}
-                  title={legalCommand.description}
-                >
-                  {legalCommand.label}
-                </button>
-              ))
+      {handoff && game.players[handoff] ? (
+        <HandoffBanner game={game} target={handoff} onSave={saveGame} onDismiss={() => setHandoff(null)} />
+      ) : null}
+
+      <div className="game-body">
+        <div className="board-column">
+          <div className="board-area">
+            <BoardView
+              game={game}
+              resetKey={boardResetKey}
+              highlights={highlights}
+              focus={new Set(hovered)}
+              selected={selected}
+              onSelect={(target) => setSelected((current) => (current === target ? null : target))}
+            />
+            {selected ? (
+              <DetailsPanel game={game} target={selected} optionCount={decisionHidden ? 0 : optionCount} onClose={() => setSelected(null)} />
+            ) : null}
+          </div>
+          <PlayerDashboards game={game} revealedPlayer={revealedPlayer} onSelectPlayer={(playerId) => setSelected(`player:${playerId}`)} />
+        </div>
+
+        <aside className="sidebar">
+          {saveStatus ? <p className="status-strip">{saveStatus}</p> : null}
+          <DecisionPanel
+            game={game}
+            hidden={decisionHidden}
+            onReveal={() => setRevealedPlayer(decisionActor)}
+            onRun={executeLegalCommand}
+            onHover={setHovered}
+            filter={filter}
+            onClearFilter={() => setSelected(null)}
+            error={commandError}
+          />
+          <div className="sidebar-tabs" role="tablist" aria-label="Side panels">
+            <button type="button" role="tab" aria-selected={sideTab === "log"} className={sideTab === "log" ? "tab tab-active" : "tab"} onClick={() => setSideTab("log")}>
+              Log
+            </button>
+            <button type="button" role="tab" aria-selected={sideTab === "deals"} className={sideTab === "deals" ? "tab tab-active" : "tab"} onClick={() => setSideTab("deals")}>
+              Deals &amp; Cards
+            </button>
+            <button type="button" role="tab" aria-selected={sideTab === "laws"} className={sideTab === "laws" ? "tab tab-active" : "tab"} onClick={() => setSideTab("laws")}>
+              Laws
+            </button>
+          </div>
+          <div className="sidebar-tab-body">
+            {sideTab === "log" ? (
+              <LogPanel game={game} />
+            ) : sideTab === "laws" ? (
+              <ParliamentPanel game={game} />
             ) : (
-              <p className="status-note">No legal commands are implemented for this step yet.</p>
+              <NegotiationPanel game={game} revealedPlayer={revealedPlayer} onReveal={setRevealedPlayer} onCommand={runAnytimeCommand} />
             )}
           </div>
-          {commandError ? <p className="error-note">{commandError}</p> : null}
-          <div className="save-actions">
-            <button
-              type="button"
-              onClick={saveGame}
-              title="Save a .joco file named for whoever acts next, then send it to them."
-            >
-              Save &amp; pass
-            </button>
-            <button type="button" onClick={loadGame}>
-              Load Save
-            </button>
-            <button type="button" onClick={copySaveSummary}>
-              Copy Save Summary
-            </button>
-            <button type="button" onClick={downloadSaveSummary}>
-              Download Summary
-            </button>
-          </div>
-          {saveStatus ? <p className="status-note">{saveStatus}</p> : null}
-
           {game.crown ? (
             <div className="crown-summary">
               <h3>Crown</h3>
               <p>Difficulty: {game.crown.difficulty}</p>
               <p>Climate: {game.crown.climate}</p>
-              <p>Faceup AI card: {game.crown.faceupAiCard}</p>
               <p>Crown cubes: {game.crown.promiseCubes.crownSupply}</p>
-              {game.crown.playerButton ? (
-                <p>Player Button: {game.players[game.crown.playerButton.holder]?.name}</p>
-              ) : null}
             </div>
           ) : null}
         </aside>
+      </div>
 
-        <section className="board-stage" aria-label="Game board">
-          <div className="board-frame">
-            <img src={BOARD_IMAGE_URL} alt="John Company game board" />
-            <div className="board-overlay standing">Standing</div>
-            <div className="board-overlay offices">Offices</div>
-            <div className="board-overlay india">India</div>
-          </div>
-        </section>
-
-        <aside className="side-panel">
-          <NegotiationPanel
-            game={game}
-            revealedPlayer={revealedPlayer}
-            onReveal={setRevealedPlayer}
-            onCommand={runAnytimeCommand}
-          />
-          <h2>Players</h2>
-          <div className="dashboard-list">
-            {playerRows.map((player) => (
-              <div key={player.id} className="dashboard-row">
-                <span className="swatch" style={{ backgroundColor: player.color }} />
-                <strong>{player.name}</strong>
-                <small>
-                  GBP {player.cash} / family supply {player.familyMembers.supply}
-                </small>
-              </div>
-            ))}
-          </div>
-          <h2>Log</h2>
-          <ol className="log-list">
-            {game.log.map((entry) => (
-              <li key={entry.id}>{entry.summary}</li>
-            ))}
-          </ol>
-        </aside>
-      </section>
+      {showFinalScoring ? <FinalScoringView game={game} onClose={() => setFinalScoringDismissed(true)} /> : null}
     </main>
   );
 }

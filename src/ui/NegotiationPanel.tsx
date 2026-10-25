@@ -10,6 +10,7 @@ import {
   type PlayerId,
   type TransferItem,
 } from "../engine";
+import { enterpriseName } from "./view-model";
 
 // Anytime actions (rulebook p.8): transfers, deals, promise cards, and blackmail.
 // Private cards are shown only after the chosen player confirms they have the device.
@@ -37,7 +38,7 @@ function transferableAssets(game: GameState, playerId: PlayerId, showIdentities:
   const assets: Array<{ key: string; label: string; item: TransferItem }> = [];
 
   for (const enterprise of player.enterprises) {
-    assets.push({ key: `enterprise:${enterprise.id}`, label: `${enterprise.type} (${enterprise.cardId ?? enterprise.id})`, item: { kind: "enterprise", enterpriseId: enterprise.id } });
+    assets.push({ key: `enterprise:${enterprise.id}`, label: enterpriseName(enterprise.cardId, enterprise.type), item: { kind: "enterprise", enterpriseId: enterprise.id } });
   }
   for (const card of player.prestigeCards) {
     const definition = prestigeById.get(card.cardId);
