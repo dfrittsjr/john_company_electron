@@ -20,7 +20,7 @@ import type {
   ShareInstance,
   ValidationError,
 } from "../types";
-import { createNextCompanyOperationDecision } from "./company-operation";
+import { beginCompanyOperation } from "./company-operation";
 import { takeFamilyPiece } from "./family";
 import { hiringResumeHandler } from "./hiring-resume";
 import type { ChairmanElectionState, HireOfficePayload, HireSource, HiringState } from "./hiring.state";
@@ -88,8 +88,7 @@ export function startHiringPhase(state: GameState): GameState {
 function advanceHiring(state: GameState): GameState {
   const officeId = nextVacantOfficeId(state);
   if (!officeId) {
-    const next: GameState = { ...state, phase: "companyOperation" };
-    return { ...next, pendingDecision: createNextCompanyOperationDecision(next) };
+    return beginCompanyOperation(state);
   }
 
   return presentOfficeHire(state, officeId);

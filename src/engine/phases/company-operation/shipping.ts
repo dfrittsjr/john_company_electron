@@ -1,11 +1,13 @@
+import { CROWN_PLAYER_ID, appendCrownLog, crownEffects, exchangeCubes, isCrownGame } from "../../crown/state";
 import { officeHolder, shipyardOwner } from "../../selectors";
-import type { GameState, LegalCommand, PendingDecision } from "../../types";
+import type { GameCommand, GameState, LegalCommand, PendingDecision } from "../../types";
 import type { ShipDestination } from "../company-operation.state";
 import {
   SEA_ZONE_LABEL,
   addCompanyShip,
   changeOfficeTreasury,
   companyShipPiecesInSupply,
+  coState,
   decisionId,
   isLawInEffect,
   payPlayer,
@@ -14,6 +16,7 @@ import {
   shipDestinations,
   withCo,
 } from "./context";
+import { registerDecisionRefresher } from "../negotiation";
 import { finishOffice, type OperationStep } from "./step";
 
 // Manager of Shipping (p.19): must spend until the treasury holds £2 or less.
@@ -89,7 +92,13 @@ export function shippingDecision(state: GameState): PendingDecision {
     label: "Finish as Manager of Shipping",
     payload: { action: "finish" } satisfies ShippingPayload,
   };
-  const commands = done || treasury > 2 ? purchases : [...purchases, finish];
+  // The favour "The Crown must leave £2 unspent" lets the Crown Manager stop with more than £2 (p.8).
+  const leavesTwo =
+    isCrownGame(state) &&
+    officeHolder(state, OFFICE_ID) === CROWN_PLAYER_ID &&
+    treasury >= 2 &&
+    crownEffects(state, "shipping.leaveTwo").length > 0;
+  const commands = done || (treasury > 2 && !leavesTwo) ? purchases : [...purchases, finish];
 
   return {
     id: decisionId(state, "company-operation-shipping"),
@@ -141,9 +150,15 @@ export const shippingStep: OperationStep = (state, command) => {
       },
     };
     summary = `The Manager of Shipping fitted the ${ship.shipyardCardId} ship into ${SEA_ZONE_LABEL[payload.to]} (£${fitCost(state)}).`;
+    const charge = crownFitsPlayerShip(next, command, ship.shipyardCardId);
+    if (charge) {
+      next = charge.state;
+      summary += ` ${charge.note}`;
+    }
   } else {
     const cost = payload.action === "lease" ? LEASE_COST : COMPANY_SHIP_COST;
     next = addCompanyShip(changeOfficeTreasury(state, OFFICE_ID, -cost), payload.to, payload.action === "lease" ? "extra" : "company");
+    if (payload.action === "buy" && isCrownGame(state)) next = withCo(next, { shippingBought: (coState(next).shippingBought ?? 0) + 1 });
     // Shipbuilders (prestige #21): £1 to its owner for each extra or Company ship acquired.
     for (const holder of prestigeCardHolders(next, "shipbuilders")) next = payPlayer(next, holder, 1);
     summary =
@@ -158,3 +173,23 @@ export const shippingStep: OperationStep = (state, command) => {
     ? { state: finishOffice(next, OFFICE_ID), summary: `${summary} The Manager of Shipping is done.` }
     : { state: next, summary };
 };
+
+/**
+ * Handbook p.8: "If the Crown fits one of your ships, you must always perform this favor if able":
+ * the owner pays the Crown a promise cube, unless they already bought "Fit a specific ship" for it.
+ */
+function crownFitsPlayerShip(state: GameState, command: GameCommand, shipyardCardId: string | undefined): { state: GameState; note: string } | undefined {
+  if (!isCrownGame(state) || command.actorId !== CROWN_PLAYER_ID || !shipyardCardId) return undefined;
+  const owner = shipyardOwner(state, shipyardCardId);
+  if (!owner || state.players[owner]?.isCrown) return undefined;
+  if (crownEffects(state, "shipping.fitSpecific").some((effect) => effect.by === owner && effect.decisionId === state.pendingDecision.id)) {
+    return undefined;
+  }
+  const paid = exchangeCubes(state, owner, -1, { partial: true });
+  const name = playerName(state, owner);
+  const note = paid.moved === 0 ? `${name} has no promise cube to pay for the Crown fitting their ship.` : `${name} paid 1 promise cube: the Crown fitted their ship.`;
+  return { state: appendCrownLog(paid.state, { now: state.updatedAt, actor: owner, type: "crown.favor", summary: note, details: { favorId: "shipping.fitMandatory", cubes: paid.moved } }), note };
+}
+
+// A favour can end the Crown Manager's spending early (p.8).
+registerDecisionRefresher("companyOperation.shipping", (state) => ({ ...shippingDecision(state), id: state.pendingDecision.id }));
