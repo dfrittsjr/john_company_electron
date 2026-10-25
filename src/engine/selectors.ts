@@ -90,6 +90,14 @@ export function chairmanHolder(state: GameState): PlayerId | undefined {
   return officeHolder(state, "chairman");
 }
 
+/**
+ * The family with the Chairman title: the Chairman, or the former Chairman (marker holder) while
+ * the office is vacant. Retirements and Family turns start with this player (pp.11, 13).
+ */
+export function chairmanTitleHolder(state: GameState): PlayerId | undefined {
+  return chairmanHolder(state) ?? state.company.chairmanMarker;
+}
+
 export function playerCourtShares(state: GameState, playerId: PlayerId): number {
   return state.company.court.filter((share) => share.owner === playerId).length;
 }

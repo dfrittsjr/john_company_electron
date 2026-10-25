@@ -1,6 +1,8 @@
 import type { CompanyOperationState } from "./phases/company-operation.state";
 import type { EventsInIndiaState } from "./phases/events-in-india.state";
+import type { FamilyState } from "./phases/family.state";
 import type { FinalScoringState } from "./phases/final-scoring.state";
+import type { HiringState } from "./phases/hiring.state";
 import type { LondonSeasonState } from "./phases/london-season.state";
 import type { NegotiationState } from "./phases/negotiation.state";
 
@@ -222,6 +224,11 @@ export type CompanyState = {
   ships: ShipState[];
   armies: Record<ArmyId, ArmyState>;
   governorGeneralInPlay: boolean;
+  /**
+   * The family holding the Chairman marker. It stays with the former Chairman while the office
+   * is vacant, who then leads retirements and Family turns and runs the next election (pp.11-15).
+   */
+  chairmanMarker?: PlayerId;
 };
 
 export type OrderState = {
@@ -389,6 +396,8 @@ export type GameState = {
   eventsInIndia: EventsInIndiaState;
   finalScoring: FinalScoringState;
   negotiation: NegotiationState;
+  family: FamilyState;
+  hiring: HiringState;
   decks: Record<string, DeckState>;
   firms?: FirmState[];
   crown?: CrownState;

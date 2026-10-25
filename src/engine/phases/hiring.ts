@@ -1,9 +1,7 @@
 import type { CommandHandler } from "../command-handler";
-import { offices } from "../../data";
+import { offices, prizes } from "../../data";
 import type { OfficeDefinition } from "../../data/types";
 import {
-  companyShareCount,
-  companySharesByPlayer,
   presidentOf,
   regionPresidency,
   toEnginePresidency,
@@ -17,127 +15,145 @@ import type {
   OfficeId,
   PendingDecision,
   PlayerId,
+  PresidencyId,
   ShareInstance,
+  ValidationError,
 } from "../types";
 import { createNextCompanyOperationDecision } from "./company-operation";
-import { createCommandLogEntry, createStarterHiringCommands } from "./shared";
+import { takeFamilyPiece } from "./family";
+import { hiringResumeHandler } from "./hiring-resume";
+import type { ChairmanElectionState, HireOfficePayload, HireSource, HiringState } from "./hiring.state";
+import { createCommandLogEntry } from "./shared";
+
+// Hiring (rulebook pp.14-17). Vacant offices are hired in ascending order of the number on the
+// back of each office card. The Chairman is elected by Company-share support; every other office
+// is hired by a specific officeholder from a specific candidate pool, subject to Nepotism.
 
 type ChairmanElectionPayload = {
   officeId: "chairman";
   candidateId: PlayerId;
 };
 
+type ChairmanSupportPayload = {
+  candidateId: PlayerId | null;
+};
+
+type EmptyCourtChairmanPayload = {
+  fromPrize?: string;
+};
+
 type SkipHiringVacancyPayload = {
   officeId: OfficeId;
 };
-
-type WriterHireOfficePayload = {
-  officeId: OfficeId;
-  candidateId: PlayerId;
-  source: {
-    type: "writer";
-    presidency: "Bombay" | "Madras" | "Bengal";
-  };
-};
-
-type PromotionHireOfficePayload = {
-  officeId: OfficeId;
-  candidateId: PlayerId;
-  source: {
-    type: "office";
-    officeId: OfficeId;
-  };
-};
-
-type MilitaryHireOfficePayload = {
-  officeId: OfficeId;
-  candidateId: PlayerId;
-  source:
-    | {
-        type: "commander";
-        army: ArmyId;
-      }
-    | {
-        type: "officer";
-        army: ArmyId;
-        readiness: "ready" | "exhausted";
-      }
-    | {
-        type: "officersInTraining";
-      };
-};
-
-type HireOfficePayload =
-  | WriterHireOfficePayload
-  | PromotionHireOfficePayload
-  | MilitaryHireOfficePayload;
 
 type ResolveNepotismConsentPayload = {
   accepted: boolean;
   hire: HireOfficePayload;
 };
 
-type EnginePresidencyId = WriterHireOfficePayload["source"]["presidency"];
+type HiringPreferencePayload = {
+  officeId: OfficeId;
+};
 
-export function createNextHiringDecision(state: GameState): PendingDecision {
+export type { HireOfficePayload } from "./hiring.state";
+
+const PRESIDENCIES: readonly PresidencyId[] = ["Bombay", "Madras", "Bengal"];
+const HIRING_PREFERENCE_CARD_ID = "hiring-preference";
+
+// ---------------------------------------------------------------------------------------------
+// Phase flow
+// ---------------------------------------------------------------------------------------------
+
+/** Begin the Hiring phase after Family (and Firms, once Deregulation exists). */
+export function startHiringPhase(state: GameState): GameState {
+  return advanceHiring({
+    ...state,
+    phase: "hiring",
+    hiring: {
+      skippedThisTurn: [],
+      nepotismRefused: [],
+      hiringPreferenceOffered: [],
+    },
+  });
+}
+
+function advanceHiring(state: GameState): GameState {
   const officeId = nextVacantOfficeId(state);
-  if (!officeId) return createCompanyOperationStartDecision(state);
+  if (!officeId) {
+    const next: GameState = { ...state, phase: "companyOperation" };
+    return { ...next, pendingDecision: createNextCompanyOperationDecision(next) };
+  }
 
-  if (officeId === "chairman") {
-    const legalCommands = createChairmanElectionCommands(state);
-    if (legalCommands.length > 0) {
-      return {
-        id: `decision-hiring-elect-chairman-turn-${state.turn}`,
-        phase: "hiring",
-        step: "hiring.electChairman",
-        actor: "system",
-        visibility: "public",
-        prompt:
-          hasPureShareMajority(state)
-            ? "Elect the Chairman from the Company-share majority."
-            : "Elect the Chairman from table-negotiated Company-share support.",
-        legalCommands,
-        canSave: true,
-      };
-    }
+  return presentOfficeHire(state, officeId);
+}
 
-    return createSkipHiringVacancyDecision(
+/** Continue after an office was hired or skipped: the next vacancy, or the interrupted phase. */
+function afterOfficeResolved(state: GameState, officeId: OfficeId): GameState {
+  const cleared: GameState = {
+    ...state,
+    hiring: {
+      ...state.hiring,
+      nepotism: undefined,
+      hiringPreference: state.hiring.hiringPreference?.officeId === officeId ? undefined : state.hiring.hiringPreference,
+    },
+  };
+  const immediate = cleared.hiring.immediate;
+  if (!immediate) return advanceHiring(cleared);
+
+  return resumeAfterImmediateHire(cleared);
+}
+
+function presentOfficeHire(state: GameState, officeId: OfficeId): GameState {
+  if (officeId === "chairman") return presentChairmanElection(state);
+
+  const commands = candidateCommands(state, officeId);
+  const hirer = determineOfficeHirer(state, officeId);
+  if (!hirer || commands.length === 0) {
+    return withDecision(
       state,
-      officeId,
-      "The Court is empty and no Company shares can support a Chairman.",
+      createSkipHiringVacancyDecision(
+        state,
+        officeId,
+        hirer
+          ? `No eligible candidate can fill ${officeLabel(officeId)}; it stays vacant this turn.`
+          : `The office that hires ${officeLabel(officeId)} is vacant; it stays vacant this turn.`,
+      ),
     );
   }
 
-  const hireCommands = createHireOfficeCommands(state, officeId);
-  if (hireCommands.length > 0) {
-    const hirer = determineOfficeHirer(state, officeId);
-    return {
-      id: `decision-hiring-hire-${officeId}-turn-${state.turn}`,
-      phase: "hiring",
-      step: "hiring.hireOffice",
-      actor: hirer ?? "system",
-      visibility: "private",
-      prompt: `Choose a candidate for ${officeLabel(officeId)}.`,
-      legalCommands: hireCommands,
-      canSave: true,
-    };
+  const preferenceHolder = hiringPreferenceHolder(state);
+  if (
+    preferenceHolder &&
+    !state.hiring.hiringPreference &&
+    !state.hiring.hiringPreferenceOffered.includes(officeId) &&
+    commands.some((command) => (command.payload as HireOfficePayload).candidateId === preferenceHolder)
+  ) {
+    return withDecision(state, createHiringPreferenceDecision(state, officeId, preferenceHolder));
   }
 
-  return createSkipHiringVacancyDecision(
-    state,
-    officeId,
-    `No implemented hirer or eligible candidate is available for ${officeLabel(officeId)}.`,
-  );
+  return withDecision(state, {
+    id: `decision-hiring-hire-${officeId}-turn-${state.turn}${immediateSuffix(state)}`,
+    phase: state.phase,
+    step: "hiring.hireOffice",
+    actor: hirer,
+    visibility: "public",
+    prompt:
+      state.hiring.hiringPreference?.officeId === officeId
+        ? `Hiring Preference was played: hire ${state.players[state.hiring.hiringPreference.playerId].name} as ${officeLabel(officeId)}.`
+        : `Choose a candidate for ${officeLabel(officeId)}.`,
+    legalCommands: commands,
+    canSave: true,
+  });
 }
 
-function createSkipHiringVacancyDecision(
-  state: GameState,
-  officeId: OfficeId,
-  prompt: string,
-): PendingDecision {
+function withDecision(state: GameState, pendingDecision: PendingDecision): GameState {
+  return { ...state, phase: pendingDecision.phase, pendingDecision };
+}
+
+function createSkipHiringVacancyDecision(state: GameState, officeId: OfficeId, prompt: string): PendingDecision {
   return {
-    id: `decision-hiring-skip-${officeId}-turn-${state.turn}`,
-    phase: "hiring",
+    id: `decision-hiring-skip-${officeId}-turn-${state.turn}${immediateSuffix(state)}`,
+    phase: state.phase,
     step: "hiring.skipVacancy",
     actor: "system",
     visibility: "public",
@@ -146,7 +162,7 @@ function createSkipHiringVacancyDecision(
       {
         type: "hiring.skipVacancy",
         label: `Skip ${officeLabel(officeId)}`,
-        description: "Leave this office vacant for the turn and continue Hiring.",
+        description: "Leave this office vacant for the turn and continue.",
         payload: { officeId } satisfies SkipHiringVacancyPayload,
       },
     ],
@@ -154,447 +170,816 @@ function createSkipHiringVacancyDecision(
   };
 }
 
-export function passHiring(state: GameState, command: GameCommand): ApplyCommandResult {
-  if (state.phase !== "hiring" || state.pendingDecision.step !== "hiring.chooseStarterPass") {
-    return {
-      ok: false,
-      errors: [
-        {
-          code: "WRONG_PHASE",
-          message: "Hiring pass can only be chosen during the starter Hiring step.",
-          field: "phase",
+function immediateSuffix(state: GameState): string {
+  return state.hiring.immediate ? `-immediate-${state.log.length}` : "";
+}
+
+function isHiringStep(state: GameState, step: string): boolean {
+  return (state.phase === "hiring" || Boolean(state.hiring.immediate)) && state.pendingDecision.step === step;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Offices hired immediately (Superintendent of Trade in China, laws)
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Create an office outside the Hiring phase and hire it at once, as when the Director of Trade's
+ * Special Envoy or the Envoy to China law opens trade with China ("The office should be hired
+ * immediately", p.18; "hired immediately by the Chairman who may promote any writer", p.25).
+ *
+ * `resumeKey` names a handler registered with registerHiringResume(); it is called with the
+ * resulting state once the office is filled or left vacant and must set the next decision.
+ * If the office cannot be filled now, it stays in the Vacant Offices box for the next Hiring phase.
+ */
+export function beginImmediateHire(state: GameState, officeId: OfficeId, resumeKey: string): GameState {
+  const existing = state.company.offices[officeId];
+  const created: GameState = {
+    ...state,
+    company: {
+      ...state.company,
+      offices: {
+        ...state.company.offices,
+        [officeId]: {
+          id: officeId,
+          treasury: existing?.treasury ?? 0,
+          fatigue: existing?.fatigue ?? 0,
+          created: true,
+          vacant: existing?.vacant ?? true,
+          actedThisTurn: false,
+          holder: existing?.holder,
+          familyMemberId: existing?.familyMemberId,
         },
-      ],
-    };
+      },
+      vacantOffices: existing && !existing.vacant
+        ? state.company.vacantOffices
+        : [...new Set([...state.company.vacantOffices, officeId])],
+      unusedOffices: state.company.unusedOffices.filter((candidate) => candidate !== officeId),
+    },
+    hiring: {
+      ...state.hiring,
+      nepotismRefused: state.hiring.nepotismRefused ?? [],
+      hiringPreferenceOffered: (state.hiring.hiringPreferenceOffered ?? []).filter((id) => id !== officeId),
+      immediate: { officeId, resumeKey, phase: state.phase },
+    },
+  };
+
+  if (!created.company.offices[officeId].vacant) return resumeAfterImmediateHire(created);
+
+  const commands = candidateCommands(created, officeId);
+  if (!determineOfficeHirer(created, officeId) || commands.length === 0) {
+    return resumeAfterImmediateHire(created);
   }
 
-  const actingPlayer = state.players[command.actorId];
-  if (!actingPlayer || actingPlayer.isCrown) {
-    return {
-      ok: false,
-      errors: [
-        {
-          code: "INVALID_ACTOR",
-          message: "Only a human family can pass this starter Hiring decision.",
-          field: "actorId",
-        },
-      ],
-    };
+  return presentOfficeHire(created, officeId);
+}
+
+function resumeAfterImmediateHire(state: GameState): GameState {
+  const immediate = state.hiring.immediate;
+  if (!immediate) return state;
+
+  const resumed: GameState = {
+    ...state,
+    phase: immediate.phase,
+    hiring: { ...state.hiring, immediate: undefined, nepotism: undefined },
+  };
+  const handler = hiringResumeHandler(immediate.resumeKey);
+  if (!handler) {
+    throw new Error(`No hiring resume handler is registered for "${immediate.resumeKey}".`);
   }
 
-  const humanOrder = state.seatingOrder.filter((playerId) => !state.players[playerId].isCrown);
-  const actorIndex = humanOrder.indexOf(command.actorId);
-  const nextActor = humanOrder[actorIndex + 1];
+  return handler(resumed);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Chairman election (p.15)
+// ---------------------------------------------------------------------------------------------
+
+function presentChairmanElection(state: GameState): GameState {
+  const counts = courtShareCounts(state);
+  const totalShares = [...counts.values()].reduce((total, count) => total + count, 0);
+  const formerChairman = state.company.chairmanMarker;
+
+  if (totalShares === 0) return presentEmptyCourt(state, formerChairman);
+
+  const candidates = orderedFrom(state, formerChairman).filter((playerId) => (counts.get(playerId) ?? 0) > 0);
+  const requiredShares = Math.floor(totalShares / 2) + 1;
+
+  if (candidates.length === 1) {
+    return withDecision(state, {
+      id: `decision-hiring-elect-chairman-turn-${state.turn}`,
+      phase: "hiring",
+      step: "hiring.electChairman",
+      actor: humanOrSystem(state, formerChairman),
+      visibility: "public",
+      prompt: `${state.players[candidates[0]].name} holds every Company share and becomes Chairman.`,
+      legalCommands: [electChairmanCommand(state, candidates[0], counts, totalShares)],
+      canSave: true,
+    });
+  }
+
+  const election: ChairmanElectionState = state.hiring.election ?? {
+    formerChairman,
+    totalShares,
+    requiredShares,
+    candidates,
+    supportOrder: candidates,
+    nextSupporterIndex: 0,
+    support: {},
+  };
+
+  return presentNextSupporter({ ...state, hiring: { ...state.hiring, election } });
+}
+
+function presentNextSupporter(state: GameState): GameState {
+  const election = state.hiring.election as ChairmanElectionState;
+  const supporter = election.supportOrder[election.nextSupporterIndex];
+  const counts = courtShareCounts(state);
+
+  if (!supporter) {
+    // No candidate reached a majority: the former Chairman picks any shareholder, themselves
+    // included, and Nepotism does not apply (p.15).
+    return withDecision(state, {
+      id: `decision-hiring-former-chairman-picks-turn-${state.turn}`,
+      phase: "hiring",
+      step: "hiring.electChairman",
+      actor: humanOrSystem(state, election.formerChairman),
+      visibility: "public",
+      prompt: "No candidate has majority support. The former Chairman chooses the new Chairman.",
+      legalCommands: election.candidates.map((candidateId) =>
+        electChairmanCommand(state, candidateId, counts, election.totalShares),
+      ),
+      canSave: true,
+    });
+  }
+
+  const tally = supportTally(election, counts);
+  return withDecision(state, {
+    id: `decision-hiring-chairman-support-turn-${state.turn}-${supporter}`,
+    phase: "hiring",
+    step: "hiring.chairmanSupport",
+    actor: supporter,
+    visibility: "public",
+    prompt:
+      `Chairman election: ${election.requiredShares} of ${election.totalShares} Company shares make a majority. ` +
+      `Support so far: ${describeTally(state, tally)}. Back a candidate with your ${counts.get(supporter) ?? 0} share(s).`,
+    legalCommands: [
+      ...election.candidates.map((candidateId) => ({
+        type: "hiring.declareChairmanSupport",
+        label: candidateId === supporter ? "Support yourself" : `Support ${state.players[candidateId].name}`,
+        description: `Add your shares to ${state.players[candidateId].name}'s support.`,
+        payload: { candidateId } satisfies ChairmanSupportPayload,
+      })),
+      {
+        type: "hiring.declareChairmanSupport",
+        label: "Support no one",
+        description: "Withhold your shares from every candidate.",
+        payload: { candidateId: null } satisfies ChairmanSupportPayload,
+      },
+    ],
+    canSave: true,
+  });
+}
+
+function presentEmptyCourt(state: GameState, formerChairman: PlayerId | undefined): GameState {
+  // An empty Court: the former Chairman continues, placing a piece from supply or, failing
+  // that, from a prize. If neither is possible, there is no Chairman (p.15).
+  const player = formerChairman ? state.players[formerChairman] : undefined;
+  const sources =
+    !player || player.isCrown
+      ? []
+      : player.familyMembers.supply > 0
+        ? [undefined]
+        : Object.entries(player.familyMembers.prizes)
+            .filter(([, count]) => count > 0)
+            .map(([prizeId]) => prizeId);
+
+  if (!player || sources.length === 0) {
+    return withDecision(
+      state,
+      createSkipHiringVacancyDecision(state, "chairman", "The Court is empty and the former Chairman has no family member to place: there is no Chairman."),
+    );
+  }
+
+  return withDecision(state, {
+    id: `decision-hiring-empty-court-chairman-turn-${state.turn}`,
+    phase: "hiring",
+    step: "hiring.emptyCourtChairman",
+    actor: player.id,
+    visibility: "public",
+    prompt: "The Court is empty, so the former Chairman continues as Chairman.",
+    legalCommands: sources.map((fromPrize) => ({
+      type: "hiring.emptyCourtChairman",
+      label: fromPrize ? `Continue as Chairman (piece from the ${prizeLabel(fromPrize)})` : "Continue as Chairman",
+      description: "Place a family member in the Chairman slot.",
+      payload: (fromPrize ? { fromPrize } : {}) satisfies EmptyCourtChairmanPayload,
+    })),
+    canSave: true,
+  });
+}
+
+function electChairmanCommand(
+  state: GameState,
+  candidateId: PlayerId,
+  counts: Map<PlayerId, number>,
+  totalShares: number,
+): LegalCommand {
+  return {
+    type: "hiring.electChairman",
+    label: `Elect ${state.players[candidateId].name} Chairman`,
+    description: `${state.players[candidateId].name} holds ${counts.get(candidateId) ?? 0} of ${totalShares} Company shares.`,
+    payload: { officeId: "chairman", candidateId } satisfies ChairmanElectionPayload,
+  };
+}
+
+export function declareChairmanSupport(state: GameState, command: GameCommand): ApplyCommandResult {
+  if (!isHiringStep(state, "hiring.chairmanSupport") || !state.hiring.election) {
+    return hiringError("WRONG_PHASE", "No Chairman election is collecting support.", "phase");
+  }
+
+  if (!isLegalPayload(state, "hiring.declareChairmanSupport", command.payload)) {
+    return hiringError("ILLEGAL_HIRING_CHOICE", "That support declaration is not legal here.", "payload");
+  }
+
+  const { candidateId } = command.payload as ChairmanSupportPayload;
+  const election = state.hiring.election;
+  const supporter = command.actorId as PlayerId;
+  const nextElection: ChairmanElectionState = {
+    ...election,
+    support: { ...election.support, [supporter]: candidateId },
+    nextSupporterIndex: election.nextSupporterIndex + 1,
+  };
+  const counts = courtShareCounts(state);
+  const tally = supportTally(nextElection, counts);
+  const winner = candidateId && (tally.get(candidateId) ?? 0) >= election.requiredShares ? candidateId : undefined;
   const now = command.clientTimestamp;
   const logEntry = createCommandLogEntry({
     state,
     command,
     now,
-    type: "hiring.passed",
-    summary: `${actingPlayer.name} passed starter Hiring.`,
-    details: {
-      note: "Starter scaffold records the pass; full office hiring rules come later.",
-    },
+    type: "hiring.chairmanSupport",
+    summary: candidateId
+      ? `${state.players[supporter].name} backed ${candidateId === supporter ? "themselves" : state.players[candidateId].name} for Chairman with ${counts.get(supporter) ?? 0} share(s).`
+      : `${state.players[supporter].name} backed no candidate for Chairman.`,
+    details: { candidateId, tally: Object.fromEntries(tally) },
   });
-  const pendingDecision: PendingDecision = nextActor
-    ? {
-        id: `decision-hiring-pass-turn-${state.turn}-${nextActor}`,
-        phase: "hiring",
-        step: "hiring.chooseStarterPass",
-        actor: nextActor,
-        visibility: "private",
-        prompt: "Hiring is not fully implemented yet. Record a starter hiring pass.",
-        legalCommands: createStarterHiringCommands(),
-        canSave: true,
-      }
-    : {
-        id: `decision-company-operation-start-turn-${state.turn}`,
-        phase: "companyOperation",
-        step: "companyOperation.chooseStarterPass",
-        actor: "system",
-        visibility: "public",
-        prompt:
-          "All human families have passed starter Hiring. Confirm starter Company Operation.",
-        legalCommands: [
-          {
-            type: "companyOperation.passOffice",
-            label: "Confirm Company Operation",
-            description: "Starter scaffold: records that Company Operation was skipped.",
-            payload: {},
-          },
-        ],
-        canSave: true,
-      };
-
-  return {
-    ok: true,
-    logEntry,
-    state: {
-      ...state,
-      updatedAt: now,
-      phase: pendingDecision.phase,
-      pendingDecision,
-      log: [...state.log, logEntry],
-    },
+  const withSupport: GameState = {
+    ...state,
+    updatedAt: now,
+    log: [...state.log, logEntry],
+    hiring: { ...state.hiring, election: nextElection },
   };
+
+  if (!winner) return { ok: true, logEntry, state: presentNextSupporter(withSupport) };
+
+  // "As soon as a candidate has the required number of supporting Company shares, the election
+  // is over" (p.15).
+  return completeChairmanElection(withSupport, winner, command, "majority");
 }
 
 export function electChairman(state: GameState, command: GameCommand): ApplyCommandResult {
-  if (state.phase !== "hiring" || state.pendingDecision.step !== "hiring.electChairman") {
-    return {
-      ok: false,
-      errors: [
-        {
-          code: "WRONG_PHASE",
-          message: "Chairman election can only be resolved during the Hiring phase.",
-          field: "phase",
-        },
-      ],
-    };
+  if (!isHiringStep(state, "hiring.electChairman")) {
+    return hiringError("WRONG_PHASE", "Chairman election can only be resolved during the Hiring phase.", "phase");
   }
 
   const payload = parseChairmanElectionPayload(command.payload);
-  if (!payload) {
-    return {
-      ok: false,
-      errors: [
-        {
-          code: "INVALID_PAYLOAD",
-          message: "Chairman election requires a candidate id.",
-          field: "payload.candidateId",
-        },
-      ],
-    };
-  }
+  if (!payload) return hiringError("INVALID_PAYLOAD", "Chairman election requires a candidate id.", "payload.candidateId");
 
   if (!isLegalPayload(state, "hiring.electChairman", payload)) {
-    return {
-      ok: false,
-      errors: [
-        {
-          code: "ILLEGAL_HIRING_CHOICE",
-          message: `Player "${payload.candidateId}" is not a legal Chairman candidate for this decision.`,
-          field: "payload.candidateId",
-        },
-      ],
-    };
+    return hiringError(
+      "ILLEGAL_HIRING_CHOICE",
+      `Player "${payload.candidateId}" is not a legal Chairman candidate for this decision.`,
+      "payload.candidateId",
+    );
   }
 
-  const candidate = state.players[payload.candidateId];
+  return completeChairmanElection(state, payload.candidateId, command, "former-chairman-choice");
+}
+
+function completeChairmanElection(
+  state: GameState,
+  candidateId: PlayerId,
+  command: GameCommand,
+  method: "majority" | "former-chairman-choice",
+): ApplyCommandResult {
+  const counts = courtShareCounts(state);
+  const totalShares = [...counts.values()].reduce((total, count) => total + count, 0);
+  const elected = assignChairman(state, candidateId);
   const now = command.clientTimestamp;
-  const stateAfterElection = assignChairman(state, payload.candidateId);
   const logEntry = createCommandLogEntry({
-    state: stateAfterElection,
+    state: elected,
     command,
     now,
     type: "hiring.chairmanElected",
-    summary: `${candidate.name} was elected Chairman.`,
+    summary: `${state.players[candidateId].name} was elected Chairman.`,
     details: {
-      candidateId: payload.candidateId,
-      majorityShareCount: shareCountsByPlayer(state).get(payload.candidateId) ?? 0,
-      totalShares: totalCompanyShares(state),
+      candidateId,
+      method,
+      candidateShares: counts.get(candidateId) ?? 0,
+      totalShares,
     },
   });
-  const stateWithLog: GameState = {
-    ...stateAfterElection,
-    updatedAt: now,
-    log: [...stateAfterElection.log, logEntry],
-  };
-
-  const pendingDecision = createNextHiringDecision(stateWithLog);
 
   return {
     ok: true,
     logEntry,
-    state: {
-      ...stateWithLog,
-      phase: pendingDecision.phase,
-      pendingDecision,
-    },
+    state: afterOfficeResolved(
+      {
+        ...elected,
+        updatedAt: now,
+        log: [...elected.log, logEntry],
+        hiring: { ...elected.hiring, election: undefined },
+      },
+      "chairman",
+    ),
   };
 }
 
-export function skipHiringVacancy(state: GameState, command: GameCommand): ApplyCommandResult {
-  if (state.phase !== "hiring" || state.pendingDecision.step !== "hiring.skipVacancy") {
-    return {
-      ok: false,
-      errors: [
-        {
-          code: "WRONG_PHASE",
-          message: "Hiring vacancies can only be skipped during the Hiring phase.",
-          field: "phase",
-        },
-      ],
-    };
+export function emptyCourtChairman(state: GameState, command: GameCommand): ApplyCommandResult {
+  if (!isHiringStep(state, "hiring.emptyCourtChairman")) {
+    return hiringError("WRONG_PHASE", "The empty-Court Chairman is not being placed now.", "phase");
   }
 
-  const payload = parseSkipHiringVacancyPayload(command.payload);
-  if (!payload || !isLegalPayload(state, "hiring.skipVacancy", payload)) {
-    return {
-      ok: false,
-      errors: [
-        {
-          code: "ILLEGAL_HIRING_CHOICE",
-          message: "The requested Hiring vacancy cannot be skipped for this decision.",
-          field: "payload.officeId",
-        },
-      ],
-    };
+  if (!isLegalPayload(state, "hiring.emptyCourtChairman", command.payload)) {
+    return hiringError("ILLEGAL_HIRING_CHOICE", "That piece cannot become the Chairman.", "payload");
   }
 
+  const { fromPrize } = command.payload as EmptyCourtChairmanPayload;
+  const playerId = command.actorId as PlayerId;
+  const taken = takeFamilyPiece(state, playerId, fromPrize);
+  if (!taken.ok) return { ok: false, errors: taken.errors };
+
+  const placed: GameState = {
+    ...taken.state,
+    company: {
+      ...placeOfficeholder(taken.state, "chairman", playerId, { familyMemberId: `chairman-${state.turn}-${playerId}` }),
+      chairmanMarker: playerId,
+    },
+  };
   const now = command.clientTimestamp;
-  const stateAfterSkip = removeOfficeFromHiringQueue(state, payload.officeId);
   const logEntry = createCommandLogEntry({
-    state: stateAfterSkip,
+    state: placed,
     command,
     now,
-    type: "hiring.vacancySkipped",
-    summary: `${officeLabel(payload.officeId)} remained vacant.`,
-    details: {
-      officeId: payload.officeId,
-      note: "No implemented hirer or eligible candidate was available.",
-    },
+    type: "hiring.chairmanContinues",
+    summary: `The Court is empty, so ${state.players[playerId].name} continues as Chairman.`,
+    details: { fromPrize },
   });
-  const stateWithLog: GameState = {
-    ...stateAfterSkip,
-    updatedAt: now,
-    log: [...stateAfterSkip.log, logEntry],
-  };
-
-  const pendingDecision = createNextHiringDecision(stateWithLog);
 
   return {
     ok: true,
     logEntry,
-    state: {
-      ...stateWithLog,
-      phase: pendingDecision.phase,
-      pendingDecision,
-    },
+    state: afterOfficeResolved({ ...placed, updatedAt: now, log: [...placed.log, logEntry] }, "chairman"),
   };
 }
 
+/** Company shares in the Court by player; the Chairman's slot is empty during an election. */
+function courtShareCounts(state: GameState): Map<PlayerId, number> {
+  const counts = new Map<PlayerId, number>();
+  for (const share of state.company.court) {
+    if (!share.owner || state.players[share.owner]?.isCrown) continue;
+    counts.set(share.owner, (counts.get(share.owner) ?? 0) + 1);
+  }
+
+  return counts;
+}
+
+function supportTally(election: ChairmanElectionState, counts: Map<PlayerId, number>): Map<PlayerId, number> {
+  const tally = new Map<PlayerId, number>();
+  for (const [supporter, candidateId] of Object.entries(election.support)) {
+    if (!candidateId) continue;
+    tally.set(candidateId, (tally.get(candidateId) ?? 0) + (counts.get(supporter) ?? 0));
+  }
+
+  return tally;
+}
+
+function describeTally(state: GameState, tally: Map<PlayerId, number>): string {
+  if (tally.size === 0) return "none";
+
+  return [...tally.entries()].map(([playerId, shares]) => `${state.players[playerId].name} ${shares}`).join(", ");
+}
+
+/** Human players in clockwise seating order, starting with `first` when it is one of them. */
+function orderedFrom(state: GameState, first: PlayerId | undefined): PlayerId[] {
+  const humans = state.seatingOrder.filter((playerId) => !state.players[playerId].isCrown);
+  const start = first ? humans.indexOf(first) : -1;
+  return start <= 0 ? humans : [...humans.slice(start), ...humans.slice(0, start)];
+}
+
+function humanOrSystem(state: GameState, playerId: PlayerId | undefined): PlayerId | "system" {
+  return playerId && state.players[playerId] && !state.players[playerId].isCrown ? playerId : "system";
+}
+
+// The new Chairman moves one of their Court shares to the Chairman slot; it still counts as a
+// Company share (p.15). They also take the Chairman marker.
+function assignChairman(state: GameState, candidateId: PlayerId): GameState {
+  const candidateShare = state.company.court.find((share) => share.owner === candidateId);
+  const court = candidateShare ? removeShare(state.company.court, candidateShare.id) : state.company.court;
+  const company = placeOfficeholder({ ...state, company: { ...state.company, court } }, "chairman", candidateId, {
+    familyMemberId: candidateShare?.id ?? `chairman-share-${state.turn}-${candidateId}`,
+  });
+
+  return { ...state, company: { ...company, chairmanMarker: candidateId } };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Office hires, Nepotism, Hiring Preference
+// ---------------------------------------------------------------------------------------------
+
 export function hireOffice(state: GameState, command: GameCommand): ApplyCommandResult {
-  if (state.phase !== "hiring" || state.pendingDecision.step !== "hiring.hireOffice") {
-    return {
-      ok: false,
-      errors: [
-        {
-          code: "WRONG_PHASE",
-          message: "Office hires can only be resolved during the Hiring phase.",
-          field: "phase",
-        },
-      ],
-    };
+  if (!isHiringStep(state, "hiring.hireOffice")) {
+    return hiringError("WRONG_PHASE", "Office hires can only be resolved during the Hiring phase.", "phase");
   }
 
   const payload = parseHireOfficePayload(command.payload);
   if (!payload || !isLegalPayload(state, "hiring.hireOffice", payload)) {
-    return {
-      ok: false,
-      errors: [
-        {
-          code: "ILLEGAL_HIRING_CHOICE",
-          message: "The requested office hire is not legal for this decision.",
-          field: "payload",
-        },
-      ],
-    };
+    return hiringError("ILLEGAL_HIRING_CHOICE", "The requested office hire is not legal for this decision.", "payload");
   }
 
+  const hirer = command.actorId as PlayerId;
   const candidate = state.players[payload.candidateId];
   const now = command.clientTimestamp;
-  if (requiresNepotismConsent(state, payload)) {
-    const pendingDecision = createNepotismConsentDecision(state, payload);
+  const consentFrom = nepotismConsentNeededFrom(state, payload, hirer);
+
+  if (consentFrom.length > 0) {
     const logEntry = createCommandLogEntry({
       state,
       command,
       now,
       type: "hiring.nepotismConsentRequested",
-      summary: `${candidate.name} was proposed for ${officeLabel(payload.officeId)} by their own family.`,
-      details: payload,
+      summary: `${candidate.name} proposed their own family member for ${officeLabel(payload.officeId)}; ${consentFrom
+        .map((playerId) => state.players[playerId].name)
+        .join(", ")} must consent.`,
+      details: { hire: payload, consentFrom },
     });
-
-    return {
-      ok: true,
-      logEntry,
-      state: {
-        ...state,
-        updatedAt: now,
-        pendingDecision,
-        log: [...state.log, logEntry],
-      },
-    };
-  }
-
-  const stateAfterHire = moveCandidateToOffice(state, payload);
-  const logEntry = createCommandLogEntry({
-    state: stateAfterHire,
-    command,
-    now,
-    type: "hiring.officeHired",
-    summary: `${candidate.name} filled ${officeLabel(payload.officeId)}.`,
-    details: payload,
-  });
-  const stateWithLog: GameState = {
-    ...stateAfterHire,
-    updatedAt: now,
-    log: [...stateAfterHire.log, logEntry],
-  };
-  const pendingDecision = createNextHiringDecision(stateWithLog);
-
-  return {
-    ok: true,
-    logEntry,
-    state: {
-      ...stateWithLog,
-      phase: pendingDecision.phase,
-      pendingDecision,
-    },
-  };
-}
-
-export function resolveNepotismConsent(
-  state: GameState,
-  command: GameCommand,
-): ApplyCommandResult {
-  if (state.phase !== "hiring" || state.pendingDecision.step !== "hiring.nepotismConsent") {
-    return {
-      ok: false,
-      errors: [
-        {
-          code: "WRONG_PHASE",
-          message: "Nepotism consent can only be resolved during the Hiring phase.",
-          field: "phase",
-        },
-      ],
-    };
-  }
-
-  const payload = parseResolveNepotismConsentPayload(command.payload);
-  if (!payload || !isLegalPayload(state, "hiring.resolveNepotismConsent", payload)) {
-    return {
-      ok: false,
-      errors: [
-        {
-          code: "ILLEGAL_HIRING_CHOICE",
-          message: "The requested nepotism consent response is not legal for this decision.",
-          field: "payload",
-        },
-      ],
-    };
-  }
-
-  const now = command.clientTimestamp;
-  const candidate = state.players[payload.hire.candidateId];
-  if (payload.accepted) {
-    const stateAfterHire = moveCandidateToOffice(state, payload.hire);
-    const logEntry = createCommandLogEntry({
-      state: stateAfterHire,
-      command,
-      now,
-      type: "hiring.nepotismConsentAccepted",
-      summary: `Nepotism consent accepted; ${candidate.name} filled ${officeLabel(payload.hire.officeId)}.`,
-      details: payload.hire,
-    });
-    const stateWithLog: GameState = {
-      ...stateAfterHire,
+    const requested: GameState = {
+      ...state,
       updatedAt: now,
-      log: [...stateAfterHire.log, logEntry],
+      log: [...state.log, logEntry],
+      hiring: { ...state.hiring, nepotism: { hire: payload, hirer, pending: consentFrom, consented: [] } },
     };
-    const pendingDecision = createNextHiringDecision(stateWithLog);
 
-    return {
-      ok: true,
-      logEntry,
-      state: {
-        ...stateWithLog,
-        phase: pendingDecision.phase,
-        pendingDecision,
-      },
-    };
+    return { ok: true, logEntry, state: withDecision(requested, createNepotismConsentDecision(requested)) };
   }
 
-  const stateAfterDenial = removeOfficeFromHiringQueue(state, payload.hire.officeId);
-  const logEntry = createCommandLogEntry({
-    state: stateAfterDenial,
-    command,
-    now,
-    type: "hiring.nepotismConsentDenied",
-    summary: `Nepotism consent denied; ${officeLabel(payload.hire.officeId)} remained vacant.`,
-    details: payload.hire,
-  });
-  const stateWithLog: GameState = {
-    ...stateAfterDenial,
-    updatedAt: now,
-    log: [...stateAfterDenial.log, logEntry],
-  };
-  const pendingDecision = createNextHiringDecision(stateWithLog);
+  return completeHire(state, payload, command, "hiring.officeHired", `${candidate.name} filled ${officeLabel(payload.officeId)}.`);
+}
+
+function completeHire(
+  state: GameState,
+  payload: HireOfficePayload,
+  command: GameCommand,
+  logType: string,
+  summary: string,
+): ApplyCommandResult {
+  const hired = moveCandidateToOffice(state, payload);
+  const now = command.clientTimestamp;
+  const logEntry = createCommandLogEntry({ state: hired, command, now, type: logType, summary, details: payload });
 
   return {
     ok: true,
     logEntry,
-    state: {
-      ...stateWithLog,
-      phase: pendingDecision.phase,
-      pendingDecision,
-    },
+    state: afterOfficeResolved({ ...hired, updatedAt: now, log: [...hired.log, logEntry] }, payload.officeId),
   };
 }
 
-function createCompanyOperationStartDecision(state: GameState): PendingDecision {
-  return createNextCompanyOperationDecision({
-    ...state,
-    phase: "companyOperation",
-  });
+/**
+ * Nepotism (p.14): hiring your own family member needs the consent of every other player in that
+ * office's candidate pool. It does not apply when Hiring Preference was played for the hirer.
+ * TODO(NG): let the hirer call in a guarantor's "My consent for nepotism" promise instead of asking.
+ */
+function nepotismConsentNeededFrom(state: GameState, payload: HireOfficePayload, hirer: PlayerId): PlayerId[] {
+  if (payload.candidateId !== hirer) return [];
+
+  const preference = state.hiring.hiringPreference;
+  if (preference?.officeId === payload.officeId && preference.playerId === hirer) return [];
+
+  const pool = new Set(
+    createHireOfficeCommands(state, payload.officeId).map((command) => (command.payload as HireOfficePayload).candidateId),
+  );
+  pool.delete(hirer);
+
+  return orderedFrom(state, hirer).filter((playerId) => pool.has(playerId));
 }
 
-function createNepotismConsentDecision(
-  state: GameState,
-  hire: HireOfficePayload,
-): PendingDecision {
-  const candidate = state.players[hire.candidateId];
-  const office = officeLabel(hire.officeId);
+function createNepotismConsentDecision(state: GameState): PendingDecision {
+  const nepotism = state.hiring.nepotism;
+  if (!nepotism) throw new Error("No nepotism consent is being collected.");
+
+  const consenter = nepotism.pending[0];
+  const candidate = state.players[nepotism.hire.candidateId];
+  const office = officeLabel(nepotism.hire.officeId);
 
   return {
-    id: `decision-hiring-nepotism-${hire.officeId}-turn-${state.turn}`,
-    phase: "hiring",
+    id: `decision-hiring-nepotism-${nepotism.hire.officeId}-turn-${state.turn}-${consenter}${immediateSuffix(state)}`,
+    phase: state.phase,
     step: "hiring.nepotismConsent",
-    actor: "system",
+    actor: consenter,
     visibility: "public",
-    prompt: `Resolve nepotism consent for ${candidate.name} to fill ${office}.`,
+    prompt: `${candidate.name} wants to hire their own family member as ${office}. Do you consent?`,
     legalCommands: [
       {
         type: "hiring.resolveNepotismConsent",
-        label: "Accept Nepotism",
-        description: `Allow ${candidate.name} to fill ${office}.`,
-        payload: {
-          accepted: true,
-          hire,
-        } satisfies ResolveNepotismConsentPayload,
+        label: "Consent",
+        description: `Allow ${candidate.name} to fill ${office} with their own family member.`,
+        payload: { accepted: true, hire: nepotism.hire } satisfies ResolveNepotismConsentPayload,
       },
       {
         type: "hiring.resolveNepotismConsent",
-        label: "Deny Nepotism",
-        description: `Leave ${office} vacant for this turn.`,
-        payload: {
-          accepted: false,
-          hire,
-        } satisfies ResolveNepotismConsentPayload,
+        label: "Refuse",
+        description: `${candidate.name} must hire someone else as ${office}.`,
+        payload: { accepted: false, hire: nepotism.hire } satisfies ResolveNepotismConsentPayload,
       },
     ],
     canSave: true,
   };
 }
 
-function nextVacantOfficeId(state: GameState): OfficeId | undefined {
-  return state.company.vacantOffices
-    .filter((officeId) => state.company.offices[officeId]?.vacant)
-    .sort(compareHiringOfficeOrder)[0];
+export function resolveNepotismConsent(state: GameState, command: GameCommand): ApplyCommandResult {
+  if (!isHiringStep(state, "hiring.nepotismConsent") || !state.hiring.nepotism) {
+    return hiringError("WRONG_PHASE", "No nepotism consent is being requested.", "phase");
+  }
+
+  const payload = parseResolveNepotismConsentPayload(command.payload);
+  if (!payload || !isLegalPayload(state, "hiring.resolveNepotismConsent", payload)) {
+    return hiringError("ILLEGAL_HIRING_CHOICE", "The requested nepotism consent response is not legal for this decision.", "payload");
+  }
+
+  const nepotism = state.hiring.nepotism;
+  const consenter = command.actorId as PlayerId;
+  const candidate = state.players[nepotism.hire.candidateId];
+  const now = command.clientTimestamp;
+
+  if (!payload.accepted) {
+    const logEntry = createCommandLogEntry({
+      state,
+      command,
+      now,
+      type: "hiring.nepotismConsentDenied",
+      summary: `${state.players[consenter].name} refused consent; ${candidate.name} must hire someone else as ${officeLabel(nepotism.hire.officeId)}.`,
+      details: nepotism.hire,
+    });
+    // Assumption: a refused self-hire cannot be proposed again for this office this turn, so the
+    // hirer chooses among the other candidates (negotiate before proposing).
+    const refused: GameState = {
+      ...state,
+      updatedAt: now,
+      log: [...state.log, logEntry],
+      hiring: {
+        ...state.hiring,
+        nepotism: undefined,
+        nepotismRefused: [...state.hiring.nepotismRefused, { officeId: nepotism.hire.officeId, hirer: nepotism.hirer }],
+      },
+    };
+
+    return { ok: true, logEntry, state: presentOfficeHire(refused, nepotism.hire.officeId) };
+  }
+
+  const remaining = nepotism.pending.slice(1);
+  if (remaining.length > 0) {
+    const logEntry = createCommandLogEntry({
+      state,
+      command,
+      now,
+      type: "hiring.nepotismConsentGiven",
+      summary: `${state.players[consenter].name} consented to ${candidate.name}'s self-hire as ${officeLabel(nepotism.hire.officeId)}.`,
+      details: nepotism.hire,
+    });
+    const next: GameState = {
+      ...state,
+      updatedAt: now,
+      log: [...state.log, logEntry],
+      hiring: { ...state.hiring, nepotism: { ...nepotism, pending: remaining, consented: [...nepotism.consented, consenter] } },
+    };
+
+    return { ok: true, logEntry, state: withDecision(next, createNepotismConsentDecision(next)) };
+  }
+
+  return completeHire(
+    state,
+    nepotism.hire,
+    command,
+    "hiring.nepotismConsentAccepted",
+    `Nepotism consent given; ${candidate.name} filled ${officeLabel(nepotism.hire.officeId)}.`,
+  );
 }
 
-function compareHiringOfficeOrder(left: OfficeId, right: OfficeId): number {
-  return hiringOfficeOrder(left) - hiringOfficeOrder(right);
+/** The player holding an unplayed Hiring Preference blackmail card, if any. */
+function hiringPreferenceHolder(state: GameState): PlayerId | undefined {
+  return Object.values(state.players).find((player) =>
+    player.blackmailCards.some((card) => card.cardId === HIRING_PREFERENCE_CARD_ID && card.facedown !== false),
+  )?.id;
+}
+
+function createHiringPreferenceDecision(state: GameState, officeId: OfficeId, holder: PlayerId): PendingDecision {
+  return {
+    id: `decision-hiring-preference-${officeId}-turn-${state.turn}${immediateSuffix(state)}`,
+    phase: state.phase,
+    step: "hiring.hiringPreference",
+    actor: holder,
+    visibility: "private",
+    prompt: `You are a candidate for ${officeLabel(officeId)}. Play Hiring Preference to force the hirer to choose you?`,
+    legalCommands: [
+      {
+        type: "hiring.playHiringPreference",
+        label: "Play Hiring Preference",
+        description: "The hiring player must choose you; this ignores the Nepotism rule.",
+        payload: { officeId } satisfies HiringPreferencePayload,
+      },
+      {
+        type: "hiring.passHiringPreference",
+        label: "Keep it facedown",
+        description: `Let ${officeLabel(officeId)} be hired normally.`,
+        payload: { officeId } satisfies HiringPreferencePayload,
+      },
+    ],
+    canSave: true,
+  };
+}
+
+// Hiring Preference (blackmail #6): "Play during hiring if you are a candidate. The hiring player
+// must choose you. You may use this to ignore the Nepotism rule."
+// TODO(NG): offer Man on the Inside to its holder when this card is played.
+export function playHiringPreference(state: GameState, command: GameCommand): ApplyCommandResult {
+  return resolveHiringPreference(state, command, true);
+}
+
+export function passHiringPreference(state: GameState, command: GameCommand): ApplyCommandResult {
+  return resolveHiringPreference(state, command, false);
+}
+
+function resolveHiringPreference(state: GameState, command: GameCommand, play: boolean): ApplyCommandResult {
+  if (!isHiringStep(state, "hiring.hiringPreference")) {
+    return hiringError("WRONG_PHASE", "Hiring Preference is not being offered now.", "phase");
+  }
+
+  const type = play ? "hiring.playHiringPreference" : "hiring.passHiringPreference";
+  if (!isLegalPayload(state, type, command.payload)) {
+    return hiringError("ILLEGAL_HIRING_CHOICE", "That Hiring Preference answer is not legal here.", "payload");
+  }
+
+  const { officeId } = command.payload as HiringPreferencePayload;
+  const playerId = command.actorId as PlayerId;
+  const player = state.players[playerId];
+  const now = command.clientTimestamp;
+  const offered: HiringState = {
+    ...state.hiring,
+    hiringPreferenceOffered: [...state.hiring.hiringPreferenceOffered, officeId],
+  };
+
+  if (!play) {
+    const logEntry = createCommandLogEntry({
+      state,
+      command,
+      now,
+      type: "hiring.hiringPreferencePassed",
+      summary: `${player.name} did not play a blackmail card for ${officeLabel(officeId)}.`,
+    });
+    const next: GameState = { ...state, updatedAt: now, log: [...state.log, logEntry], hiring: offered };
+
+    return { ok: true, logEntry, state: presentOfficeHire(next, officeId) };
+  }
+
+  let played = false;
+  const blackmailCards = player.blackmailCards.map((card) => {
+    if (played || card.cardId !== HIRING_PREFERENCE_CARD_ID || card.facedown === false) return card;
+    played = true;
+    return { ...card, facedown: false };
+  });
+  const logEntry = createCommandLogEntry({
+    state,
+    command,
+    now,
+    type: "hiring.hiringPreferencePlayed",
+    summary: `${player.name} played Hiring Preference: they must be hired as ${officeLabel(officeId)}.`,
+    details: { officeId },
+  });
+  const next: GameState = {
+    ...state,
+    updatedAt: now,
+    log: [...state.log, logEntry],
+    players: { ...state.players, [playerId]: { ...player, blackmailCards } },
+    hiring: { ...offered, hiringPreference: { officeId, playerId } },
+  };
+
+  return { ok: true, logEntry, state: presentOfficeHire(next, officeId) };
+}
+
+export function skipHiringVacancy(state: GameState, command: GameCommand): ApplyCommandResult {
+  if (!isHiringStep(state, "hiring.skipVacancy")) {
+    return hiringError("WRONG_PHASE", "Hiring vacancies can only be skipped during the Hiring phase.", "phase");
+  }
+
+  const payload = parseSkipHiringVacancyPayload(command.payload);
+  if (!payload || !isLegalPayload(state, "hiring.skipVacancy", payload)) {
+    return hiringError("ILLEGAL_HIRING_CHOICE", "The requested Hiring vacancy cannot be skipped for this decision.", "payload.officeId");
+  }
+
+  // The office stays in the Vacant Offices box and is hired again next turn (p.14).
+  const skipped: GameState = {
+    ...state,
+    hiring: { ...state.hiring, skippedThisTurn: [...state.hiring.skippedThisTurn, payload.officeId] },
+  };
+  const now = command.clientTimestamp;
+  const logEntry = createCommandLogEntry({
+    state: skipped,
+    command,
+    now,
+    type: "hiring.vacancySkipped",
+    summary: `${officeLabel(payload.officeId)} remained vacant.`,
+    details: { officeId: payload.officeId, reason: state.pendingDecision.prompt },
+  });
+
+  return {
+    ok: true,
+    logEntry,
+    state: afterOfficeResolved({ ...skipped, updatedAt: now, log: [...skipped.log, logEntry] }, payload.officeId),
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Governor General (p.26)
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * The office changes when the Governor General law passes (p.26): every Governor becomes a
+ * pensioner and their cards leave play; the Director of Trade's holder becomes Governor General,
+ * keeping fatigue and the treasury; if the Director of Trade was vacant, the Governor General is
+ * hired by the Chairman in the next Hiring phase. Partly built Company ships are removed.
+ * TODO(PA): call this from the Governor General law's pass effect.
+ */
+export function installGovernorGeneral(state: GameState): GameState {
+  let players = state.players;
+  const companyOffices = { ...state.company.offices };
+  const removedOffices = new Set<OfficeId>();
+
+  for (const definition of offices.filter((office) => office.category === "governor")) {
+    const office = companyOffices[definition.id];
+    if (office?.holder && !office.vacant) {
+      const holder = players[office.holder];
+      players = {
+        ...players,
+        [holder.id]: { ...holder, familyMembers: { ...holder.familyMembers, pensioners: holder.familyMembers.pensioners + 1 } },
+      };
+    }
+    companyOffices[definition.id] = { id: definition.id, treasury: 0, fatigue: 0, vacant: true, created: false, actedThisTurn: false };
+    removedOffices.add(definition.id);
+  }
+
+  const directorOfTrade = companyOffices["director-of-trade"];
+  const heldByDirector = directorOfTrade && !directorOfTrade.vacant && directorOfTrade.holder;
+  companyOffices["governor-general"] = {
+    id: "governor-general",
+    holder: heldByDirector ? directorOfTrade.holder : undefined,
+    familyMemberId: heldByDirector ? directorOfTrade.familyMemberId : undefined,
+    treasury: directorOfTrade?.treasury ?? 0,
+    fatigue: heldByDirector ? directorOfTrade.fatigue : 0,
+    vacant: !heldByDirector,
+    created: true,
+    actedThisTurn: directorOfTrade?.actedThisTurn ?? false,
+  };
+  companyOffices["director-of-trade"] = {
+    id: "director-of-trade",
+    treasury: 0,
+    fatigue: 0,
+    vacant: true,
+    created: false,
+    actedThisTurn: false,
+  };
+  removedOffices.add("director-of-trade");
+
+  const vacantOffices = state.company.vacantOffices.filter((officeId) => !removedOffices.has(officeId));
+  if (!heldByDirector) vacantOffices.push("governor-general");
+
+  return {
+    ...state,
+    players,
+    company: {
+      ...state.company,
+      offices: companyOffices,
+      vacantOffices: [...new Set(vacantOffices)],
+      unusedOffices: state.company.unusedOffices.filter(
+        (officeId) => officeId !== "governor-general" && !removedOffices.has(officeId),
+      ),
+      governorGeneralInPlay: true,
+    },
+    india: {
+      ...state.india,
+      regions: Object.fromEntries(
+        Object.entries(state.india.regions).map(([regionId, region]) => [regionId, { ...region, partialCompanyShip: false }]),
+      ),
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Candidate pools (card backs and pp.16-17)
+// ---------------------------------------------------------------------------------------------
+
+function nextVacantOfficeId(state: GameState): OfficeId | undefined {
+  return state.company.vacantOffices
+    .filter((officeId) => state.company.offices[officeId]?.vacant && !state.hiring.skippedThisTurn.includes(officeId))
+    .sort((left, right) => hiringOfficeOrder(left) - hiringOfficeOrder(right))[0];
 }
 
 // Offices are hired in ascending order of the number on the back of each card (p.14).
@@ -606,124 +991,67 @@ function officeLabel(officeId: OfficeId): string {
   return officeDefinition(officeId)?.label ?? officeId;
 }
 
-function createChairmanElectionCommands(state: GameState): LegalCommand[] {
-  const totalShares = totalCompanyShares(state);
-  if (totalShares <= 0) return [];
+/** Candidates the hirer may choose now, after Hiring Preference and refused self-hires. */
+function candidateCommands(state: GameState, officeId: OfficeId): LegalCommand[] {
+  const hirer = determineOfficeHirer(state, officeId);
+  const preference = state.hiring.hiringPreference;
+  const refused = state.hiring.nepotismRefused.some((entry) => entry.officeId === officeId && entry.hirer === hirer);
 
-  const requiredShares = Math.floor(totalShares / 2) + 1;
-  const counts = shareCountsByPlayer(state);
-  const majorityCommands = [...counts.entries()]
-    .filter(([playerId, shareCount]) => shareCount >= requiredShares && !state.players[playerId]?.isCrown)
-    .map(([candidateId, shareCount]) => ({
-      type: "hiring.electChairman",
-      label: `Elect ${state.players[candidateId].name} Chairman`,
-      description: `${state.players[candidateId].name} controls ${shareCount} of ${totalShares} Company shares.`,
-      payload: {
-        officeId: "chairman",
-        candidateId,
-      } satisfies ChairmanElectionPayload,
-    }));
-  if (majorityCommands.length > 0) return majorityCommands;
-
-  return [...counts.entries()]
-    .filter(([playerId]) => !state.players[playerId]?.isCrown)
-    .map(([candidateId, shareCount]) => ({
-      type: "hiring.electChairman",
-      label: `Elect ${state.players[candidateId].name} Chairman`,
-      description: `${state.players[candidateId].name} has ${shareCount} of ${totalShares} Company shares; use this after table-negotiated majority support.`,
-      payload: {
-        officeId: "chairman",
-        candidateId,
-      } satisfies ChairmanElectionPayload,
-    }));
-}
-
-function hasPureShareMajority(state: GameState): boolean {
-  const totalShares = totalCompanyShares(state);
-  if (totalShares <= 0) return false;
-
-  const requiredShares = Math.floor(totalShares / 2) + 1;
-  return [...shareCountsByPlayer(state).entries()].some(
-    ([playerId, shareCount]) => shareCount >= requiredShares && !state.players[playerId]?.isCrown,
-  );
+  return createHireOfficeCommands(state, officeId).filter((command) => {
+    const candidateId = (command.payload as HireOfficePayload).candidateId;
+    if (preference?.officeId === officeId) return candidateId === preference.playerId;
+    return !(refused && candidateId === hirer);
+  });
 }
 
 function createHireOfficeCommands(state: GameState, officeId: OfficeId): LegalCommand[] {
   const definition = officeDefinition(officeId);
-  if (definition?.hiring?.candidatePool.type === "special") {
-    if (definition.hiring.candidatePool.rule !== "director-of-trade-promotion-then-writers") {
-      if (definition.hiring.candidatePool.rule === "military-affairs") {
-        return createMilitaryAffairsHireCommands(state);
-      }
+  const pool = definition?.hiring?.candidatePool;
+  if (!definition || !pool || !determineOfficeHirer(state, officeId)) return [];
 
-      if (definition.hiring.candidatePool.rule === "president") {
-        return createPresidentHireCommands(state, officeId);
-      }
-
-      if (definition.hiring.candidatePool.rule === "governor") {
-        return createGovernorHireCommands(state, officeId);
-      }
-
-      return [];
-    }
-
-    return createPromotionThenWriterHireCommands(state, officeId);
+  if (pool.type === "writers") {
+    return createWriterHireCommands(state, officeId, enginePresidenciesForCandidatePool(definition));
   }
 
-  if (definition?.hiring?.candidatePool.type !== "writers") return [];
-
-  const hirer = determineOfficeHirer(state, officeId);
-  if (!hirer) return [];
-
-  return createWriterHireCommands(
-    state,
-    officeId,
-    undefined,
-    enginePresidenciesForCandidatePool(definition),
-  );
+  switch (pool.rule) {
+    case "director-of-trade-promotion-then-writers":
+      return createPromotionThenWriterHireCommands(state, officeId);
+    case "military-affairs":
+      return createMilitaryAffairsHireCommands(state);
+    case "president":
+      return createPresidentHireCommands(state, officeId);
+    case "governor":
+      return createGovernorHireCommands(state, officeId);
+  }
 }
 
 function createWriterHireCommands(
   state: GameState,
   officeId: OfficeId,
-  excludedPlayerId?: PlayerId,
-  eligiblePresidencies: readonly EnginePresidencyId[] = ["Bombay", "Madras", "Bengal"],
+  eligiblePresidencies: readonly PresidencyId[] = PRESIDENCIES,
 ): LegalCommand[] {
   const commands: LegalCommand[] = [];
   for (const player of Object.values(state.players)) {
-    if (player.isCrown || player.id === excludedPlayerId) continue;
+    if (player.isCrown) continue;
 
     for (const presidency of eligiblePresidencies) {
-      const writerCount = state.india.presidencies[presidency].writers[player.id] ?? 0;
-      if (writerCount <= 0) continue;
+      if ((state.india.presidencies[presidency].writers[player.id] ?? 0) <= 0) continue;
 
-      commands.push({
-        type: "hiring.hireOffice",
-        label: `Hire ${player.name} ${presidency} writer`,
-        description: `Move one ${player.name} writer from ${presidency} to ${officeLabel(officeId)}.`,
-        payload: {
-          officeId,
-          candidateId: player.id,
-          source: {
-            type: "writer",
-            presidency,
-          },
-        } satisfies HireOfficePayload,
-      });
+      commands.push(
+        hireCommand(state, officeId, player.id, { type: "writer", presidency }, `Hire ${player.name} ${presidency} writer`),
+      );
     }
   }
 
   return commands;
 }
 
-function createPromotionThenWriterHireCommands(
-  state: GameState,
-  targetOfficeId: OfficeId,
-): LegalCommand[] {
-  const chairmanId = determineOfficeHirer(state, targetOfficeId);
-  if (!chairmanId) return [];
-
-  const promotionCommands: LegalCommand[] = [];
+/**
+ * Director of Trade and Governor General: "Consider any office except Governors or the
+ * Chairman. If none, writers." (card backs; p.16).
+ */
+function createPromotionThenWriterHireCommands(state: GameState, targetOfficeId: OfficeId): LegalCommand[] {
+  const promotions: LegalCommand[] = [];
   for (const office of Object.values(state.company.offices)) {
     if (
       office.vacant ||
@@ -738,51 +1066,40 @@ function createPromotionThenWriterHireCommands(
     const candidate = state.players[office.holder];
     if (!candidate || candidate.isCrown) continue;
 
-    promotionCommands.push({
-      type: "hiring.hireOffice",
-      label: `Promote ${candidate.name} from ${officeLabel(office.id)}`,
-      description: `Move ${candidate.name}'s officeholder from ${officeLabel(office.id)} to ${officeLabel(targetOfficeId)}.`,
-      payload: {
-        officeId: targetOfficeId,
-        candidateId: candidate.id,
-        source: {
-          type: "office",
-          officeId: office.id,
-        },
-      } satisfies HireOfficePayload,
-    });
+    promotions.push(
+      hireCommand(
+        state,
+        targetOfficeId,
+        candidate.id,
+        { type: "office", officeId: office.id },
+        `Promote ${candidate.name} from ${officeLabel(office.id)}`,
+      ),
+    );
   }
 
-  if (promotionCommands.length > 0) return promotionCommands;
-
-  return createWriterHireCommands(state, targetOfficeId);
+  return promotions.length > 0 ? promotions : createWriterHireCommands(state, targetOfficeId);
 }
 
+/** Military Affairs: "Consider Commanders. If none, officers. If none, officers-in-training." */
 function createMilitaryAffairsHireCommands(state: GameState): LegalCommand[] {
-  const hirer = determineOfficeHirer(state, "military-affairs");
-  if (!hirer) return [];
+  const commanders = createCommanderHireCommands(state, "military-affairs");
+  if (commanders.length > 0) return commanders;
 
-  const commanderCommands = createCommanderHireCommands(state, "military-affairs", hirer);
-  if (commanderCommands.length > 0) return commanderCommands;
+  const officers = createOfficerHireCommands(state, "military-affairs");
+  if (officers.length > 0) return officers;
 
-  const officerCommands = createOfficerHireCommands(state, "military-affairs", hirer);
-  if (officerCommands.length > 0) return officerCommands;
-
-  return createOfficersInTrainingHireCommands(state, "military-affairs", hirer);
+  return createOfficersInTrainingHireCommands(state, "military-affairs");
 }
 
+/** Presidents: "Consider writers and Governors associated with this Presidency." */
 function createPresidentHireCommands(state: GameState, officeId: OfficeId): LegalCommand[] {
   const definition = officeDefinition(officeId);
   if (definition?.category !== "presidency" || !definition.presidency) return [];
 
-  const hirer = determineOfficeHirer(state, officeId);
-  if (!hirer) return [];
-
   const presidency = toEnginePresidency(definition.presidency);
 
-  // Presidents: "Consider writers and Governors associated with this Presidency" (card back).
   return [
-    ...createWriterHireCommands(state, officeId, undefined, [presidency]),
+    ...createWriterHireCommands(state, officeId, [presidency]),
     ...createGovernorPromotionCommands(state, officeId, presidency),
   ];
 }
@@ -795,23 +1112,18 @@ function createGovernorHireCommands(state: GameState, officeId: OfficeId): Legal
   if (definition?.category !== "governor" || !definition.region) return [];
 
   const presidency = regionPresidency(state, definition.region);
-  if (!presidency || !determineOfficeHirer(state, officeId)) return [];
+  if (!presidency) return [];
 
   return [
-    ...createWriterHireCommands(state, officeId, undefined, [presidency]),
-    ...createOfficerHireCommands(state, officeId, undefined, [presidency]),
+    ...createWriterHireCommands(state, officeId, [presidency]),
+    ...createOfficerHireCommands(state, officeId, [presidency]),
   ];
 }
 
-function createGovernorPromotionCommands(
-  state: GameState,
-  officeId: OfficeId,
-  presidency: EnginePresidencyId,
-  excludedPlayerId?: PlayerId,
-): LegalCommand[] {
+function createGovernorPromotionCommands(state: GameState, officeId: OfficeId, presidency: PresidencyId): LegalCommand[] {
   return Object.values(state.company.offices)
     .filter((office) => {
-      if (office.vacant || !office.holder || office.holder === excludedPlayerId) return false;
+      if (office.vacant || !office.holder) return false;
       const definition = officeDefinition(office.id);
       return (
         definition?.category === "governor" &&
@@ -821,48 +1133,24 @@ function createGovernorPromotionCommands(
     })
     .map((office) => {
       const candidate = state.players[office.holder as PlayerId];
-      return {
-        type: "hiring.hireOffice",
-        label: `Promote ${candidate.name} from ${officeLabel(office.id)}`,
-        description: `Move ${candidate.name}'s Governor from ${officeLabel(office.id)} to ${officeLabel(officeId)}.`,
-        payload: {
-          officeId,
-          candidateId: candidate.id,
-          source: {
-            type: "office",
-            officeId: office.id,
-          },
-        } satisfies HireOfficePayload,
-      };
+      return hireCommand(
+        state,
+        officeId,
+        candidate.id,
+        { type: "office", officeId: office.id },
+        `Promote ${candidate.name} from ${officeLabel(office.id)}`,
+      );
     });
 }
 
-function createCommanderHireCommands(
-  state: GameState,
-  officeId: OfficeId,
-  excludedPlayerId?: PlayerId,
-): LegalCommand[] {
+function createCommanderHireCommands(state: GameState, officeId: OfficeId): LegalCommand[] {
   const commands: LegalCommand[] = [];
-  for (const army of ["Bombay", "Madras", "Bengal"] as const) {
+  for (const army of PRESIDENCIES) {
     const commanderId = state.company.armies[army].commander;
-    if (!commanderId || commanderId === excludedPlayerId) continue;
-
-    const player = state.players[commanderId];
+    const player = commanderId ? state.players[commanderId] : undefined;
     if (!player || player.isCrown) continue;
 
-    commands.push({
-      type: "hiring.hireOffice",
-      label: `Hire ${player.name} ${army} Commander`,
-      description: `Move ${player.name}'s ${army} Commander to ${officeLabel(officeId)}.`,
-      payload: {
-        officeId,
-        candidateId: player.id,
-        source: {
-          type: "commander",
-          army,
-        },
-      } satisfies HireOfficePayload,
-    });
+    commands.push(hireCommand(state, officeId, player.id, { type: "commander", army }, `Hire ${player.name} ${army} Commander`));
   }
 
   return commands;
@@ -871,32 +1159,25 @@ function createCommanderHireCommands(
 function createOfficerHireCommands(
   state: GameState,
   officeId: OfficeId,
-  excludedPlayerId?: PlayerId,
-  eligibleArmies: readonly ArmyId[] = ["Bombay", "Madras", "Bengal"],
+  eligibleArmies: readonly ArmyId[] = PRESIDENCIES,
 ): LegalCommand[] {
   const commands: LegalCommand[] = [];
   for (const player of Object.values(state.players)) {
-    if (player.isCrown || player.id === excludedPlayerId) continue;
+    if (player.isCrown) continue;
 
     for (const army of eligibleArmies) {
       for (const readiness of ["ready", "exhausted"] as const) {
-        const armyCount = state.company.armies[army].officers[player.id]?.[readiness] ?? 0;
-        if (armyCount <= 0) continue;
+        if ((state.company.armies[army].officers[player.id]?.[readiness] ?? 0) <= 0) continue;
 
-        commands.push({
-          type: "hiring.hireOffice",
-          label: `Hire ${player.name} ${readiness} ${army} officer`,
-          description: `Move one ${player.name} ${readiness} officer from the ${army} Army to ${officeLabel(officeId)}.`,
-          payload: {
+        commands.push(
+          hireCommand(
+            state,
             officeId,
-            candidateId: player.id,
-            source: {
-              type: "officer",
-              army,
-              readiness,
-            },
-          } satisfies HireOfficePayload,
-        });
+            player.id,
+            { type: "officer", army, readiness },
+            `Hire ${player.name} ${readiness} ${army} officer`,
+          ),
+        );
       }
     }
   }
@@ -904,30 +1185,27 @@ function createOfficerHireCommands(
   return commands;
 }
 
-function createOfficersInTrainingHireCommands(
+function createOfficersInTrainingHireCommands(state: GameState, officeId: OfficeId): LegalCommand[] {
+  return Object.values(state.players)
+    .filter((player) => !player.isCrown && player.familyMembers.officersInTraining > 0)
+    .map((player) =>
+      hireCommand(state, officeId, player.id, { type: "officersInTraining" }, `Hire ${player.name} officer in training`),
+    );
+}
+
+function hireCommand(
   state: GameState,
   officeId: OfficeId,
-  excludedPlayerId?: PlayerId,
-): LegalCommand[] {
-  return Object.values(state.players)
-    .filter(
-      (player) =>
-        !player.isCrown &&
-        player.id !== excludedPlayerId &&
-        player.familyMembers.officersInTraining > 0,
-    )
-    .map((player) => ({
-      type: "hiring.hireOffice",
-      label: `Hire ${player.name} officer in training`,
-      description: `Move one ${player.name} officer in training to ${officeLabel(officeId)}.`,
-      payload: {
-        officeId,
-        candidateId: player.id,
-        source: {
-          type: "officersInTraining",
-        },
-      } satisfies HireOfficePayload,
-    }));
+  candidateId: PlayerId,
+  source: HireSource,
+  label: string,
+): LegalCommand {
+  return {
+    type: "hiring.hireOffice",
+    label,
+    description: `${label} as ${officeLabel(officeId)}.`,
+    payload: { officeId, candidateId, source } satisfies HireOfficePayload,
+  };
 }
 
 function isGovernorOffice(officeId: OfficeId): boolean {
@@ -946,76 +1224,38 @@ function determineOfficeHirer(state: GameState, officeId: OfficeId): PlayerId | 
     return presidency ? presidentOf(state, presidency) : undefined;
   }
 
+  // "The Governor General hires Presidents" once that office is in play (p.26).
+  if (hirer.officeId === "director-of-trade" && state.company.governorGeneralInPlay) {
+    return holderOf(state, "governor-general");
+  }
+
   return holderOf(state, hirer.officeId);
 }
 
 function holderOf(state: GameState, officeId: OfficeId): PlayerId | undefined {
   const office = state.company.offices[officeId];
-  if (!office || office.vacant || !office.holder) return undefined;
-
-  return office.holder;
-}
-
-function requiresNepotismConsent(state: GameState, payload: HireOfficePayload): boolean {
-  const definition = officeDefinition(payload.officeId);
-  if (!definition?.hiring?.excludeHirerUntilNepotismConsent) return false;
-
-  return determineOfficeHirer(state, payload.officeId) === payload.candidateId;
+  return office && !office.vacant ? office.holder : undefined;
 }
 
 function officeDefinition(officeId: OfficeId): OfficeDefinition | undefined {
   return offices.find((office) => office.id === officeId);
 }
 
-function enginePresidenciesForCandidatePool(
-  definition: OfficeDefinition,
-): readonly EnginePresidencyId[] {
-  const candidatePool = definition.hiring?.candidatePool;
-  if (!candidatePool || candidatePool.type !== "writers" || candidatePool.presidencies === "any") {
-    return ["Bombay", "Madras", "Bengal"];
-  }
+function enginePresidenciesForCandidatePool(definition: OfficeDefinition): readonly PresidencyId[] {
+  const pool = definition.hiring?.candidatePool;
+  if (!pool || pool.type !== "writers" || pool.presidencies === "any") return PRESIDENCIES;
 
-  return candidatePool.presidencies.map(toEnginePresidency);
+  return pool.presidencies.map(toEnginePresidency);
 }
 
-function totalCompanyShares(state: GameState): number {
-  return companyShareCount(state);
+function prizeLabel(prizeId: string): string {
+  const prize = prizes.find((candidate) => candidate.id === prizeId);
+  return prize ? `£${prize.cost} prize` : prizeId;
 }
 
-function shareCountsByPlayer(state: GameState): Map<PlayerId, number> {
-  return companySharesByPlayer(state);
-}
-
-// The new Chairman moves one of their Court shares to the Chairman slot; it still counts as a
-// Company share (p.15).
-function assignChairman(state: GameState, candidateId: PlayerId): GameState {
-  const candidateShare = state.company.court.find((share) => share.owner === candidateId);
-  const court = candidateShare
-    ? removeShare(state.company.court, candidateShare.id)
-    : state.company.court;
-
-  return {
-    ...state,
-    company: {
-      ...state.company,
-      court,
-      offices: {
-        ...state.company.offices,
-        chairman: {
-          id: "chairman",
-          treasury: state.company.offices.chairman?.treasury ?? 0,
-          fatigue: state.company.offices.chairman?.fatigue ?? 0,
-          created: true,
-          vacant: false,
-          actedThisTurn: false,
-          holder: candidateId,
-          familyMemberId: candidateShare?.id ?? `chairman-share-${state.turn}-${candidateId}`,
-        },
-      },
-      vacantOffices: state.company.vacantOffices.filter((officeId) => officeId !== "chairman"),
-    },
-  };
-}
+// ---------------------------------------------------------------------------------------------
+// Moving pieces
+// ---------------------------------------------------------------------------------------------
 
 function removeShare(shares: ShareInstance[], shareId: string): ShareInstance[] {
   let removed = false;
@@ -1029,46 +1269,20 @@ function removeShare(shares: ShareInstance[], shareId: string): ShareInstance[] 
   });
 }
 
-function removeOfficeFromHiringQueue(state: GameState, officeId: OfficeId): GameState {
-  return {
-    ...state,
-    company: {
-      ...state.company,
-      vacantOffices: state.company.vacantOffices.filter((candidate) => candidate !== officeId),
-    },
-  };
-}
-
 function moveCandidateToOffice(state: GameState, payload: HireOfficePayload): GameState {
-  if (isPromotionHirePayload(payload)) {
-    return promoteOfficeholderToOffice(state, payload);
+  switch (payload.source.type) {
+    case "office":
+      return promoteOfficeholderToOffice(state, payload, payload.source.officeId);
+    case "writer":
+      return moveWriterToOffice(state, payload, payload.source.presidency);
+    default:
+      return moveMilitaryCandidateToOffice(state, payload);
   }
-
-  if (isMilitaryHirePayload(payload)) {
-    return moveMilitaryCandidateToOffice(state, payload);
-  }
-
-  return moveWriterToOffice(state, payload);
 }
 
-function isPromotionHirePayload(payload: HireOfficePayload): payload is PromotionHireOfficePayload {
-  return payload.source.type === "office";
-}
-
-function isMilitaryHirePayload(payload: HireOfficePayload): payload is MilitaryHireOfficePayload {
-  return (
-    payload.source.type === "commander" ||
-    payload.source.type === "officer" ||
-    payload.source.type === "officersInTraining"
-  );
-}
-
-function moveWriterToOffice(
-  state: GameState,
-  payload: WriterHireOfficePayload,
-): GameState {
-  const presidency = payload.source.presidency;
-  const currentPresidencyWriterCount = state.india.presidencies[presidency].writers[payload.candidateId] ?? 0;
+function moveWriterToOffice(state: GameState, payload: HireOfficePayload, presidency: PresidencyId): GameState {
+  const box = state.india.presidencies[presidency];
+  const writers = box.writers[payload.candidateId] ?? 0;
 
   return {
     ...state,
@@ -1079,13 +1293,7 @@ function moveWriterToOffice(
       ...state.india,
       presidencies: {
         ...state.india.presidencies,
-        [presidency]: {
-          ...state.india.presidencies[presidency],
-          writers: {
-            ...state.india.presidencies[presidency].writers,
-            [payload.candidateId]: Math.max(0, currentPresidencyWriterCount - 1),
-          },
-        },
+        [presidency]: { ...box, writers: { ...box.writers, [payload.candidateId]: Math.max(0, writers - 1) } },
       },
     },
   };
@@ -1116,18 +1324,12 @@ function placeOfficeholder(
   };
 }
 
-// Promotions: the old office card goes to the vacant stack and its fatigue moves with the
-// officeholder (p.14).
-function promoteOfficeholderToOffice(
-  state: GameState,
-  payload: PromotionHireOfficePayload,
-): GameState {
-  const sourceOffice = state.company.offices[payload.source.officeId];
-  const familyMemberId =
-    sourceOffice?.familyMemberId ??
-    `officeholder-${payload.source.officeId}-${state.turn}-${payload.candidateId}`;
+// Promotions: the old office card goes to the Vacant Offices box, to be hired in its own order,
+// and its fatigue moves with the officeholder (p.14).
+function promoteOfficeholderToOffice(state: GameState, payload: HireOfficePayload, sourceOfficeId: OfficeId): GameState {
+  const sourceOffice = state.company.offices[sourceOfficeId];
   const company = placeOfficeholder(state, payload.officeId, payload.candidateId, {
-    familyMemberId,
+    familyMemberId: sourceOffice?.familyMemberId ?? `officeholder-${sourceOfficeId}-${state.turn}-${payload.candidateId}`,
     fatigue: sourceOffice?.fatigue ?? 0,
   });
 
@@ -1137,8 +1339,8 @@ function promoteOfficeholderToOffice(
       ...company,
       offices: {
         ...company.offices,
-        [payload.source.officeId]: {
-          id: payload.source.officeId,
+        [sourceOfficeId]: {
+          id: sourceOfficeId,
           treasury: sourceOffice?.treasury ?? 0,
           fatigue: 0,
           created: sourceOffice?.created ?? true,
@@ -1146,27 +1348,25 @@ function promoteOfficeholderToOffice(
           actedThisTurn: false,
         },
       },
-      vacantOffices: [...new Set([...company.vacantOffices, payload.source.officeId])],
+      vacantOffices: [...new Set([...company.vacantOffices, sourceOfficeId])],
     },
   };
 }
 
-function moveMilitaryCandidateToOffice(
-  state: GameState,
-  payload: MilitaryHireOfficePayload,
-): GameState {
-  const stateAfterSourceMove = removeMilitaryCandidate(state, payload);
+function moveMilitaryCandidateToOffice(state: GameState, payload: HireOfficePayload): GameState {
+  const removed = removeMilitaryCandidate(state, payload);
 
   return {
-    ...stateAfterSourceMove,
-    company: placeOfficeholder(stateAfterSourceMove, payload.officeId, payload.candidateId, {
-      familyMemberId: militaryFamilyMemberId(state, payload),
+    ...removed,
+    company: placeOfficeholder(removed, payload.officeId, payload.candidateId, {
+      familyMemberId: `${payload.source.type}-${state.turn}-${payload.candidateId}-${payload.officeId}`,
     }),
   };
 }
 
-function removeMilitaryCandidate(state: GameState, payload: MilitaryHireOfficePayload): GameState {
-  if (payload.source.type === "officersInTraining") {
+function removeMilitaryCandidate(state: GameState, payload: HireOfficePayload): GameState {
+  const source = payload.source;
+  if (source.type === "officersInTraining") {
     const player = state.players[payload.candidateId];
     return {
       ...state,
@@ -1183,19 +1383,17 @@ function removeMilitaryCandidate(state: GameState, payload: MilitaryHireOfficePa
     };
   }
 
-  const army = state.company.armies[payload.source.army];
-  if (payload.source.type === "commander") {
+  if (source.type !== "commander" && source.type !== "officer") return state;
+
+  const army = state.company.armies[source.army];
+  if (source.type === "commander") {
     return {
       ...state,
-      company: {
-        ...state.company,
-        armies: { ...state.company.armies, [payload.source.army]: { ...army, commander: undefined } },
-      },
+      company: { ...state.company, armies: { ...state.company.armies, [source.army]: { ...army, commander: undefined } } },
     };
   }
 
-  const readiness = payload.source.readiness;
-  const currentStack = army.officers[payload.candidateId] ?? { ready: 0, exhausted: 0 };
+  const stack = army.officers[payload.candidateId] ?? { ready: 0, exhausted: 0 };
 
   return {
     ...state,
@@ -1203,14 +1401,11 @@ function removeMilitaryCandidate(state: GameState, payload: MilitaryHireOfficePa
       ...state.company,
       armies: {
         ...state.company.armies,
-        [payload.source.army]: {
+        [source.army]: {
           ...army,
           officers: {
             ...army.officers,
-            [payload.candidateId]: {
-              ...currentStack,
-              [readiness]: Math.max(0, currentStack[readiness] - 1),
-            },
+            [payload.candidateId]: { ...stack, [source.readiness]: Math.max(0, stack[source.readiness] - 1) },
           },
         },
       },
@@ -1218,37 +1413,23 @@ function removeMilitaryCandidate(state: GameState, payload: MilitaryHireOfficePa
   };
 }
 
-function militaryFamilyMemberId(state: GameState, payload: MilitaryHireOfficePayload): string {
-  if (payload.source.type === "officersInTraining") {
-    return `officer-in-training-${state.turn}-${payload.candidateId}-${payload.officeId}`;
-  }
-
-  if (payload.source.type === "commander") {
-    return `commander-${payload.source.army}-${state.turn}-${payload.candidateId}-${payload.officeId}`;
-  }
-
-  return `officer-${payload.source.army}-${payload.source.readiness}-${state.turn}-${payload.candidateId}-${payload.officeId}`;
-}
+// ---------------------------------------------------------------------------------------------
+// Payload parsing
+// ---------------------------------------------------------------------------------------------
 
 function parseChairmanElectionPayload(payload: unknown): ChairmanElectionPayload | undefined {
   if (!payload || typeof payload !== "object") return undefined;
   const raw = payload as { officeId?: unknown; candidateId?: unknown };
   if (raw.officeId !== "chairman" || typeof raw.candidateId !== "string") return undefined;
 
-  return {
-    officeId: "chairman",
-    candidateId: raw.candidateId,
-  };
+  return { officeId: "chairman", candidateId: raw.candidateId };
 }
 
 function parseSkipHiringVacancyPayload(payload: unknown): SkipHiringVacancyPayload | undefined {
   if (!payload || typeof payload !== "object") return undefined;
   const raw = payload as { officeId?: unknown };
-  if (typeof raw.officeId !== "string") return undefined;
 
-  return {
-    officeId: raw.officeId,
-  };
+  return typeof raw.officeId === "string" ? { officeId: raw.officeId } : undefined;
 }
 
 function parseHireOfficePayload(payload: unknown): HireOfficePayload | undefined {
@@ -1256,99 +1437,43 @@ function parseHireOfficePayload(payload: unknown): HireOfficePayload | undefined
   const raw = payload as {
     officeId?: unknown;
     candidateId?: unknown;
-    source?: {
-      type?: unknown;
-      presidency?: unknown;
-      officeId?: unknown;
-      army?: unknown;
-      readiness?: unknown;
-    };
+    source?: { type?: unknown; presidency?: unknown; officeId?: unknown; army?: unknown; readiness?: unknown };
   };
-  if (typeof raw.officeId !== "string" || typeof raw.candidateId !== "string") return undefined;
-  if (!raw.source) return undefined;
+  if (typeof raw.officeId !== "string" || typeof raw.candidateId !== "string" || !raw.source) return undefined;
 
-  if (raw.source.type === "office" && typeof raw.source.officeId === "string") {
-    return {
-      officeId: raw.officeId,
-      candidateId: raw.candidateId,
-      source: {
-        type: "office",
-        officeId: raw.source.officeId,
-      },
-    };
+  const base = { officeId: raw.officeId, candidateId: raw.candidateId };
+  const source = raw.source;
+
+  if (source.type === "office" && typeof source.officeId === "string") {
+    return { ...base, source: { type: "office", officeId: source.officeId } };
+  }
+  if (source.type === "commander" && isPresidencyId(source.army)) {
+    return { ...base, source: { type: "commander", army: source.army } };
+  }
+  if (source.type === "officer" && isPresidencyId(source.army) && isReadiness(source.readiness)) {
+    return { ...base, source: { type: "officer", army: source.army, readiness: source.readiness } };
+  }
+  if (source.type === "officersInTraining") {
+    return { ...base, source: { type: "officersInTraining" } };
+  }
+  if (source.type === "writer" && isPresidencyId(source.presidency)) {
+    return { ...base, source: { type: "writer", presidency: source.presidency } };
   }
 
-  if (raw.source.type === "commander" && isArmyId(raw.source.army)) {
-    return {
-      officeId: raw.officeId,
-      candidateId: raw.candidateId,
-      source: {
-        type: "commander",
-        army: raw.source.army,
-      },
-    };
-  }
-
-  if (
-    raw.source.type === "officer" &&
-    isArmyId(raw.source.army) &&
-    isReadiness(raw.source.readiness)
-  ) {
-    return {
-      officeId: raw.officeId,
-      candidateId: raw.candidateId,
-      source: {
-        type: "officer",
-        army: raw.source.army,
-        readiness: raw.source.readiness,
-      },
-    };
-  }
-
-  if (raw.source.type === "officersInTraining") {
-    return {
-      officeId: raw.officeId,
-      candidateId: raw.candidateId,
-      source: {
-        type: "officersInTraining",
-      },
-    };
-  }
-
-  if (raw.source.type !== "writer" || !isPresidencyId(raw.source.presidency)) return undefined;
-
-  return {
-    officeId: raw.officeId,
-    candidateId: raw.candidateId,
-    source: {
-      type: "writer",
-      presidency: raw.source.presidency,
-    },
-  };
+  return undefined;
 }
 
-function parseResolveNepotismConsentPayload(
-  payload: unknown,
-): ResolveNepotismConsentPayload | undefined {
+function parseResolveNepotismConsentPayload(payload: unknown): ResolveNepotismConsentPayload | undefined {
   if (!payload || typeof payload !== "object") return undefined;
   const raw = payload as { accepted?: unknown; hire?: unknown };
   if (typeof raw.accepted !== "boolean") return undefined;
 
   const hire = parseHireOfficePayload(raw.hire);
-  if (!hire) return undefined;
-
-  return {
-    accepted: raw.accepted,
-    hire,
-  };
+  return hire ? { accepted: raw.accepted, hire } : undefined;
 }
 
-function isPresidencyId(value: unknown): value is "Bombay" | "Madras" | "Bengal" {
+function isPresidencyId(value: unknown): value is PresidencyId {
   return value === "Bombay" || value === "Madras" || value === "Bengal";
-}
-
-function isArmyId(value: unknown): value is ArmyId {
-  return isPresidencyId(value);
 }
 
 function isReadiness(value: unknown): value is "ready" | "exhausted" {
@@ -1356,18 +1481,36 @@ function isReadiness(value: unknown): value is "ready" | "exhausted" {
 }
 
 function isLegalPayload(state: GameState, type: string, payload: unknown): boolean {
-  return state.pendingDecision.legalCommands.some((command) => {
-    if (command.type !== type) return false;
+  const wanted = canonicalJson(payload ?? {});
+  return state.pendingDecision.legalCommands.some(
+    (command) => command.type === type && canonicalJson(command.payload ?? {}) === wanted,
+  );
+}
 
-    return JSON.stringify(command.payload ?? {}) === JSON.stringify(payload);
-  });
+function canonicalJson(value: unknown): string {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return JSON.stringify(value);
+  const record = value as Record<string, unknown>;
+
+  return `{${Object.keys(record)
+    .filter((key) => record[key] !== undefined)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+    .join(",")}}`;
+}
+
+function hiringError(code: string, message: string, field: string): ApplyCommandResult {
+  const errors: ValidationError[] = [{ code, message, field }];
+  return { ok: false, errors };
 }
 
 /** Commands this phase answers; composed by the dispatcher in ../commands.ts. */
 export const hiringCommandHandlers: Record<string, CommandHandler> = {
-  "hiring.pass": passHiring,
   "hiring.electChairman": electChairman,
+  "hiring.declareChairmanSupport": declareChairmanSupport,
+  "hiring.emptyCourtChairman": emptyCourtChairman,
   "hiring.hireOffice": hireOffice,
   "hiring.resolveNepotismConsent": resolveNepotismConsent,
+  "hiring.playHiringPreference": playHiringPreference,
+  "hiring.passHiringPreference": passHiringPreference,
   "hiring.skipVacancy": skipHiringVacancy,
 };

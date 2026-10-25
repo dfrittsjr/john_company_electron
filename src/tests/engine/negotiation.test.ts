@@ -179,11 +179,11 @@ describe("binding immediate transfers (p.8)", () => {
   test("a transfer during a Family decision rebuilds the affordable actions", () => {
     let state = atPhase(negotiationGame("parliament", { [RED]: 5 }), "family");
     const labels = (game: GameState) => game.pendingDecision.legalCommands.map((command) => command.label);
-    expect(labels(state)).toContain("Purchase Workshop");
+    expect(labels(state)).toContain("Purchase Workshop (£5)");
 
     state = give(state, RED, BLUE, [{ kind: "cash", amount: 2 }]);
-    expect(labels(state)).not.toContain("Purchase Workshop");
-    expect(labels(state)).toContain("Purchase Shipyard");
+    expect(labels(state)).not.toContain("Purchase Workshop (£5)");
+    expect(labels(state)).toContain("Purchase Shipyard (£2)");
   });
 
   test("nothing changes hands after the game is over (p.8)", () => {

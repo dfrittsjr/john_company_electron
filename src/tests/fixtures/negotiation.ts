@@ -20,7 +20,7 @@ export const YELLOW = "player-yellow";
 const PHASE_COMMANDS: Partial<Record<PhaseId, string>> = {
   setup: "setup.confirmStart",
   londonSeason: "londonSeason.confirm",
-  hiring: "hiring.pass",
+  hiring: "hiring.skipVacancy",
   companyOperation: "companyOperation.passOffice",
   bonuses: "bonuses.confirm",
   revenue: "revenue.confirm",

@@ -15,7 +15,7 @@ import type {
   PlayerState,
   RngRollRecord,
 } from "../types";
-import { createFamilyActionCommands } from "./family";
+import { startFamilyPhase } from "./family";
 import { finishFinalScoringAfterRetirements } from "./final-scoring";
 import {
   advanceRetirements,
@@ -603,26 +603,6 @@ function finishLondonSeason(state: GameState): GameState {
       scandal: undefined,
     },
   });
-}
-
-/** Family phase begins (p.13). TODO(FH): start with the Chairman once the Family phase supports it. */
-function startFamilyPhase(state: GameState): GameState {
-  const nextActor = firstHumanActor(state) as PlayerId;
-
-  return {
-    ...state,
-    phase: "family",
-    pendingDecision: {
-      id: `decision-family-choose-action-turn-${state.turn}-${nextActor}`,
-      phase: "family",
-      step: "family.chooseAction",
-      actor: nextActor,
-      visibility: "private",
-      prompt: "Choose a family action.",
-      legalCommands: createFamilyActionCommands(state, nextActor),
-      canSave: true,
-    },
-  };
 }
 
 // --- Retirement commands (London Season and Final Scoring) ---

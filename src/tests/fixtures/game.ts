@@ -138,7 +138,7 @@ export function expectGameInvariants(state: GameState): void {
   }
 
   for (const legalCommand of state.pendingDecision.legalCommands) {
-    expect(isKnownCommandType(legalCommand.type)).toBe(true);
+    expect(isKnownCommandType(legalCommand.type), `unknown legal command ${legalCommand.type}`).toBe(true);
   }
 
   state.log.forEach((entry, index) => {

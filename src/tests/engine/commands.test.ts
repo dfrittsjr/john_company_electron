@@ -235,10 +235,15 @@ describe("command application", () => {
       "Enlist Writer (Madras)",
       "Enlist Writer (Bengal)",
       "Enlist Officer",
-      "Seek Share (£2)",
-      "Purchase Shipyard",
-      "Purchase Workshop",
-      "Purchase Luxury",
+      // Seek Share may use any empty Stock Exchange space the player can afford (p.14).
+      "Seek Share (£2, stock-exchange-2)",
+      "Seek Share (£3, stock-exchange-3-left)",
+      "Seek Share (£3, stock-exchange-3-right)",
+      "Seek Share (£4, stock-exchange-4)",
+      "Seek Share (£5, stock-exchange-5)",
+      "Purchase Shipyard (£2)",
+      "Purchase Workshop (£5)",
+      "Purchase Luxury (£4)",
     ]);
   });
 
@@ -535,7 +540,7 @@ describe("command application", () => {
     expect(state.log.at(-1)?.summary).toBe("Yellow chose Enlist Writer.");
   });
 
-  it("elects a Chairman when one player controls a pure majority of Company shares", () => {
+  it("elects a Chairman as soon as declared support reaches a majority of Company shares (p.15)", () => {
     let state = createGameWithVacantOffice("chairman", {
       courtShares: [
         { id: "share-red-1", owner: "player-red" },
@@ -547,22 +552,19 @@ describe("command application", () => {
     state = advanceThroughFamilyFromSetup(state, "chairman-election");
 
     expect(state.phase).toBe("hiring");
-    expect(state.pendingDecision.step).toBe("hiring.electChairman");
-    expect(state.pendingDecision.actor).toBe("system");
-    expect(state.pendingDecision.legalCommands).toEqual([
-      expect.objectContaining({
-        type: "hiring.electChairman",
-        payload: {
-          officeId: "chairman",
-          candidateId: "player-red",
-        },
-      }),
+    expect(state.pendingDecision.step).toBe("hiring.chairmanSupport");
+    expect(state.pendingDecision.actor).toBe("player-red");
+    expect(state.pendingDecision.prompt).toContain("2 of 3 Company shares make a majority");
+    expect(state.pendingDecision.legalCommands.map((command) => command.payload)).toEqual([
+      { candidateId: "player-red" },
+      { candidateId: "player-blue" },
+      { candidateId: null },
     ]);
     expectSaveRoundTripPreservesPendingDecision(state);
 
     state = applyFirstLegalCommand(state, {
-      commandId: "command-elect-chairman",
-      actorId: "system",
+      commandId: "command-support-self",
+      actorId: "player-red",
     });
 
     expect(state.phase).toBe("companyOperation");
@@ -573,7 +575,8 @@ describe("command application", () => {
         created: true,
       }),
     );
-    expect((chairmanHolder(state) === "player-red")).toBe(true);
+    expect(chairmanHolder(state)).toBe("player-red");
+    expect(state.company.chairmanMarker).toBe("player-red");
     expect(playerCourtShares(state, "player-red")).toBe(1);
     expect(playerOffices(state, "player-red")).toContain("chairman");
     expect(state.company.court).toHaveLength(2);
@@ -581,7 +584,7 @@ describe("command application", () => {
     expect(state.log.at(-1)?.summary).toBe("Red was elected Chairman.");
   });
 
-  it("rejects Chairman election candidates without a Company-share majority", () => {
+  it("rejects support for a player without a Company share", () => {
     const state = advanceThroughFamilyFromSetup(
       createGameWithVacantOffice("chairman", {
         courtShares: [
@@ -594,15 +597,12 @@ describe("command application", () => {
     );
 
     const result = applyCommand(state, {
-      id: "command-elect-chairman-illegal",
+      id: "command-support-illegal",
       gameId: state.gameId,
-      actorId: "system",
+      actorId: "player-red",
       decisionId: state.pendingDecision.id,
-      type: "hiring.electChairman",
-      payload: {
-        officeId: "chairman",
-        candidateId: "player-blue",
-      },
+      type: "hiring.declareChairmanSupport",
+      payload: { candidateId: "player-yellow" },
       clientTimestamp: "2026-06-13T12:04:00.000Z",
     });
 
@@ -611,13 +611,12 @@ describe("command application", () => {
       expect(result.errors).toContainEqual(
         expect.objectContaining({
           code: "ILLEGAL_HIRING_CHOICE",
-          field: "payload.candidateId",
         }),
       );
     }
   });
 
-  it("offers contested Chairman candidates when no player has a pure majority", () => {
+  it("lets the former Chairman choose when no candidate reaches a majority (p.15)", () => {
     let state = advanceThroughFamilyFromSetup(
       createGameWithVacantOffice("chairman", {
         courtShares: [
@@ -628,38 +627,39 @@ describe("command application", () => {
       "chairman-election-contested",
     );
 
-    expect(state.phase).toBe("hiring");
+    state = applyCommandOrThrow(state, {
+      id: "command-red-supports-self",
+      actorId: "player-red",
+      type: "hiring.declareChairmanSupport",
+      payload: { candidateId: "player-red" },
+    });
+    state = applyCommandOrThrow(state, {
+      id: "command-blue-supports-self",
+      actorId: "player-blue",
+      type: "hiring.declareChairmanSupport",
+      payload: { candidateId: "player-blue" },
+    });
+
     expect(state.pendingDecision.step).toBe("hiring.electChairman");
     expect(state.pendingDecision.prompt).toBe(
-      "Elect the Chairman from table-negotiated Company-share support.",
+      "No candidate has majority support. The former Chairman chooses the new Chairman.",
     );
     expect(state.pendingDecision.legalCommands.map((command) => command.payload)).toEqual([
-      {
-        officeId: "chairman",
-        candidateId: "player-red",
-      },
-      {
-        officeId: "chairman",
-        candidateId: "player-blue",
-      },
+      { officeId: "chairman", candidateId: "player-red" },
+      { officeId: "chairman", candidateId: "player-blue" },
     ]);
     expectSaveRoundTripPreservesPendingDecision(state);
-
-    const blueCommand = state.pendingDecision.legalCommands.find(
-      (command) => (command.payload as { candidateId?: string }).candidateId === "player-blue",
-    );
-    expect(blueCommand).toBeDefined();
 
     state = applyCommandOrThrow(state, {
       id: "command-elect-contested-chairman",
       actorId: "system",
-      type: blueCommand?.type ?? "hiring.electChairman",
-      payload: blueCommand?.payload ?? {},
+      type: "hiring.electChairman",
+      payload: { officeId: "chairman", candidateId: "player-blue" },
     });
 
     expect(state.phase).toBe("companyOperation");
     expect(state.company.offices.chairman.holder).toBe("player-blue");
-    expect((chairmanHolder(state) === "player-blue")).toBe(true);
+    expect(chairmanHolder(state)).toBe("player-blue");
     expect(playerCourtShares(state, "player-blue")).toBe(0);
     expect(state.company.court).toEqual([
       expect.objectContaining({
@@ -669,7 +669,7 @@ describe("command application", () => {
     ]);
   });
 
-  it("exposes an explicit empty-Court Chairman skip", () => {
+  it("leaves the Chairman vacant when the Court is empty and there is no former Chairman", () => {
     const state = advanceThroughFamilyFromSetup(
       createGameWithVacantOffice("chairman", {
         courtShares: [],
@@ -680,7 +680,7 @@ describe("command application", () => {
     expect(state.phase).toBe("hiring");
     expect(state.pendingDecision.step).toBe("hiring.skipVacancy");
     expect(state.pendingDecision.prompt).toBe(
-      "The Court is empty and no Company shares can support a Chairman.",
+      "The Court is empty and the former Chairman has no family member to place: there is no Chairman.",
     );
     expect(state.pendingDecision.legalCommands[0]).toEqual(
       expect.objectContaining({
@@ -891,22 +891,17 @@ describe("command application", () => {
       "hire-military-affairs-training",
     );
 
-    expect(state.pendingDecision.legalCommands).toEqual([
-      expect.objectContaining({
-        payload: {
-          officeId: "military-affairs",
-          candidateId: "player-blue",
-          source: {
-            type: "officersInTraining",
-          },
-        },
-      }),
+    expect(state.pendingDecision.legalCommands.map((command) => command.payload)).toEqual([
+      { officeId: "military-affairs", candidateId: "player-red", source: { type: "officersInTraining" } },
+      { officeId: "military-affairs", candidateId: "player-blue", source: { type: "officersInTraining" } },
     ]);
     expectSaveRoundTripPreservesPendingDecision(state);
 
-    state = applyFirstLegalCommand(state, {
-      commandId: "command-hire-military-training",
+    state = applyCommandOrThrow(state, {
+      id: "command-hire-military-training",
       actorId: "player-red",
+      type: "hiring.hireOffice",
+      payload: { officeId: "military-affairs", candidateId: "player-blue", source: { type: "officersInTraining" } },
     });
 
     expect(state.players["player-red"].familyMembers.officersInTraining).toBe(1);
@@ -1076,6 +1071,8 @@ describe("command application", () => {
         director: "player-red",
         writerOwner: "player-red",
         writerPresidency: "Bengal",
+        extraWriterOwner: "player-blue",
+        extraWriterPresidency: "Bengal",
       }),
       "hire-president-self-hire",
     );
@@ -1088,6 +1085,7 @@ describe("command application", () => {
     });
 
     expect(state.pendingDecision.step).toBe("hiring.nepotismConsent");
+    expect(state.pendingDecision.actor).toBe("player-blue");
     expect(state.pendingDecision.legalCommands[0]).toEqual(
       expect.objectContaining({
         type: "hiring.resolveNepotismConsent",
@@ -1245,14 +1243,19 @@ describe("command application", () => {
 
   it("requests nepotism consent for Governor self-hires", () => {
     let state = advanceThroughFamilyFromSetup(
-      createGameWithPresidentAndGovernorVacancy("governor-bengal", {
-        presidentOfficeId: "president-bengal",
-        president: "player-red",
-        regionId: "bengal",
-        regionPresidency: "Bengal",
-        writerOwner: "player-red",
-        writerPresidency: "Bengal",
-      }),
+      withWriters(
+        createGameWithPresidentAndGovernorVacancy("governor-bengal", {
+          presidentOfficeId: "president-bengal",
+          president: "player-red",
+          regionId: "bengal",
+          regionPresidency: "Bengal",
+          writerOwner: "player-red",
+          writerPresidency: "Bengal",
+        }),
+        "player-yellow",
+        "Bengal",
+        1,
+      ),
       "hire-governor-self-hire",
     );
 
@@ -1264,6 +1267,7 @@ describe("command application", () => {
     });
 
     expect(state.pendingDecision.step).toBe("hiring.nepotismConsent");
+    expect(state.pendingDecision.actor).toBe("player-yellow");
     expect(state.pendingDecision.legalCommands[0]).toEqual(
       expect.objectContaining({
         type: "hiring.resolveNepotismConsent",
@@ -1565,12 +1569,17 @@ describe("command application", () => {
     expect(state.company.vacantOffices).toEqual([]);
   });
 
-  it("accepts nepotism consent and completes a self-hire", () => {
+  it("accepts nepotism consent from the other candidate's family and completes a self-hire (p.14)", () => {
     let state = advanceThroughFamilyFromSetup(
-      createGameWithChairmanAndWriterVacancy("director-of-trade", {
-        writerOwner: "player-red",
-        writerPresidency: "Bengal",
-      }),
+      withWriters(
+        createGameWithChairmanAndWriterVacancy("director-of-trade", {
+          writerOwner: "player-red",
+          writerPresidency: "Bengal",
+        }),
+        "player-blue",
+        "Madras",
+        1,
+      ),
       "hire-director-writer-nepotism-accepted",
     );
 
@@ -1596,16 +1605,16 @@ describe("command application", () => {
     });
 
     expect(state.pendingDecision.step).toBe("hiring.nepotismConsent");
-    expect(state.pendingDecision.actor).toBe("system");
+    expect(state.pendingDecision.actor).toBe("player-blue");
     expect(state.pendingDecision.legalCommands.map((command) => command.label)).toEqual([
-      "Accept Nepotism",
-      "Deny Nepotism",
+      "Consent",
+      "Refuse",
     ]);
     expectSaveRoundTripPreservesPendingDecision(state);
 
     state = applyFirstLegalCommand(state, {
       commandId: "command-accept-director-nepotism",
-      actorId: "system",
+      actorId: "player-blue",
     });
 
     expect(state.phase).toBe("companyOperation");
@@ -1621,16 +1630,21 @@ describe("command application", () => {
     expect(playerOffices(state, "player-red")).toContain("director-of-trade");
     expect(state.company.vacantOffices).toEqual([]);
     expect(state.log.at(-1)?.summary).toBe(
-      "Nepotism consent accepted; Red filled Director of Trade.",
+      "Nepotism consent given; Red filled Director of Trade.",
     );
   });
 
-  it("denies nepotism consent and leaves the vacancy unfilled", () => {
+  it("makes the hirer choose someone else when nepotism consent is refused (p.14, p.16)", () => {
     let state = advanceThroughFamilyFromSetup(
-      createGameWithChairmanAndWriterVacancy("superintendent-of-trade-in-china", {
-        writerOwner: "player-red",
-        writerPresidency: "Bengal",
-      }),
+      withWriters(
+        createGameWithChairmanAndWriterVacancy("superintendent-of-trade-in-china", {
+          writerOwner: "player-red",
+          writerPresidency: "Bengal",
+        }),
+        "player-blue",
+        "Bombay",
+        1,
+      ),
       "hire-superintendent-nepotism-denied",
     );
 
@@ -1643,38 +1657,47 @@ describe("command application", () => {
     });
     expect(state.pendingDecision.step).toBe("hiring.nepotismConsent");
 
-    const denyCommand = state.pendingDecision.legalCommands.find(
-      (command) => command.label === "Deny Nepotism",
-    );
-    expect(denyCommand).toBeDefined();
-
+    const refuseCommand = state.pendingDecision.legalCommands.find((command) => command.label === "Refuse");
     state = applyCommandOrThrow(state, {
       id: "command-deny-superintendent-nepotism",
-      actorId: "system",
-      type: denyCommand?.type ?? "hiring.resolveNepotismConsent",
-      payload: denyCommand?.payload ?? {},
+      actorId: "player-blue",
+      type: refuseCommand?.type ?? "hiring.resolveNepotismConsent",
+      payload: refuseCommand?.payload ?? {},
     });
 
-    expect(state.phase).toBe("companyOperation");
-    expect(state.company.offices["superintendent-of-trade-in-china"].vacant).toBe(true);
-    expect(playerWriters(state, "player-red").Bengal).toBe(1);
-    expect(state.india.presidencies.Bengal.writers["player-red"]).toBe(1);
-    expect(playerOffices(state, "player-red")).not.toContain(
-      "superintendent-of-trade-in-china",
-    );
-    expect(state.company.vacantOffices).toEqual([]);
     expect(state.log.at(-1)?.summary).toBe(
-      "Nepotism consent denied; Superintendent of Trade in China remained vacant.",
+      "Blue refused consent; Red must hire someone else as Superintendent of Trade in China.",
     );
+    expect(state.pendingDecision.step).toBe("hiring.hireOffice");
+    expect(state.pendingDecision.actor).toBe("player-red");
+    expect(state.pendingDecision.legalCommands.map((command) => command.payload)).toEqual([
+      {
+        officeId: "superintendent-of-trade-in-china",
+        candidateId: "player-blue",
+        source: { type: "writer", presidency: "Bombay" },
+      },
+    ]);
+
+    state = applyFirstLegalCommand(state, {
+      commandId: "command-hire-blue-superintendent",
+      actorId: "player-red",
+    });
+
+    expect(state.company.offices["superintendent-of-trade-in-china"].holder).toBe("player-blue");
+    expect(playerWriters(state, "player-red").Bengal).toBe(1);
   });
 
   it("accepts nepotism consent for a self-promotion and moves fatigue", () => {
     let state = advanceThroughFamilyFromSetup(
-      createGameWithChairmanAndOfficeholderVacancy("director-of-trade", {
-        sourceOfficeId: "manager-of-shipping",
-        officeholder: "player-red",
-        fatigue: 2,
-      }),
+      withOffice(
+        createGameWithChairmanAndOfficeholderVacancy("director-of-trade", {
+          sourceOfficeId: "manager-of-shipping",
+          officeholder: "player-red",
+          fatigue: 2,
+        }),
+        "president-bombay",
+        "player-blue",
+      ),
       "hire-director-self-promotion-nepotism",
     );
 
@@ -1700,9 +1723,10 @@ describe("command application", () => {
     });
     expect(state.pendingDecision.step).toBe("hiring.nepotismConsent");
 
+    expect(state.pendingDecision.actor).toBe("player-blue");
     state = applyFirstLegalCommand(state, {
       commandId: "command-accept-promotion-nepotism",
-      actorId: "system",
+      actorId: "player-blue",
     });
 
     expect(state.company.offices["director-of-trade"]).toEqual(
@@ -1742,7 +1766,8 @@ describe("command application", () => {
 
     expect(state.phase).toBe("companyOperation");
     expect(state.company.offices["director-of-trade"].vacant).toBe(true);
-    expect(state.company.vacantOffices).toEqual([]);
+    expect(state.company.vacantOffices).toEqual(["director-of-trade"]);
+    expect(state.hiring.skippedThisTurn).toEqual(["director-of-trade"]);
     expect(state.log.at(-1)?.summary).toBe("Director of Trade remained vacant.");
   });
 
@@ -3070,10 +3095,12 @@ function advanceThroughFamilyFromSetup(state: GameState, seed: string): GameStat
     clientTimestamp: "2026-06-13T12:01:00.000Z",
   });
 
-  for (const actorId of ["player-red", "player-blue", "player-yellow"] as const) {
+  // Family turns start with the Chairman (p.13), so follow the pending decision's actor.
+  for (let step = 0; nextState.phase === "family" && step < 20; step += 1) {
+    const actorId = nextState.pendingDecision.actor;
     nextState = applyFirstLegalCommand(nextState, {
-      commandId: `command-family-${seed}-${actorId}`,
-      actorId,
+      commandId: `command-family-${seed}-${step}`,
+      actorId: actorId === "simultaneous" ? "player-red" : actorId,
       clientTimestamp: "2026-06-13T12:02:00.000Z",
     });
   }
