@@ -1,8 +1,9 @@
 import { firmStrategyById, firmStrategyCards, type FirmStrategyId } from "../../../data";
 import type { CommandHandler } from "../../command-handler";
-import { allFirms, firmById, firmManagedBy, firmName, firmShips, withFirm } from "../../firms";
+import { allFirms, firmById, firmExpenses, firmManagedBy, firmName, firmShips, withFirm } from "../../firms";
 import { primeMinisterOrder } from "../../selectors";
 import type { FirmId, GameState, PendingDecision, PlayerId } from "../../types";
+import { homePort } from "../company-operation/trade";
 import { startHiringPhase } from "../hiring";
 import { appendLog, okResult } from "../negotiation";
 import { nameOf, rejectFirms, sameJson } from "./common";
@@ -40,6 +41,17 @@ export function strategyChoices(state: GameState, firmId: FirmId): FirmStrategyI
   return firmStrategyCards.filter((card) => card.id === "hobnob" || canTrade).map((card) => card.id);
 }
 
+const PRESIDENCY_OF_PORT = { bombay: "Bombay", madras: "Madras", bengal: "Bengal" } as const;
+
+/** A sea zone whose home port is closed can't fill anything this turn (p.40 still allows it). */
+function closedHomePort(state: GameState, strategy: FirmStrategyId): string | undefined {
+  const port = firmStrategyById.get(strategy)?.homePort;
+  if (!port) return undefined;
+  const presidency = PRESIDENCY_OF_PORT[port];
+  const order = homePort(state, presidency);
+  return !order || order.closed ? presidency : undefined;
+}
+
 function strategyDecision(state: GameState, playerId: PlayerId, firmId: FirmId): PendingDecision {
   return {
     id: `decision-firms-strategy-turn-${state.turn}-${playerId}`,
@@ -50,7 +62,15 @@ function strategyDecision(state: GameState, playerId: PlayerId, firmId: FirmId):
     prompt: `Firm Strategy: ${nameOf(state, playerId)}, choose your firm's strategy card in secret.`,
     legalCommands: strategyChoices(state, firmId).map((strategy) => {
       const card = firmStrategyById.get(strategy)!;
-      return { type: "firms.chooseStrategy", label: card.name, description: card.text, payload: { firmId, strategy } };
+      const closed = closedHomePort(state, strategy);
+      return {
+        type: "firms.chooseStrategy",
+        label: closed ? `${card.name} (home port closed)` : card.name,
+        description: closed
+          ? `Warning: the home port of ${closed} is closed, so this firm could fill no orders this turn. ${card.text}`
+          : card.text,
+        payload: { firmId, strategy },
+      };
     }),
     canSave: true,
   };
@@ -61,6 +81,15 @@ function bidDecision(state: GameState, playerId: PlayerId, firmId: FirmId): Pend
   const firm = firmById(state, firmId)!;
   const strategy = state.hidden.firmStrategySecrets[firmId]?.strategy;
   const bids = strategy === "hobnob" ? [0] : Array.from({ length: firm.londonTreasury }, (_, index) => index + 1);
+  const expenses = firmExpenses(state, firmId);
+  const bidNote = (bid: number) => {
+    const left = firm.londonTreasury - bid + firm.indiaTreasury;
+    const dice = bid === 0 ? "A firm with the Hobnob strategy places no cash." : `${bid} ${bid === 1 ? "die" : "dice"} at the firm's Presidency (p.40).`;
+    const bill = `At Revenue it owes £${expenses} (£1 per ship, plus the larger of its shares or Value).`;
+    return left < expenses
+      ? `Warning: leaves £${left}, less than the £${expenses} it owes at Revenue unless trade pays for it. ${dice}`
+      : `${dice} Leaves £${left}. ${bill}`;
+  };
   return {
     id: `decision-firms-bid-turn-${state.turn}-${playerId}`,
     phase: "firms",
@@ -71,7 +100,7 @@ function bidDecision(state: GameState, playerId: PlayerId, firmId: FirmId): Pend
     legalCommands: bids.map((bid) => ({
       type: "firms.chooseBid",
       label: bid === 0 ? "Spend nothing" : `Spend £${bid}`,
-      description: bid === 0 ? "A firm with the Hobnob strategy places no cash." : `${bid} ${bid === 1 ? "die" : "dice"} at the firm's Presidency (p.40).`,
+      description: bidNote(bid),
       payload: { firmId, bid },
     })),
     canSave: true,

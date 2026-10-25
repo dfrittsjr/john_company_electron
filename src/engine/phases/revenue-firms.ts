@@ -7,6 +7,7 @@ import {
   allFirms,
   dissolveFirm,
   firmById,
+  firmExpenses,
   firmInvestmentSources,
   firmName,
   firmShareTotal,
@@ -15,6 +16,7 @@ import {
   investBlockReason,
   investInFirm,
   mergeFirms,
+  weakCompanySharesReason,
   withFirm,
   type FirmInvestmentSource,
 } from "../firms";
@@ -101,10 +103,7 @@ export function startFirmRevenue(state: GameState): GameState {
 }
 
 /** £1 per ship on the charter plus the larger of the share count and the Value (p.41). */
-export function firmExpenses(state: GameState, firmId: string): number {
-  const firm = firmById(state, firmId)!;
-  return firmShips(state, firmId).length + Math.max(firmShareTotal(firm), firm.value);
-}
+export { firmExpenses };
 
 /**
  * Splitting expenses between the treasuries. Emergency cash (investments made to survive) is spent
@@ -307,8 +306,10 @@ function rescueDecision(state: GameState, firmId: string, progress: Progress): P
   const expenses = firmExpenses(state, firmId);
   const cash = firm.londonTreasury + firm.indiaTreasury;
   const legalCommands: LegalCommand[] = [];
+  const investments = investmentOptions(state, firmId, progress);
+  const merges = mergeOptions(state, firmId, progress);
 
-  for (const option of investmentOptions(state, firmId, progress)) {
+  for (const option of investments) {
     const what = option.source.kind === "companyShare" ? "a Company share" : "a workshop";
     const shares = firmShareTotal(firm) < firmCharter.maxShares;
     legalCommands.push({
@@ -317,7 +318,7 @@ function rescueDecision(state: GameState, firmId: string, progress: Progress): P
       payload: { investor: option.investor, source: option.source },
     });
   }
-  for (const option of mergeOptions(state, firmId, progress)) {
+  for (const option of merges) {
     const into = option.primary === firmId ? "the other firm merges into this one" : "this firm merges into the other";
     legalCommands.push({
       type: "revenue.firmMerge",
@@ -339,10 +340,27 @@ function rescueDecision(state: GameState, firmId: string, progress: Progress): P
     visibility: "public",
     prompt:
       `${describeFirm(state, firmId)} owes ${money(expenses)} but holds ${money(cash)}${progress.emergencyCash > 0 ? ` (including ${money(progress.emergencyCash)} of emergency investments)` : ""}. ` +
-      "Take an emergency investment, merge with another firm, or dissolve it (p.41).",
+      rescueChoices(state, investments.length > 0, merges.length > 0),
     legalCommands,
     canSave: true,
   };
+}
+
+/** What the manager can still do, and why an emergency investment or merger isn't on offer. */
+function rescueChoices(state: GameState, canInvest: boolean, canMerge: boolean): string {
+  const choices = [canInvest ? "take an emergency investment" : undefined, canMerge ? "merge with another firm" : undefined, "dissolve it"].filter(Boolean);
+  const text = `${choices.length > 1 ? `${choices.slice(0, -1).join(", ")} or ${choices[choices.length - 1]}` : choices[0]}`;
+  const notes: string[] = [];
+  if (!canInvest) {
+    const weak = weakCompanySharesReason(state);
+    notes.push(
+      weak
+        ? `No emergency investment is possible: ${weak.replace(/\.$/, "")} and no one has an uninvested workshop.`
+        : "No emergency investment is possible: no one has a Company share or an uninvested workshop to invest, or everyone asked declined.",
+    );
+  }
+  if (!canMerge) notes.push("No merger is possible: no other firm could cover both firms' expenses (or every merger was refused).");
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)} (p.41).${notes.length ? ` ${notes.join(" ")}` : ""}`;
 }
 
 function investAskDecision(state: GameState, firmId: string, progress: Progress): PendingDecision {

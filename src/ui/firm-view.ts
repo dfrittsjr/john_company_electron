@@ -43,18 +43,24 @@ export function deregulationStatus(game: GameState): DeregulationStatus {
   const where = [standing?.lined ? `Standing (${standing.label})` : null, debt?.lined ? `Debt (${debt.value})` : null]
     .filter(Boolean)
     .join(" and ");
+  // The vote is only ever called at the start of a turn, so mid-turn it's the next turn's.
+  const now = game.pendingDecision.step === "parliament.deregulationCall" || game.parliament.session?.special === "deregulation";
+  const when = now ? "now" : "next turn";
+  if (now && game.parliament.session?.special === "deregulation") {
+    return { kind: "must", summary: "Voting now", detail: "Parliament is voting on Deregulation in a special session (p.36)." };
+  }
   if (starred) {
     return {
       kind: "must",
-      summary: "Vote required",
-      detail: `${where} is on a lined space and one is starred: at the start of the turn the Prime Minister must call a Vote to Deregulate (p.36).`,
+      summary: `Vote required ${when}`,
+      detail: `${where} is on a lined space and one is starred: at the start of ${now ? "this" : "the next"} turn the Prime Minister must call a Vote to Deregulate (p.36).`,
     };
   }
   if (lined) {
     return {
       kind: "may",
-      summary: "Vote may be called",
-      detail: `${where} is on a lined space: at the start of the turn the Prime Minister may call a Vote to Deregulate (p.36).`,
+      summary: `Vote possible ${when}`,
+      detail: `${where} is on a lined space: at the start of ${now ? "this" : "the next"} turn the Prime Minister may call a Vote to Deregulate (p.36).`,
     };
   }
   return {

@@ -38,6 +38,13 @@ export function firmShareTotal(firm: FirmState): number {
   return Object.values(firm.shares).reduce((total, count) => total + count, 0);
 }
 
+/** Revenue expenses (p.41): £1 per firm ship plus the larger of its shares or its Value. */
+export function firmExpenses(state: GameState, firmId: FirmId): number {
+  const firm = firmById(state, firmId);
+  if (!firm) return 0;
+  return firmShips(state, firmId).length + Math.max(firmShareTotal(firm), firm.value);
+}
+
 /** Victory points per share at a Value space (charter). Fractions are summed before rounding down (p.37). */
 export function firmShareVictoryPoints(value: number): number {
   const clamped = Math.min(firmCharter.maxValue, Math.max(firmCharter.minValue, value));
