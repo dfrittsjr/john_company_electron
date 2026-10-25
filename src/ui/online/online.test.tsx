@@ -2,14 +2,17 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { GameState } from "../../engine";
 import { startFamilyPhase } from "../../engine/phases/family";
-import { STORED_SEATS_KEY, type CreateGameResponse } from "../../online/protocol";
+import { HIDDEN_BLACKMAIL_CARD_ID, STORED_SEATS_KEY, hiddenBlackmailInstanceId, type CreateGameResponse } from "../../online/protocol";
 import { withCash } from "../../tests/fixtures/builders";
 import { createHotseatGame } from "../../tests/fixtures/game";
-import { OnlineConnection, setFetchImplementation, setSocketFactory } from "./api";
-import { MockServer, PLACEHOLDER_CARD } from "./mock-server";
+import { OnlineConnection, describeError, describeRejection, ApiRequestError, setFetchImplementation, setSocketFactory } from "./api";
+import { MockServer } from "./mock-server";
 import { OnlineApp } from "./OnlineApp";
 import { OnlineGame } from "./OnlineGame";
 import { resetOnlineLocationCache } from "./storage";
+import { resetSiteKeyCache } from "./Turnstile";
+import { DecisionPanel } from "../DecisionPanel";
+import { cardName, isBlackmailCard } from "../view-model";
 
 const files = vi.hoisted(() => ({ saved: [] as string[], content: "" }));
 
@@ -40,6 +43,7 @@ beforeEach(() => {
   setFetchImplementation(server.fetch as typeof fetch);
   setSocketFactory(server.createSocket);
   resetOnlineLocationCache();
+  resetSiteKeyCache();
   localStorage.clear();
   files.saved = [];
 });
@@ -227,7 +231,7 @@ describe("online game screen", () => {
     expect(undo.disabled).toBe(true);
   });
 
-  test("hidden information arrives as placeholders without crashing", async () => {
+  test("hidden information arrives as placeholders and renders as face-down cards", async () => {
     const state = familyGame();
     state.players["player-blue"].blackmailCards = [{ id: "bm-1", cardId: "real-secret", facedown: true }];
     const created = server.createFromState(state);
@@ -235,19 +239,112 @@ describe("online game screen", () => {
     await screen.findByRole("button", { name: /Purchase Luxury/ });
 
     const view = server.viewFor(server.game(created.gameId), { kind: "seat", playerId: "player-red" });
-    expect(view.state.players["player-blue"].blackmailCards[0].cardId).toBe(PLACEHOLDER_CARD);
-    expect(view.state.parliament.lawDeck.drawPile.every((card) => card === PLACEHOLDER_CARD)).toBe(true);
-    expect(within(screen.getByLabelText("Blue dashboard")).getByText(/face-down card/)).toBeTruthy();
+    expect(view.state.players["player-blue"].blackmailCards[0].cardId).toBe(HIDDEN_BLACKMAIL_CARD_ID);
+    expect(view.state.parliament.lawDeck.drawPile.every((card) => card.startsWith("hidden:"))).toBe(true);
+    expect(within(screen.getByLabelText("Blue dashboard")).getByText(/face-down blackmail/)).toBeTruthy();
     // Deals & Cards with a placeholder-holding partner.
     fireEvent.click(screen.getByRole("tab", { name: /Deals/ }));
     expect(screen.getByRole("heading", { name: /Deals & Cards: Red/ })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /reveal/ })).toBeNull();
   });
 
-  test("a bad link shows an error instead of the board", async () => {
+  test("placeholders are named and classified as face-down cards", () => {
+    const hiddenInstance = hiddenBlackmailInstanceId("player-blue", 0);
+    expect(isBlackmailCard(HIDDEN_BLACKMAIL_CARD_ID)).toBe(true);
+    expect(isBlackmailCard(hiddenInstance)).toBe(true);
+    expect(isBlackmailCard("hidden:law")).toBe(false);
+    expect(cardName(HIDDEN_BLACKMAIL_CARD_ID)).toBe("Face-down blackmail");
+    expect(cardName("hidden:law")).toBe("Face-down law");
+    expect(cardName("hidden:event-tile@bombay")).toBe("Face-down event tile");
+    expect(cardName("hidden:london-season-card")).toBe("Face-down card");
+  });
+
+  test("a hidden London Season Display slot is drawn as a face-down blackmail card", async () => {
+    const { blackmailCards } = await import("../../data");
+    const state = familyGame();
+    state.londonSeason.display = [blackmailCards[0].id];
+    const created = server.createFromState(state);
+    openSeat(created, 0);
+    await screen.findByRole("button", { name: /Purchase Luxury/ });
+    const slot = document.querySelector('[data-target="display:0"]') as Element;
+    expect(slot.querySelector("title")?.textContent).toBe("London Season Display: Blackmail");
+    expect(slot.querySelector(".card-back")).toBeTruthy();
+    expect(slot.textContent).toContain("face down");
+  });
+
+  test("asking for another player's face-down blackmail sends the placeholder back unchanged", async () => {
+    const state = familyGame();
+    state.players["player-blue"].blackmailCards = [{ id: "bm-real-1", cardId: "real-secret", facedown: true }];
+    const created = server.createFromState(state);
+    openSeat(created, 0);
+    await screen.findByRole("button", { name: /Purchase Luxury/ });
+    fireEvent.click(screen.getByRole("tab", { name: /Deals/ }));
+    fireEvent.change(screen.getByRole("combobox", { name: /With/ }), { target: { value: "player-blue" } });
+    fireEvent.click(screen.getByLabelText(/Face-down blackmail 1/));
+    fireEvent.click(screen.getByRole("button", { name: /Propose/ }));
+    await waitFor(() => expect(server.commands.length).toBe(1));
+    const placeholder = hiddenBlackmailInstanceId("player-blue", 0);
+    expect(JSON.stringify(server.commands[0].sent.payload)).toContain(placeholder);
+    expect(JSON.stringify(server.commands[0].sent.payload)).not.toContain("bm-real-1");
+    // The server (the real resolveHiddenIds) maps it to the real card.
+    expect(JSON.stringify(server.commands[0].applied.payload)).toContain("bm-real-1");
+  });
+
+  test("a link with a wrong token is refused at join and nothing is stored", async () => {
     const created = server.createFromState(familyGame());
     open(`/online/?game=${created.gameId}#seat=not-a-real-token`);
+    await screen.findByText(/This link is not valid for this game/);
+    expect(localStorage.getItem(STORED_SEATS_KEY)).toBeNull();
+  });
+
+  test("a stored token that stops working shows the can't-open screen", async () => {
+    const created = server.createFromState(familyGame());
+    localStorage.setItem(
+      STORED_SEATS_KEY,
+      JSON.stringify([{ gameId: created.gameId, token: "stale", viewer: { kind: "seat", playerId: "player-red" }, joinedAt: "2026-01-01T00:00:00.000Z" }]),
+    );
+    open(`/online/?game=${created.gameId}`);
     await screen.findByText("Can't open this game");
+  });
+
+  test("a first visit joins once, with the bot check, and later visits go straight in", async () => {
+    const created = server.createFromState(familyGame());
+    openSeat(created, 1);
+    await screen.findByText(/Waiting for Blue|Your turn|Waiting for/);
+    expect(server.requests.filter((request) => request.path.endsWith("/join"))).toHaveLength(1);
+    expect(JSON.parse(localStorage.getItem(STORED_SEATS_KEY) ?? "[]")[0]).toMatchObject({ viewer: { kind: "seat", playerId: "player-blue" }, playerName: "Blue" });
+
+    cleanup();
+    server.requests = [];
+    open(`/online/?game=${created.gameId}`);
+    await screen.findByText(/Waiting for|Your turn/);
+    expect(server.requests.some((request) => request.path.endsWith("/join"))).toBe(false);
+  });
+
+  test("the Turnstile site key comes from /api/config, then falls back to the test key", async () => {
+    const keys: string[] = [];
+    const install = () => {
+      window.turnstile = {
+        render: (_container, options) => {
+          keys.push(options.sitekey);
+          setTimeout(() => options.callback("t"), 0);
+          return "w";
+        },
+        reset: () => {},
+        remove: () => {},
+      };
+    };
+    install();
+    server.siteKey = "0x-server-key";
+    open("/online/");
+    await waitFor(() => expect(new Set(keys)).toEqual(new Set(["0x-server-key"])));
+    cleanup();
+    keys.length = 0;
+
+    resetSiteKeyCache();
+    server.offline = true;
+    open("/online/");
+    await waitFor(() => expect(new Set(keys)).toEqual(new Set(["1x00000000000000000000AA"])));
   });
 
   test("a hidden tab gets a notification when the turn arrives, and permission is asked only from the button", async () => {
@@ -373,5 +470,159 @@ describe("OnlineConnection", () => {
     expect(conn.applyView({ ...v1, version: 5 })).toBe(false);
     expect(conn.applyView({ ...v1, version: 6 })).toBe(true);
     expect(seen).toEqual([5, 6]);
+  });
+});
+
+describe("server errors", () => {
+  test("describeError and describeRejection use the server's codes", () => {
+    expect(describeError(new ApiRequestError("SPECTATOR_READ_ONLY", "raw", 403))).toMatch(/watching/);
+    expect(describeError(new ApiRequestError("RATE_LIMITED", "raw", 429))).toMatch(/Too many requests/);
+    expect(describeError(new ApiRequestError("network", "Failed to fetch", 0))).toMatch(/Could not reach the server/);
+    expect(describeError(new ApiRequestError("EXPORT_NOT_ALLOWED", "Only the creator.", 403))).toBe("Only the creator.");
+    expect(describeRejection([{ code: "DECISION_ID_MISMATCH", message: "stale" }])).toMatch(/moved on/);
+    expect(describeRejection([{ code: "SOMETHING_ELSE", message: "engine says no" }])).toBe("engine says no");
+  });
+
+  test("a bad token on the socket is fatal, a rate limit is not", async () => {
+    const created = server.createFromState(familyGame());
+    const fatal = vi.fn();
+    const rejected = vi.fn();
+    const connection = new OnlineConnection({
+      gameId: created.gameId,
+      token: "wrong",
+      onView: () => {},
+      onFatal: fatal,
+      onRejected: rejected,
+      createSocket: server.createSocket,
+      baseDelayMs: 5,
+    });
+    connection.start();
+    await waitFor(() => expect(fatal).toHaveBeenCalled());
+    expect(fatal.mock.calls[0][0].code).toBe("INVALID_TOKEN");
+    expect(connection.currentStatus).toBe("offline");
+    connection.stop();
+  });
+
+  test("polling keeps retrying through 429 and 500 but stops on 401 and 404", async () => {
+    const created = server.createFromState(familyGame());
+    const token = server.tokenFor(created, 0);
+    const answers: Array<{ status: number; code: string }> = [
+      { status: 429, code: "RATE_LIMITED" },
+      { status: 500, code: "INTERNAL" },
+    ];
+    const real = server.fetch;
+    setFetchImplementation((async (input: RequestInfo | URL, init?: RequestInit) => {
+      const next = answers.shift();
+      if (next) return new Response(JSON.stringify({ error: { code: next.code, message: "no" } }), { status: next.status });
+      return real(input, init);
+    }) as typeof fetch);
+    server.socketsFail = true;
+    const views = vi.fn();
+    const fatal = vi.fn();
+    const connection = new OnlineConnection({
+      gameId: created.gameId,
+      token,
+      onView: views,
+      onFatal: fatal,
+      createSocket: server.createSocket,
+      baseDelayMs: 1,
+      maxDelayMs: 2,
+      pollIntervalMs: 5,
+      maxSocketFailures: 1,
+    });
+    connection.start();
+    await waitFor(() => expect(views).toHaveBeenCalled());
+    expect(fatal).not.toHaveBeenCalled();
+    connection.stop();
+
+    const bad = new OnlineConnection({
+      gameId: created.gameId,
+      token: "wrong",
+      onView: () => {},
+      onFatal: fatal,
+      createSocket: server.createSocket,
+      pollIntervalMs: 5,
+      maxSocketFailures: 1,
+    });
+    bad.start();
+    await waitFor(() => expect(fatal).toHaveBeenCalled());
+    expect(fatal.mock.calls[0][0].code).toBe("INVALID_TOKEN");
+    bad.stop();
+  });
+
+  test("a spectator's command gets 403 SPECTATOR_READ_ONLY; an engine rejection is HTTP 200 with ok: false", async () => {
+    const created = server.createFromState(familyGame());
+    const watch = server.tokenFor(created, "spectator");
+    const blue = server.tokenFor(created, 1);
+    const post = (token: string) =>
+      server.fetch(`/api/games/${created.gameId}/commands`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ command: { id: "c1", decisionId: server.game(created.gameId).state.pendingDecision.id, type: "family.chooseAction", payload: {} } }),
+      });
+    const spectator = await post(watch);
+    expect(spectator.status).toBe(403);
+    expect((await spectator.json()).error.code).toBe("SPECTATOR_READ_ONLY");
+    const wrongSeat = await post(blue);
+    expect(wrongSeat.status).toBe(200);
+    const body = await wrongSeat.json();
+    expect(body.ok).toBe(false);
+    expect(body.errors[0].code).toBe("ACTOR_NOT_ALLOWED");
+  });
+});
+
+describe("export and creator", () => {
+  test("only the creator's seat shows Export before the game ends", async () => {
+    const created = server.createFromState(familyGame());
+    expect(created.seats[0].creator).toBe(true);
+    expect(created.seats[1].creator).toBeUndefined();
+    openSeat(created, 1);
+    await screen.findByText(/Waiting for/);
+    expect(screen.queryByRole("button", { name: "Export .joco" })).toBeNull();
+    const refused = await server.fetch(`/api/games/${created.gameId}/export`, { headers: { Authorization: `Bearer ${server.tokenFor(created, 1)}` } });
+    expect(refused.status).toBe(403);
+    expect((await refused.json()).error.code).toBe("EXPORT_NOT_ALLOWED");
+  });
+
+  test("everyone gets Export once the game is over", async () => {
+    const state = familyGame();
+    state.finalScoring.complete = true;
+    const created = server.createFromState(state);
+    openSeat(created, 1);
+    expect(await screen.findByRole("button", { name: "Export .joco" })).toBeTruthy();
+  });
+
+  test("the links screen marks the creator's link", async () => {
+    open("/online/");
+    const create = screen.getByRole("button", { name: "Create game" }) as HTMLButtonElement;
+    await waitFor(() => expect(create.disabled).toBe(false));
+    fireEvent.click(create);
+    await screen.findByRole("heading", { name: "Your game is ready" });
+    expect(screen.getAllByText("Creator")).toHaveLength(1);
+  });
+});
+
+describe("option descriptions", () => {
+  function panelWith(descriptions: Array<string | undefined>) {
+    const game = familyGame();
+    game.pendingDecision.legalCommands = descriptions.map((description, index) => ({
+      type: "family.test",
+      label: `Option ${index}`,
+      description,
+      payload: {},
+    })) as typeof game.pendingDecision.legalCommands;
+    return render(
+      <DecisionPanel game={game} hidden={false} onReveal={() => {}} onRun={() => {}} onHover={() => {}} filter={null} onClearFilter={() => {}} error={null} />,
+    );
+  }
+
+  test("each option prints its description under the button, and warnings are marked", () => {
+    panelWith(["Costs £5.", "Warning: this ends your turn.", undefined]);
+    const texts = Array.from(document.querySelectorAll(".command-description"));
+    expect(texts.map((node) => node.textContent)).toEqual(["Costs £5.", "Warning: this ends your turn."]);
+    expect(texts[0].classList.contains("command-warning")).toBe(false);
+    expect(texts[1].classList.contains("command-warning")).toBe(true);
+    // The tooltip stays for mouse users.
+    expect(screen.getByRole("button", { name: "Option 0" }).title).toBe("Costs £5.");
   });
 });

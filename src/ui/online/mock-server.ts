@@ -2,12 +2,18 @@
 // commands, undo rules and decisions behave like the real server's, but it is not shipped: nothing
 // outside *.test.* files imports it.
 //
-// The view projection is deliberately crude: it hides legal commands from non-deciders and
-// replaces hidden cards with placeholder ids, so UI tests exercise "unknown card id" paths.
+// Views come from the real projectForViewer, commands go through the server's own steps
+// (resolveHiddenIds, delegated "system" decisions, automatic steps), and errors use the real
+// server's HTTP statuses and ServerErrorCode values, so client tests match src/worker.
 
 import {
   applyCommand,
   createNewGame,
+  isAnytimeCommandType,
+  projectForViewer,
+  resolveHiddenIds,
+  runAutomaticSteps,
+  systemDecisionDelegate,
   undoBlockReason,
   type GameCommand,
   type GameState,
@@ -27,8 +33,6 @@ import type {
   Viewer,
 } from "../../online/protocol";
 import type { SocketLike } from "./api";
-
-export const PLACEHOLDER_CARD = "hidden-card";
 
 type Seat = { playerId: PlayerId; name: string; token: string };
 type HistoryEntry = { actor: PlayerId; before: GameState; commandId: string };
@@ -116,8 +120,12 @@ export class MockServer {
   sockets = new Set<FakeSocket>();
   /** While true, new WebSocket connections fail (to test the polling fallback). */
   socketsFail = false;
+  /** What GET /api/config answers. */
+  siteKey = "1x00000000000000000000AA";
   /** While true, every fetch fails with a network error. */
   offline = false;
+  /** Every command a seat sent (before hidden ids were mapped) and the payload the engine got. */
+  commands: Array<{ sent: CommandRequest["command"]; applied: GameCommand }> = [];
   /** Every HTTP request, for assertions. */
   requests: Array<{ method: string; path: string }> = [];
   /** When true, a view older than the current one is sent on the next socket hello. */
@@ -145,6 +153,7 @@ export class MockServer {
         playerId: seat.playerId,
         name: seat.name,
         url: `/online/?game=${id}#seat=${seat.token}`,
+        ...(seat.token === game.creatorToken ? { creator: true } : {}),
       })),
       spectatorUrl: `/online/?game=${id}#watch=${game.spectatorToken}`,
     };
@@ -174,20 +183,14 @@ export class MockServer {
   }
 
   viewFor(game: MockGame, viewer: Viewer): GameView {
-    const state = structuredClone(game.state);
-    const placeholders = (cards: string[]) => cards.map(() => PLACEHOLDER_CARD);
-    state.parliament.lawDeck.drawPile = placeholders(state.parliament.lawDeck.drawPile);
-    state.londonSeason.deck = placeholders(state.londonSeason.deck);
-    state.eventsInIndia.drawPile = placeholders(state.eventsInIndia.drawPile);
-    for (const player of Object.values(state.players)) {
-      if (viewer.kind === "seat" && viewer.playerId === player.id) continue;
-      for (const card of player.blackmailCards) if (card.facedown) card.cardId = PLACEHOLDER_CARD;
-    }
-    const decider = state.pendingDecision.actor;
-    const mine = viewer.kind === "seat" && (decider === viewer.playerId || decider === "simultaneous");
-    if (!mine) state.pendingDecision.legalCommands = [];
-
-    return { gameId: game.id, viewer, version: game.version, state, undo: this.undoFor(game, viewer) };
+    return {
+      gameId: game.id,
+      viewer,
+      version: game.version,
+      state: projectForViewer(game.state, viewer),
+      undo: this.undoFor(game, viewer),
+      export: this.exportFor(game, viewer),
+    };
   }
 
   private undoFor(game: MockGame, viewer: Viewer): GameView["undo"] {
@@ -197,6 +200,12 @@ export class MockServer {
     if (last.actor !== viewer.playerId) return { available: false, reason: "Another player acted since." };
     const reason = undoBlockReason(last.before, game.state);
     return reason ? { available: false, reason } : { available: true };
+  }
+
+  private exportFor(game: MockGame, viewer: Viewer): NonNullable<GameView["export"]> {
+    if (game.state.finalScoring.complete) return { available: true };
+    if (viewer.kind === "seat" && game.seats.find((seat) => seat.playerId === viewer.playerId)?.token === game.creatorToken) return { available: true };
+    return { available: false, reason: "Only the game's creator can download it before the game ends." };
   }
 
   private broadcast(game: MockGame): void {
@@ -234,21 +243,27 @@ export class MockServer {
   private applyFor(game: MockGame, token: string, request: CommandRequest["command"]): CommandResponse {
     const viewer = this.viewerFor(game, token);
     if (!viewer || viewer.kind !== "seat") {
-      throw new HttpError(403, "forbidden", "Only seated players can act.");
+      throw new HttpError(403, "SPECTATOR_READ_ONLY", "Spectators can watch but not act.");
     }
+    const now = new Date().toISOString();
+    const state = game.state;
+    const anytime = isAnytimeCommandType(request.type);
+    const delegated = !anytime && state.pendingDecision.actor === "system" && systemDecisionDelegate(state) === viewer.playerId;
     const command: GameCommand = {
       ...request,
       gameId: game.id,
-      actorId: viewer.playerId,
-      clientTimestamp: new Date().toISOString(),
+      actorId: delegated ? "system" : viewer.playerId,
+      payload: resolveHiddenIds(state, viewer, request.payload),
+      clientTimestamp: now,
     };
+    this.commands.push({ sent: request, applied: command });
     const before = game.state;
     const result = applyCommand(before, command);
     if (!result.ok) {
       return { ok: false, errors: result.errors.map((error) => ({ code: error.code, message: error.message })), view: this.viewFor(game, viewer) };
     }
     game.history.push({ actor: viewer.playerId, before, commandId: command.id });
-    game.state = result.state;
+    game.state = runAutomaticSteps(result.state, { now, idPrefix: `${command.id}:auto` }).state;
     game.version += 1;
     this.broadcast(game);
     return { ok: true, view: this.viewFor(game, viewer) };
@@ -257,13 +272,13 @@ export class MockServer {
   handleSocketMessage(socket: FakeSocket, message: ClientMessage): void {
     const game = this.games.get(socket.gameId);
     if (!game) {
-      socket.push({ type: "error", code: "not-found", message: "No such game." });
+      socket.push({ type: "error", code: "GAME_NOT_FOUND", message: "There is no game with this id." });
       return;
     }
     if (message.type === "hello") {
       const viewer = this.viewerFor(game, message.token);
       if (!viewer) {
-        socket.push({ type: "error", code: "unauthorized", message: "That link is not valid for this game." });
+        socket.push({ type: "error", code: "INVALID_TOKEN", message: "This link is not valid for this game." });
         return;
       }
       socket.viewer = viewer;
@@ -282,6 +297,7 @@ export class MockServer {
         if (!response.ok) socket.push({ type: "rejected", commandId: message.command.id, errors: response.errors });
       } catch (error) {
         if (error instanceof HttpError) socket.push({ type: "error", code: error.code, message: error.message });
+        // The real socket also answers an unexpected failure; only spectators reach this branch here.
       }
     }
   }
@@ -307,18 +323,22 @@ export class MockServer {
     const bearer = headers.get("Authorization")?.replace(/^Bearer /, "") ?? null;
     const body = typeof init?.body === "string" && init.body ? JSON.parse(init.body) : undefined;
 
+    if (method === "GET" && path === "/api/config") return json({ turnstileSiteKey: this.siteKey });
+
     if (method === "POST" && path === "/api/games") {
       const request = body as CreateGameRequest;
       this.checkTurnstile(request.turnstileToken);
-      if (request.players.length < 3 || request.players.length > 6) throw new HttpError(400, "bad-request", "Games need 3 to 6 players.");
+      if (request.players.length < 3 || request.players.length > 6) throw new HttpError(400, "BAD_REQUEST", "Games need 3 to 6 players.");
       const players = request.players.map((player, index) => ({ id: `player-${index + 1}`, name: player.name, color: player.color ?? "#888888" }));
-      const state = createNewGame({
+      const now = new Date().toISOString();
+      const created = createNewGame({
         mode: "hotseat",
         scenario: request.scenario,
         players,
         setupDistribution: "random",
         seed: `mock:${players.map((player) => player.name).join("|")}`,
       });
+      const state = runAutomaticSteps(created, { now, idPrefix: "setup-auto" }).state;
       return json(this.register(state, players));
     }
 
@@ -329,25 +349,26 @@ export class MockServer {
       try {
         state = deserializeGameState(request.saveText);
       } catch (error) {
-        throw new HttpError(400, "bad-save", error instanceof Error ? error.message : "Not a valid save.");
+        throw new HttpError(400, "INVALID_SAVE", error instanceof Error ? error.message : "Not a valid save.");
       }
       return json(this.createFromState(state));
     }
 
     const match = path.match(/^\/api\/games\/([^/]+)\/(view|commands|undo|export|join)$/);
-    if (!match) throw new HttpError(404, "not-found", "No such route.");
+    if (!match) throw new HttpError(404, "NOT_FOUND", "No such route.");
     const game = this.games.get(decodeURIComponent(match[1]));
-    if (!game) throw new HttpError(404, "not-found", "No such game.");
+    if (!game) throw new HttpError(404, "GAME_NOT_FOUND", "There is no game with this id.");
     const route = match[2];
 
     if (route === "join" && method === "POST") {
+      this.checkTurnstile(body.turnstileToken);
       const viewer = this.viewerFor(game, body.token);
-      if (!viewer) throw new HttpError(403, "forbidden", "That link is not valid.");
+      if (!viewer) throw new HttpError(401, "INVALID_TOKEN", "This link is not valid for this game.");
       return json({ gameId: game.id, viewer, playerName: viewer.kind === "seat" ? game.state.players[viewer.playerId].name : undefined });
     }
 
     const viewer = this.viewerFor(game, bearer);
-    if (!viewer) throw new HttpError(401, "unauthorized", "That link is not valid for this game.");
+    if (!viewer) throw new HttpError(401, "INVALID_TOKEN", "This link is not valid for this game.");
 
     if (route === "view" && method === "GET") return json(this.viewFor(game, viewer));
     if (route === "commands" && method === "POST") {
@@ -356,7 +377,7 @@ export class MockServer {
     if (route === "undo" && method === "POST") {
       const undo = this.undoFor(game, viewer);
       if (viewer.kind !== "seat" || !undo.available) {
-        return json({ ok: false, errors: [{ code: "undo-blocked", message: undo.reason ?? "Can't undo." }], view: this.viewFor(game, viewer) });
+        return json({ ok: false, errors: [{ code: "UNDO_UNAVAILABLE", message: undo.reason ?? "Can't undo." }], view: this.viewFor(game, viewer) });
       }
       const last = game.history.pop() as HistoryEntry;
       game.state = last.before;
@@ -365,16 +386,15 @@ export class MockServer {
       return json({ ok: true, view: this.viewFor(game, viewer) });
     }
     if (route === "export" && method === "GET") {
-      if (bearer !== game.creatorToken && !game.state.finalScoring.complete) {
-        throw new HttpError(403, "forbidden", "Only the host can export before the game ends.");
-      }
+      const status = this.exportFor(game, viewer);
+      if (!status.available) throw new HttpError(403, "EXPORT_NOT_ALLOWED", status.reason ?? "You may not download this game yet.");
       return new Response(serializeSave(game.state, { saveId: `save-${game.version}`, now: new Date().toISOString() }), { status: 200 });
     }
-    throw new HttpError(405, "method-not-allowed", "Method not allowed.");
+    throw new HttpError(405, "METHOD_NOT_ALLOWED", "Method not allowed.");
   }
 
   private checkTurnstile(token: string | undefined): void {
-    if (!token) throw new HttpError(400, "turnstile", "The bot check did not pass.");
+    if (!token) throw new HttpError(403, "TURNSTILE_FAILED", "The bot check is missing; reload the page and try again.");
   }
 }
 

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { fetchConfig } from "./api";
 
 // Cloudflare Turnstile in non-interactive mode: it normally checks the visitor without any input
 // and shows itself only if it has to. The Worker verifies the token server-side.
@@ -28,9 +29,28 @@ declare global {
   }
 }
 
-export function turnstileSiteKey(): string {
+/** The build-time fallback: PUBLIC_TURNSTILE_SITE_KEY, else Cloudflare's test key. */
+export function fallbackSiteKey(): string {
   const key = (import.meta.env?.PUBLIC_TURNSTILE_SITE_KEY as string | undefined)?.trim();
   return key || TURNSTILE_TEST_SITE_KEY;
+}
+
+let siteKeyPromise: Promise<string> | null = null;
+
+/** The site key to render the widget with: the server's (GET /api/config), then the env var, then the test key. */
+export function turnstileSiteKey(): Promise<string> {
+  siteKeyPromise ??= fetchConfig()
+    .then((config) => config.turnstileSiteKey?.trim() || fallbackSiteKey())
+    .catch(() => {
+      siteKeyPromise = null;
+      return fallbackSiteKey();
+    });
+  return siteKeyPromise;
+}
+
+/** Tests only. */
+export function resetSiteKeyCache(): void {
+  siteKeyPromise = null;
 }
 
 let scriptPromise: Promise<TurnstileApi> | null = null;
@@ -68,11 +88,11 @@ export function Turnstile({ onToken, resetSignal = 0 }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    loadTurnstile()
-      .then((api) => {
+    Promise.all([loadTurnstile(), turnstileSiteKey()])
+      .then(([api, sitekey]) => {
         if (cancelled || !container.current) return;
         widget.current = api.render(container.current, {
-          sitekey: turnstileSiteKey(),
+          sitekey,
           appearance: "interaction-only",
           callback: (token) => callback.current(token),
           "expired-callback": () => callback.current(null),

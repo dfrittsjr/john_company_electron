@@ -120,7 +120,7 @@ describe("PlayerDashboards", () => {
     render(<PlayerDashboards game={game} revealedPlayer={BLUE} />);
 
     expect(screen.getByRole("article", { name: "Red dashboard" }).textContent).toContain("£5");
-    expect(screen.getByText(/face-down card/)).toBeTruthy();
+    expect(screen.getByText(/face-down blackmail/)).toBeTruthy();
     expect(screen.queryByText(/Prime Minister's Ear/)).toBeNull();
   });
 

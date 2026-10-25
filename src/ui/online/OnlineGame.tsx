@@ -4,7 +4,18 @@ import { GameScreen } from "../GameScreen";
 import { saveTextFile } from "../platform/files";
 import { suggestedSaveName } from "../save-names";
 import { playerName } from "../view-model";
-import { ApiRequestError, OnlineConnection, exportGame, fetchView, sendCommand, sendUndo, type ConnectionStatus } from "./api";
+import {
+  ApiRequestError,
+  OnlineConnection,
+  describeError,
+  describeRejection,
+  exportGame,
+  fetchView,
+  isFatalApiError,
+  sendCommand,
+  sendUndo,
+  type ConnectionStatus,
+} from "./api";
 import { saveStoredSeat } from "./storage";
 import "./online.css";
 
@@ -62,7 +73,7 @@ export function OnlineGame({ gameId, token, connectionFactory }: Props) {
         setPolling(Boolean(detail?.polling));
       },
       onFatal: (error: { code: string; message: string }) => setFatal(error.message),
-      onRejected: (errors: Array<{ message: string }>) => setCommandError(errors.map((error) => error.message).join(" ")),
+      onRejected: (errors: Array<{ code: string; message: string }>) => setCommandError(describeRejection(errors)),
     };
     const conn = connectionFactory ? connectionFactory(options) : new OnlineConnection(options);
     connection.current = conn;
@@ -71,9 +82,9 @@ export function OnlineGame({ gameId, token, connectionFactory }: Props) {
     fetchView(gameId, token)
       .then((first) => conn.applyView(first))
       .catch((error: unknown) => {
-        if (error instanceof ApiRequestError && [401, 403, 404].includes(error.status)) {
+        if (error instanceof ApiRequestError && isFatalApiError(error)) {
           conn.stop();
-          setFatal(error.message);
+          setFatal(describeError(error));
         }
       });
 
@@ -143,9 +154,14 @@ export function OnlineGame({ gameId, token, connectionFactory }: Props) {
           payload,
         });
         conn.applyView(response.view);
-        setCommandError(response.ok ? null : response.errors.map((error) => error.message).join(" "));
+        setCommandError(response.ok ? null : describeRejection(response.errors));
       } catch (error) {
-        setCommandError(error instanceof Error ? error.message : "The command failed.");
+        if (error instanceof ApiRequestError && isFatalApiError(error)) {
+          connection.current?.stop();
+          setFatal(describeError(error));
+        } else {
+          setCommandError(describeError(error, "The command failed."));
+        }
       } finally {
         setBusy(false);
       }
@@ -169,10 +185,10 @@ export function OnlineGame({ gameId, token, connectionFactory }: Props) {
         try {
           const response = await sendUndo(gameId, token);
           conn.applyView(response.view);
-          setCommandError(response.ok ? null : response.errors.map((error) => error.message).join(" "));
+          setCommandError(response.ok ? null : describeRejection(response.errors));
           if (response.ok) setNotice("Undid your last action.");
         } catch (error) {
-          setCommandError(error instanceof Error ? error.message : "Undo failed.");
+          setCommandError(describeError(error, "Undo failed."));
         } finally {
           setBusy(false);
         }
@@ -188,7 +204,7 @@ export function OnlineGame({ gameId, token, connectionFactory }: Props) {
       if (result.status === "saved" || result.status === "downloaded") setNotice(`Saved ${result.fileName}.`);
       else if (result.status === "error") setNotice(result.message);
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Export is not available.");
+      setNotice(describeError(error, "Export is not available."));
     }
   }
 
@@ -228,6 +244,9 @@ export function OnlineGame({ gameId, token, connectionFactory }: Props) {
   }
 
   const isSeat = view.viewer.kind === "seat";
+  // The server says whether this viewer may download now (the creator, or anyone after the game).
+  // A server that does not say yet is treated as allowing it; it refuses with EXPORT_NOT_ALLOWED if not.
+  const canExport = isSeat && (view.export?.available ?? true);
   const viewerId = view.viewer.kind === "seat" ? view.viewer.playerId : null;
   const over = Boolean(view.state.finalScoring.complete);
   const waiting = isSeat && !mine && !over ? waitingText(view) : undefined;
@@ -247,7 +266,7 @@ export function OnlineGame({ gameId, token, connectionFactory }: Props) {
       onMenu={() => {
         window.location.href = "/online/";
       }}
-      onSaveFinal={isSeat ? exportSave : undefined}
+      onSaveFinal={canExport ? exportSave : undefined}
       titleExtra={
         <p className="online-badges">
           {isSeat ? (
@@ -263,9 +282,11 @@ export function OnlineGame({ gameId, token, connectionFactory }: Props) {
       headerActions={
         isSeat ? (
           <>
-            <button type="button" onClick={exportSave} title="Download a .joco save of this game (the host, or anyone once the game ends).">
-              Export .joco
-            </button>
+            {canExport ? (
+              <button type="button" onClick={exportSave} title="Download a .joco save of this game.">
+                Export .joco
+              </button>
+            ) : null}
             {permission === "default" ? (
               <button type="button" onClick={askNotifications} title="Get a desktop notification when it is your turn and this tab is in the background.">
                 Notify me

@@ -1,4 +1,5 @@
 import { enterpriseDecks, prestigeCards } from "../data";
+import { isHiddenId } from "../online/protocol";
 import {
   blackmailCardName,
   familyPieceLocations,
@@ -107,7 +108,7 @@ export function PlayerDashboards({ game, revealedPlayer, onSelectPlayer }: Props
               <p className="dashboard-line">
                 Blackmail:{" "}
                 {[
-                  ...faceDown.map((card) => (mine ? `${blackmailCardName(card.cardId)} (face down)` : "face-down card")),
+                  ...faceDown.map((card) => (mine && !isHiddenId(card.cardId) ? `${blackmailCardName(card.cardId)} (face down)` : "face-down blackmail")),
                   ...played.map((card) => `${blackmailCardName(card.cardId)} (played)`),
                 ].join(", ")}
               </p>

@@ -2,6 +2,7 @@
 
 import { blackmailCards, enterpriseDecks, offices, prestigeCards } from "../data";
 import type { ActorId, GameLogEntry, GameState, LegalCommand, PlayerId } from "../engine";
+import { HIDDEN_BLACKMAIL_CARD_ID, HIDDEN_EVENT_TILE_ID, HIDDEN_LAW_ID, isHiddenId } from "../online/protocol";
 
 /** Six family colours that stay distinct on the parchment board; text labels back them up. */
 export const FAMILY_PALETTE = ["#2563a8", "#c9971a", "#c2417d", "#2e7d4f", "#7a4fa0", "#3b3b3b"];
@@ -60,7 +61,16 @@ const cardNames = new Map<string, string>([
   ...blackmailCards.map((card) => [card.id, card.name] as const),
 ]);
 
+/** Online views replace secrets with "hidden:..." placeholders; name them by what they stand for. */
+export function hiddenCardName(cardId: string): string {
+  if (cardId.startsWith(HIDDEN_BLACKMAIL_CARD_ID)) return "Face-down blackmail";
+  if (cardId.startsWith(HIDDEN_LAW_ID)) return "Face-down law";
+  if (cardId.startsWith(HIDDEN_EVENT_TILE_ID)) return "Face-down event tile";
+  return "Face-down card";
+}
+
 export function cardName(cardId: string): string {
+  if (isHiddenId(cardId)) return hiddenCardName(cardId);
   return cardNames.get(cardId) ?? humanize(cardId);
 }
 
@@ -76,6 +86,7 @@ export function enterpriseName(cardId: string | undefined, type: string): string
 }
 
 export function isBlackmailCard(cardId: string): boolean {
+  if (isHiddenId(cardId)) return cardId.startsWith(HIDDEN_BLACKMAIL_CARD_ID);
   return blackmailCards.some((card) => card.id === cardId);
 }
 

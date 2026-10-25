@@ -6,6 +6,7 @@ import type {
   ClientMessage,
   CommandRequest,
   CommandResponse,
+  ConfigResponse,
   CreateGameRequest,
   CreateGameResponse,
   GameView,
@@ -85,6 +86,11 @@ async function request<T>(path: string, init: RequestInit & { token?: string; js
     );
   }
   return parsed as T;
+}
+
+/** GET /api/config: what the page needs before it can call the API (the Turnstile site key). */
+export function fetchConfig(): Promise<ConfigResponse> {
+  return request("/api/config");
 }
 
 export function createGame(input: CreateGameRequest): Promise<CreateGameResponse> {
@@ -169,7 +175,50 @@ export type ConnectionOptions = {
 };
 
 const OPEN = 1;
-const FATAL_CODES = new Set(["unauthorized", "forbidden", "not-found", "bad-token", "invalid-token", "game-not-found"]);
+
+// What the server (src/worker) says when retrying cannot help: the link's token is wrong (401
+// INVALID_TOKEN), the game does not exist (404 GAME_NOT_FOUND / NOT_FOUND), or the page is on the
+// wrong origin (403 BAD_ORIGIN). Everything else (429 RATE_LIMITED, 5xx, network errors, a socket
+// that dropped) is worth retrying. Engine rejections are HTTP 200 with ok: false and never get here.
+const FATAL_CODES = new Set(["INVALID_TOKEN", "GAME_NOT_FOUND", "NOT_FOUND", "BAD_ORIGIN"]);
+
+export function isFatalApiError(error: { code: string; status?: number }): boolean {
+  return FATAL_CODES.has(error.code) || error.status === 401 || error.status === 404;
+}
+
+const ERROR_TEXT: Record<string, string> = {
+  INVALID_TOKEN: "This link is not valid for this game. Check that you opened the whole link, including the part after the #.",
+  GAME_NOT_FOUND: "There is no game with this id. The link may be mistyped or the game was removed.",
+  SPECTATOR_READ_ONLY: "You are watching this game. Only players can act.",
+  RATE_LIMITED: "Too many requests. Wait a few seconds and try again.",
+  PAYLOAD_TOO_LARGE: "That request was too large for the server.",
+  TURNSTILE_FAILED: "The bot check failed. Reload the page and try again.",
+  TURNSTILE_NOT_CONFIGURED: "The server's bot check is not set up yet. Tell whoever runs this site.",
+  EXPORT_NOT_ALLOWED: "Only the game's creator can download it before the game ends.",
+  INTERNAL: "The server had a problem. Try again in a moment.",
+};
+
+/** A sentence for the player, from a thrown ApiRequestError (or anything else that was thrown). */
+export function describeError(error: unknown, fallback = "Something went wrong."): string {
+  if (error instanceof ApiRequestError) {
+    if (error.code === "network") return "Could not reach the server. Check your connection.";
+    // Export and bot-check messages from the server are already specific; keep them.
+    if (error.code === "EXPORT_NOT_ALLOWED" || error.code === "BAD_REQUEST" || error.code === "INVALID_SAVE") return error.message;
+    return ERROR_TEXT[error.code] ?? (error.message || fallback);
+  }
+  return error instanceof Error ? error.message : fallback;
+}
+
+const REJECTION_TEXT: Record<string, string> = {
+  DECISION_ID_MISMATCH: "The game moved on before that arrived. The options on screen are up to date; choose again.",
+  ACTOR_NOT_ALLOWED: "It is not your decision.",
+  UNDO_UNAVAILABLE: "",
+};
+
+/** A sentence for engine rejections (HTTP 200 with ok: false, or a socket "rejected" message). */
+export function describeRejection(errors: Array<{ code: string; message: string }>): string {
+  return errors.map((error) => REJECTION_TEXT[error.code] || error.message).join(" ");
+}
 
 export function defaultSocketUrl(gameId: string): string {
   const secure = typeof location !== "undefined" && location.protocol === "https:";
@@ -335,10 +384,14 @@ export class OnlineConnection {
         this.options.onRejected?.(message.errors, message.commandId);
         break;
       case "error":
-        if (FATAL_CODES.has(message.code)) {
+        if (isFatalApiError({ code: message.code })) {
           this.stop();
-          this.setStatus("offline", message.message);
-          this.options.onFatal?.({ code: message.code, message: message.message });
+          const text = describeError(new ApiRequestError(message.code, message.message, 0));
+          this.setStatus("offline", text);
+          this.options.onFatal?.({ code: message.code, message: text });
+        } else {
+          // Not fatal (for example RATE_LIMITED): show it; the socket's own close will retry.
+          this.options.onRejected?.([{ code: message.code, message: describeError(new ApiRequestError(message.code, message.message, 0)) }]);
         }
         break;
       case "pong":
@@ -392,13 +445,15 @@ export class OnlineConnection {
       if (this.status !== "live") this.setStatus("live");
     } catch (error) {
       if (this.stopped || !this.polling) return;
-      if (error instanceof ApiRequestError && (error.status === 401 || error.status === 403 || error.status === 404)) {
+      if (error instanceof ApiRequestError && isFatalApiError(error)) {
         this.stop();
-        this.setStatus("offline", error.message);
-        this.options.onFatal?.({ code: error.code, message: error.message });
+        this.setStatus("offline", describeError(error));
+        this.options.onFatal?.({ code: error.code, message: describeError(error) });
         return;
       }
-      this.setStatus("offline", error instanceof Error ? error.message : undefined);
+      // The server answered but is busy or failing (429, 5xx): still reconnecting. No answer: offline.
+      const answered = error instanceof ApiRequestError && error.status > 0;
+      this.setStatus(answered ? "reconnecting" : "offline", describeError(error));
     }
     if (this.stopped || !this.polling) return;
     this.pollTimer = setTimeout(() => {

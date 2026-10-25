@@ -1,6 +1,7 @@
 import { blackmailCards, offices, powerTrack, type PowerTargetId } from "../../data";
 import type { CommandHandler } from "../command-handler";
 import { officeLabel, vacateOfficeWithoutRetirement } from "../offices";
+import { isHiddenId } from "../hidden";
 import { describeElephant, highestOpenOrderValue, legalElephantPositions } from "./events-in-india/india";
 import { powerMarkerPositions, withPowerMarkerPositions } from "../selectors";
 import type { GameState, OfficeId, PendingDecision, PhaseId, PlayerId, RegionId } from "../types";
@@ -80,6 +81,7 @@ function playerName(state: GameState, playerId: PlayerId): string {
 }
 
 export function blackmailCardName(cardId: string): string {
+  if (isHiddenId(cardId)) return "Face-down blackmail";
   return cardById.get(cardId)?.name ?? "Unknown blackmail";
 }
 

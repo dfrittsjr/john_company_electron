@@ -10,6 +10,7 @@ import {
   type PlayerId,
   type TransferItem,
 } from "../engine";
+import { isHiddenId } from "../online/protocol";
 import { enterpriseName } from "./view-model";
 
 // Anytime actions (rulebook p.8): transfers, deals, promise cards, and blackmail.
@@ -53,7 +54,7 @@ function transferableAssets(game: GameState, playerId: PlayerId, showIdentities:
     .forEach((card, index) => {
       assets.push({
         key: `blackmail:${card.id}`,
-        label: showIdentities ? `Blackmail: ${blackmailCardName(card.cardId)}` : `Face-down blackmail ${index + 1}`,
+        label: showIdentities && !isHiddenId(card.cardId) ? `Blackmail: ${blackmailCardName(card.cardId)}` : `Face-down blackmail ${index + 1}`,
         item: { kind: "blackmail", cardInstanceId: card.id },
       });
     });

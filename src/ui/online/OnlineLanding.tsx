@@ -3,7 +3,7 @@ import type { CreateGameResponse, StoredSeat } from "../../online/protocol";
 import { ONLINE_PAGE_PATH } from "../../online/protocol";
 import { openTextFile } from "../platform/files";
 import { FAMILY_PALETTE } from "../view-model";
-import { ApiRequestError, createGame, fetchView, importGame } from "./api";
+import { createGame, describeError, fetchView, importGame } from "./api";
 import { loadStoredSeats, removeStoredSeat } from "./storage";
 import { Turnstile } from "./Turnstile";
 import "./online.css";
@@ -17,8 +17,7 @@ function absoluteUrl(url: string): string {
 }
 
 function errorText(error: unknown): string {
-  if (error instanceof ApiRequestError) return error.message;
-  return error instanceof Error ? error.message : "Something went wrong.";
+  return describeError(error);
 }
 
 function CopyButton({ text, label }: { text: string; label: string }) {
@@ -48,13 +47,18 @@ export function LinksScreen({ result, onDone }: { result: CreateGameResponse; on
       <h2 id="links-heading">Your game is ready</h2>
       <p className="status-note">
         Send each friend their own link. A seat link is that player&apos;s password: anyone who has it can play that seat.
-        Keep your own link, and send the spectator link to anyone who just wants to watch.
+        The creator&apos;s link (marked) can also download the game while it is being played. Send the spectator link to anyone who just wants to watch.
       </p>
       <ul className="link-list">
         {result.seats.map((seat) => (
           <li key={seat.playerId}>
             <div className="link-owner">
               <strong>{seat.name}</strong>
+              {seat.creator ? (
+                <span className="badge" title="The creator can download the game at any time. Everyone else can once it ends.">
+                  Creator
+                </span>
+              ) : null}
               <a href={absoluteUrl(seat.url)} aria-label={`Open ${seat.name}'s seat`}>
                 Open
               </a>
