@@ -147,7 +147,7 @@ function applyRandomHotseat1710SetupCards(state: GameState): {
   };
 }
 
-function applySetupCard(state: GameState, playerId: PlayerId, card: SetupCardDefinition): GameState {
+export function applySetupCard(state: GameState, playerId: PlayerId, card: SetupCardDefinition): GameState {
   return card.effects.reduce(
     (nextState, effect, effectIndex) =>
       applySetupCardEffect(nextState, playerId, card, effect, effectIndex),

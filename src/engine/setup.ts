@@ -11,6 +11,8 @@ import {
   createInitialParliamentState,
   initialPowerTrack,
 } from "./phases/parliament.state";
+import { crownStartDecision } from "./crown/setup";
+import { CROWN_PLAYER_ID } from "./crown/state";
 import { createRngState, shuffle } from "./rng";
 import { COMPANY_TREASURY_OFFICE_IDS, scenarioDefinition, toEnginePresidency } from "./selectors";
 import {
@@ -51,7 +53,6 @@ export type NewGameOptions = {
   now?: string;
 };
 
-const CROWN_PLAYER_ID = "crown";
 const PLAYER_COLORS = ["red", "blue", "yellow", "green", "purple", "black"];
 const CROWN_AI_CARD_IDS = [
   "crown-ai-01",
@@ -108,13 +109,12 @@ export function createNewGame(options: NewGameOptions): GameState {
     players[CROWN_PLAYER_ID] = createPlayer({
       id: CROWN_PLAYER_ID,
       name: "The Crown",
-      color: `${crown.familyPiecePools.primaryColor}/${crown.familyPiecePools.secondaryColor}`,
+      color: crown.colors[0],
       isCrown: true,
-      familySupply:
-        crown.familyPiecePools.primaryRemaining + crown.familyPiecePools.secondaryRemaining,
+      // Two families' pieces (p.43).
+      familySupply: 2 * componentManifest.families.familyMembersPerFamily,
     });
     seatingOrder.push(CROWN_PLAYER_ID);
-    hidden.crownDeck = crown.aiDeck;
   }
 
   // Each phase owns its slice of state; initializers thread the RNG so shuffles stay deterministic.
@@ -197,6 +197,11 @@ function validateNewGameOptions(options: NewGameOptions): void {
     throw new Error("Two-player Crown games require exactly two human players.");
   }
 
+  // Only the 1710 setup cards are transcribed (Long 1710 deals them too).
+  if (options.mode !== "hotseat" && options.scenario !== "1710" && options.scenario !== "long-1710") {
+    throw new Error("Crown games can be played in the 1710 and Long 1710 scenarios.");
+  }
+
   const ids = options.players.map((player, index) => player.id ?? `player-${index + 1}`);
   if (new Set(ids).size !== ids.length) {
     throw new Error("Player IDs must be unique.");
@@ -218,16 +223,15 @@ function createInitialPendingDecision(
     throw new Error("At least one human player is required.");
   }
 
+  if (mode !== "hotseat") return crownStartDecision(firstHuman);
+
   return {
     id: "decision-setup-confirm-start",
     phase: "setup",
-    step: mode === "hotseat" ? "setup.confirmHotseatStart" : "setup.confirmCrownStart",
+    step: "setup.confirmHotseatStart",
     actor: firstHuman,
     visibility: "public",
-    prompt:
-      mode === "hotseat"
-        ? "Confirm the table is ready to begin setup."
-        : "Confirm the Crown setup scaffold is ready to begin setup.",
+    prompt: "Confirm the table is ready to begin setup.",
     legalCommands: [
       {
         type: "setup.confirmStart",
@@ -269,7 +273,8 @@ function createCrownState(input: {
 
   const crown: CrownState = {
     difficulty: input.difficulty,
-    climate: "climate-unknown-a",
+    // Set from the face-up card once setup cards are placed (crown/setup.ts).
+    climate: "lion",
     aiDeck: {
       drawPile,
       discardPile: [],
@@ -279,23 +284,9 @@ function createCrownState(input: {
     promiseCubes: {
       crownSupply,
       byHumanPlayer,
-      totalCubes: 12,
     },
-    playerButton:
-      input.mode === "twoPlayerCrown"
-        ? {
-            holder: input.humanPlayerIds[0],
-            nextTransferReason: "initial Crown setup",
-          }
-        : undefined,
-    familyPiecePools: {
-      primaryColor: colors[0],
-      secondaryColor: colors[1],
-      primaryRemaining: 18,
-      secondaryRemaining: 18,
-    },
-    familyTreasury: 0,
-    pendingFavorWindows: [],
+    colors,
+    favorEffects: [],
   };
 
   return { crown, rng: shuffled.rng };

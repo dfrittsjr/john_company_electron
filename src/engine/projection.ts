@@ -58,13 +58,13 @@ function isFaceDown(card: CardInstance): boolean {
  * - no RNG seed or internal state (the counter stays: it only counts rolls everyone saw), and no
  *   seed or shuffle rolls in the log;
  * - draw piles (law deck, London Season deck, Events in India stack, other decks, the Crown's AI
- *   deck) as placeholders, so only their sizes show; the top event tile keeps its region side;
+ *   deck) as placeholders, so only their sizes show; the top event tile keeps its region side and
+ *   the top AI card its back (both are face up on the table);
  * - other players' face-down blackmail as placeholder ids, wherever those ids appear (log details,
  *   transfers, deals); face-down blackmail in the London Season Display likewise, except for the
  *   player choosing from the display, who may look (p.11); blackmail in the London Season
  *   discards likewise, since it goes there unseen;
- * - only the viewer's own `hidden.privateCards`, no unrevealed firm strategies, no Crown deck or
- *   Crown blackmail, no Crown decision profile;
+ * - only the viewer's own `hidden.privateCards` and no unrevealed firm strategies;
  * - lists that would show who holds a face-down card (Company Fraud and Scandal candidates, Envoy
  *   and Hiring Preference offers) cut down to the viewer;
  * - legal commands only for the player who must decide (spectators get none); decisions offered
@@ -143,8 +143,9 @@ function hideDrawPiles(view: GameState): void {
 
   for (const deck of Object.values(view.decks)) deck.drawPile = placeholders(deck.drawPile.length, HIDDEN_CARD_ID);
   if (view.crown) {
-    view.crown.aiDeck.drawPile = placeholders(view.crown.aiDeck.drawPile.length, HIDDEN_CARD_ID);
-    delete view.crown.currentDecisionProfile;
+    // The top card's back is face up on the table (it breaks ties, p.45); the rest are hidden.
+    const [top, ...rest] = view.crown.aiDeck.drawPile;
+    view.crown.aiDeck.drawPile = top ? [top, ...placeholders(rest.length, HIDDEN_CARD_ID)] : [];
   }
 }
 
@@ -161,8 +162,6 @@ function hidePrivateRecords(view: GameState, me: PlayerId | undefined): void {
           : { firmId: secret.firmId, committedBy: secret.committedBy },
     ]),
   );
-  delete hidden.crownDeck;
-  delete hidden.crownBlackmail;
 }
 
 /** State that would show who holds a face-down card of a given kind. */

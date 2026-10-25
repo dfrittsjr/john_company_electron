@@ -9,6 +9,7 @@ export { undoBlockReason } from "./undo";
 export * from "./hidden";
 export * from "./automatic";
 export * from "./projection";
+export * from "./crown";
 export {
   applyTransfer,
   enterpriseVoteGuarantors,
