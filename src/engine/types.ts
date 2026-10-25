@@ -1,3 +1,9 @@
+import type { CompanyOperationState } from "./phases/company-operation.state";
+import type { EventsInIndiaState } from "./phases/events-in-india.state";
+import type { FinalScoringState } from "./phases/final-scoring.state";
+import type { LondonSeasonState } from "./phases/london-season.state";
+import type { NegotiationState } from "./phases/negotiation.state";
+
 import type { ScenarioId as DataScenarioId } from "../data/types";
 
 // Version 2: one canonical location per family piece, scenario-driven setup, Standing as a track index.
@@ -385,6 +391,11 @@ export type GameState = {
   company: CompanyState;
   india: IndiaState;
   parliament: ParliamentState;
+  londonSeason: LondonSeasonState;
+  companyOperation: CompanyOperationState;
+  eventsInIndia: EventsInIndiaState;
+  finalScoring: FinalScoringState;
+  negotiation: NegotiationState;
   decks: Record<string, DeckState>;
   firms?: FirmState[];
   crown?: CrownState;

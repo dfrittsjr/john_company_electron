@@ -19,7 +19,8 @@
     "test:rules": "vitest run src/tests/rules src/tests/engine",
     "test:save": "vitest run src/tests/save",
     "test:crown": "vitest run src/tests/crown",
-    "verify": "npm run typecheck && npm run test"
+    "verify": "npm run typecheck && npm run test",
+    "harness": "tsx scripts/harness.ts"
   },
   "keywords": [
     "boardgame",
@@ -47,6 +48,7 @@
     "@vitejs/plugin-react": "^6.1.2",
     "@vitest/coverage-v8": "^5.0.5",
     "jsdom": "^24.1.1",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vite": "^8.3.5",
     "vitest": "^5.0.5",

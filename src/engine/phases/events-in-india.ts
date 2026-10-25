@@ -1,3 +1,4 @@
+import type { CommandHandler } from "../command-handler";
 import type { ApplyCommandResult, GameCommand, GameState } from "../types";
 import { rollDie } from "../rng";
 import { createCommandLogEntry, createSystemDecision, wrongPhase } from "./shared";
@@ -117,3 +118,9 @@ function mapTemporaryStormDie(roll: number) {
     stormsActive: roll >= 5,
   };
 }
+
+/** Commands this phase answers; composed by the dispatcher in ../commands.ts. */
+export const eventsInIndiaCommandHandlers: Record<string, CommandHandler> = {
+  "eventsInIndia.confirm": confirmEventsInIndia,
+  "eventsInIndia.resolveRolledEvents": resolveRolledEventsInIndia,
+};

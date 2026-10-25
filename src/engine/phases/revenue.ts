@@ -1,3 +1,4 @@
+import type { CommandHandler } from "../command-handler";
 import { MAX_COMPANY_DEBT, MAX_STANDING_SPACE, expectationsForStanding } from "../../data";
 import {
   chairmanHolder,
@@ -289,3 +290,9 @@ function calculateDividendIncomeByPlayer(
 
   return incomeByPlayer;
 }
+
+/** Commands this phase answers; composed by the dispatcher in ../commands.ts. */
+export const revenueCommandHandlers: Record<string, CommandHandler> = {
+  "revenue.confirm": confirmRevenue,
+  "revenue.chooseDividends": chooseRevenueDividends,
+};

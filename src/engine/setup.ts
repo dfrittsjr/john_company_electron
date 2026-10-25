@@ -1,5 +1,10 @@
 import { componentManifest, mapData, offices, stockExchangeTrack } from "../data";
 import type { ScenarioDefinition } from "../data/types";
+import { createInitialCompanyOperationState } from "./phases/company-operation.state";
+import { createInitialEventsInIndiaState } from "./phases/events-in-india.state";
+import { createInitialFinalScoringState } from "./phases/final-scoring.state";
+import { createInitialLondonSeasonState } from "./phases/london-season.state";
+import { createInitialNegotiationState } from "./phases/negotiation.state";
 import { createRngState, shuffle } from "./rng";
 import { COMPANY_TREASURY_OFFICE_IDS, scenarioDefinition, toEnginePresidency } from "./selectors";
 import {
@@ -106,6 +111,14 @@ export function createNewGame(options: NewGameOptions): GameState {
     hidden.crownDeck = crown.aiDeck;
   }
 
+  // Each phase owns its slice of state; initializers thread the RNG so shuffles stay deterministic.
+  const londonSeason = createInitialLondonSeasonState({ scenario, seatingOrder, rng });
+  const companyOperation = createInitialCompanyOperationState({ scenario, seatingOrder, rng: londonSeason.rng });
+  const eventsInIndia = createInitialEventsInIndiaState({ scenario, seatingOrder, rng: companyOperation.rng });
+  const finalScoring = createInitialFinalScoringState({ scenario, seatingOrder, rng: eventsInIndia.rng });
+  const negotiation = createInitialNegotiationState({ scenario, seatingOrder, rng: finalScoring.rng });
+  rng = negotiation.rng;
+
   const pendingDecision = createInitialPendingDecision(
     options.mode,
     seatingOrder,
@@ -128,6 +141,11 @@ export function createNewGame(options: NewGameOptions): GameState {
     company: createInitialCompanyState(scenario),
     india: createInitialIndiaState(scenario),
     parliament: createInitialParliamentState(seatingOrder[0]),
+    londonSeason: londonSeason.state,
+    companyOperation: companyOperation.state,
+    eventsInIndia: eventsInIndia.state,
+    finalScoring: finalScoring.state,
+    negotiation: negotiation.state,
     decks: {},
     firms: scenario.startsDeregulated ? [] : undefined,
     crown,

@@ -1,3 +1,4 @@
+import type { CommandHandler } from "../command-handler";
 import type { ApplyCommandResult, GameCommand, GameState } from "../types";
 import { createCommandLogEntry, wrongPhase } from "./shared";
 
@@ -41,3 +42,8 @@ export function confirmFinalScoring(
     },
   };
 }
+
+/** Commands this phase answers; composed by the dispatcher in ../commands.ts. */
+export const finalScoringCommandHandlers: Record<string, CommandHandler> = {
+  "finalScoring.confirm": confirmFinalScoring,
+};

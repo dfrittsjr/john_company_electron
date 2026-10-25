@@ -1,3 +1,4 @@
+import type { CommandHandler } from "../command-handler";
 import { isShipFitted, shipForShipyard } from "../selectors";
 import type { ApplyCommandResult, GameCommand, GameState } from "../types";
 import { createCommandLogEntry, createSystemDecision, wrongPhase } from "./shared";
@@ -92,3 +93,8 @@ function calculateBonusIncome(state: GameState): Record<
 
   return incomeByPlayer;
 }
+
+/** Commands this phase answers; composed by the dispatcher in ../commands.ts. */
+export const bonusesCommandHandlers: Record<string, CommandHandler> = {
+  "bonuses.confirm": confirmBonuses,
+};

@@ -1,3 +1,4 @@
+import type { CommandHandler } from "../command-handler";
 import { MAX_COMPANY_DEBT, offices } from "../../data";
 import { COMPANY_TREASURY_OFFICE_IDS, companyShareCount } from "../selectors";
 import type { ApplyCommandResult, GameCommand, GameState, OfficeId, PendingDecision } from "../types";
@@ -547,3 +548,10 @@ function isLegalPayload(state: GameState, payload: CompanyOperationPassPayload):
       JSON.stringify(command.payload ?? {}) === JSON.stringify(payload),
   );
 }
+
+/** Commands this phase answers; composed by the dispatcher in ../commands.ts. */
+export const companyOperationCommandHandlers: Record<string, CommandHandler> = {
+  "companyOperation.passOffice": passCompanyOperation,
+  "companyOperation.resolveChairman": resolveChairmanOperation,
+  "companyOperation.resolveDebtConsent": resolveChairmanDebtConsent,
+};

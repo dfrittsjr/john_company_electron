@@ -1,3 +1,4 @@
+import type { CommandHandler } from "../command-handler";
 import { enterpriseDecks, setupCardDecks } from "../../data";
 import type { EnterpriseType, SetupCardDefinition, SetupCardEffect } from "../../data";
 import { shuffle } from "../rng";
@@ -475,4 +476,7 @@ function normalizePresidency(value: string): PresidencyId {
   }
 }
 
-
+/** Commands this phase answers; composed by the dispatcher in ../commands.ts. */
+export const setupCommandHandlers: Record<string, CommandHandler> = {
+  "setup.confirmStart": confirmStart,
+};

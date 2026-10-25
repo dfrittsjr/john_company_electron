@@ -2,6 +2,7 @@ import { expect } from "vitest";
 import {
   applyCommand,
   createNewGame,
+  isKnownCommandType,
   familyPieceTotal,
   type ActorId,
   type GameCommand,
@@ -17,28 +18,6 @@ export const HOTSEAT_PLAYERS = [
   { id: "player-yellow", name: "Yellow", color: "yellow" },
 ] as const;
 
-const KNOWN_COMMAND_TYPES = new Set([
-  "setup.confirmStart",
-  "londonSeason.confirm",
-  "family.chooseAction",
-  "family.finishAction",
-  "hiring.pass",
-  "hiring.electChairman",
-  "hiring.hireOffice",
-  "hiring.resolveNepotismConsent",
-  "hiring.skipVacancy",
-  "companyOperation.passOffice",
-  "companyOperation.resolveChairman",
-  "companyOperation.resolveDebtConsent",
-  "bonuses.confirm",
-  "revenue.confirm",
-  "revenue.chooseDividends",
-  "eventsInIndia.confirm",
-  "eventsInIndia.resolveRolledEvents",
-  "parliament.confirm",
-  "upkeep.confirm",
-  "finalScoring.confirm",
-]);
 
 export function createHotseatGame(
   options: {
@@ -159,7 +138,7 @@ export function expectGameInvariants(state: GameState): void {
   }
 
   for (const legalCommand of state.pendingDecision.legalCommands) {
-    expect(KNOWN_COMMAND_TYPES.has(legalCommand.type)).toBe(true);
+    expect(isKnownCommandType(legalCommand.type)).toBe(true);
   }
 
   state.log.forEach((entry, index) => {

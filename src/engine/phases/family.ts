@@ -1,3 +1,4 @@
+import type { CommandHandler } from "../command-handler";
 import { enterpriseDecks, familyActions } from "../../data";
 import type {
   ActorId,
@@ -877,3 +878,9 @@ function familyActionLabel(action: string): string {
     .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
     .join(" ");
 }
+
+/** Commands this phase answers; composed by the dispatcher in ../commands.ts. */
+export const familyCommandHandlers: Record<string, CommandHandler> = {
+  "family.chooseAction": chooseFamilyAction,
+  "family.finishAction": finishFamilyAction,
+};

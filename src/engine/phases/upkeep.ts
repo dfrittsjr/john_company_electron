@@ -1,3 +1,4 @@
+import type { CommandHandler } from "../command-handler";
 import type {
   ApplyCommandResult,
   GameCommand,
@@ -210,3 +211,8 @@ function cleanFilledOrders(state: GameState): {
     },
   };
 }
+
+/** Commands this phase answers; composed by the dispatcher in ../commands.ts. */
+export const upkeepCommandHandlers: Record<string, CommandHandler> = {
+  "upkeep.confirm": confirmUpkeep,
+};

@@ -5,59 +5,55 @@ import type {
   PendingDecision,
   ValidationError,
 } from "./types";
-import { confirmBonuses } from "./phases/bonuses";
-import {
-  passCompanyOperation,
-  resolveChairmanDebtConsent,
-  resolveChairmanOperation,
-} from "./phases/company-operation";
-import {
-  confirmEventsInIndia,
-  resolveRolledEventsInIndia,
-} from "./phases/events-in-india";
-import { chooseFamilyAction, finishFamilyAction } from "./phases/family";
-import { confirmFinalScoring } from "./phases/final-scoring";
-import {
-  electChairman,
-  hireOffice,
-  passHiring,
-  resolveNepotismConsent,
-  skipHiringVacancy,
-} from "./phases/hiring";
-import { confirmLondonSeason } from "./phases/london-season";
-import { confirmParliament } from "./phases/parliament";
-import { chooseRevenueDividends, confirmRevenue } from "./phases/revenue";
-import { confirmStart } from "./phases/setup";
-import { confirmUpkeep } from "./phases/upkeep";
+import type { CommandHandler } from "./command-handler";
+import { anytimeCommandHandlers } from "./phases/anytime";
+import { bonusesCommandHandlers } from "./phases/bonuses";
+import { companyOperationCommandHandlers } from "./phases/company-operation";
+import { eventsInIndiaCommandHandlers } from "./phases/events-in-india";
+import { familyCommandHandlers } from "./phases/family";
+import { finalScoringCommandHandlers } from "./phases/final-scoring";
+import { hiringCommandHandlers } from "./phases/hiring";
+import { londonSeasonCommandHandlers } from "./phases/london-season";
+import { parliamentCommandHandlers } from "./phases/parliament";
+import { revenueCommandHandlers } from "./phases/revenue";
+import { setupCommandHandlers } from "./phases/setup";
+import { upkeepCommandHandlers } from "./phases/upkeep";
 
-type CommandHandler = (state: GameState, command: GameCommand) => ApplyCommandResult;
-
+// Each phase module owns its own command map, so phases can be built independently.
 const COMMAND_HANDLERS: Record<string, CommandHandler> = {
-  "setup.confirmStart": confirmStart,
-  "londonSeason.confirm": confirmLondonSeason,
-  "family.chooseAction": chooseFamilyAction,
-  "family.finishAction": finishFamilyAction,
-  "hiring.pass": passHiring,
-  "hiring.electChairman": electChairman,
-  "hiring.hireOffice": hireOffice,
-  "hiring.resolveNepotismConsent": resolveNepotismConsent,
-  "hiring.skipVacancy": skipHiringVacancy,
-  "companyOperation.passOffice": passCompanyOperation,
-  "companyOperation.resolveChairman": resolveChairmanOperation,
-  "companyOperation.resolveDebtConsent": resolveChairmanDebtConsent,
-  "bonuses.confirm": confirmBonuses,
-  "revenue.confirm": confirmRevenue,
-  "revenue.chooseDividends": chooseRevenueDividends,
-  "eventsInIndia.confirm": confirmEventsInIndia,
-  "eventsInIndia.resolveRolledEvents": resolveRolledEventsInIndia,
-  "parliament.confirm": confirmParliament,
-  "upkeep.confirm": confirmUpkeep,
-  "finalScoring.confirm": confirmFinalScoring,
+  ...setupCommandHandlers,
+  ...londonSeasonCommandHandlers,
+  ...familyCommandHandlers,
+  ...hiringCommandHandlers,
+  ...companyOperationCommandHandlers,
+  ...bonusesCommandHandlers,
+  ...revenueCommandHandlers,
+  ...eventsInIndiaCommandHandlers,
+  ...parliamentCommandHandlers,
+  ...upkeepCommandHandlers,
+  ...finalScoringCommandHandlers,
 };
 
-const KNOWN_COMMAND_TYPES = new Set(Object.keys(COMMAND_HANDLERS));
+const KNOWN_COMMAND_TYPES = new Set([
+  ...Object.keys(COMMAND_HANDLERS),
+  ...Object.keys(anytimeCommandHandlers),
+]);
+
+export function isKnownCommandType(commandType: string): boolean {
+  return KNOWN_COMMAND_TYPES.has(commandType);
+}
+
+export function isAnytimeCommandType(commandType: string): boolean {
+  return commandType in anytimeCommandHandlers;
+}
 
 export function applyCommand(state: GameState, command: GameCommand): ApplyCommandResult {
+  const anytimeHandler = anytimeCommandHandlers[command.type];
+  if (anytimeHandler) {
+    const errors = validateAnytimeCommand(state, command);
+    return errors.length > 0 ? { ok: false, errors } : anytimeHandler(state, command);
+  }
+
   const validationErrors = validateCommandEnvelope(state, command, {
     skipLegalCommandCheck: true,
   });
@@ -139,6 +135,28 @@ function canActorAct(decision: PendingDecision, actorId: GameCommand["actorId"])
     decision.actor === actorId ||
     (decision.actor === "system" && actorId === "system")
   );
+}
+
+function validateAnytimeCommand(state: GameState, command: GameCommand): ValidationError[] {
+  const errors: ValidationError[] = [];
+
+  if (command.gameId !== state.gameId) {
+    errors.push({
+      code: "GAME_ID_MISMATCH",
+      message: "Command gameId does not match the loaded game.",
+      field: "gameId",
+    });
+  }
+
+  if (!state.players[command.actorId]) {
+    errors.push({
+      code: "ACTOR_NOT_ALLOWED",
+      message: `Only a player can take "${command.type}".`,
+      field: "actorId",
+    });
+  }
+
+  return errors;
 }
 
 function unknownCommand(commandType: string): ApplyCommandResult {

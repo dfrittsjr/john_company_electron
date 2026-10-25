@@ -1,3 +1,4 @@
+import type { CommandHandler } from "../command-handler";
 import type { ApplyCommandResult, GameCommand, GameState } from "../types";
 import { confirmStarterPhase, createSystemDecision, wrongPhase } from "./shared";
 
@@ -24,3 +25,8 @@ export function confirmParliament(state: GameState, command: GameCommand): Apply
     }),
   });
 }
+
+/** Commands this phase answers; composed by the dispatcher in ../commands.ts. */
+export const parliamentCommandHandlers: Record<string, CommandHandler> = {
+  "parliament.confirm": confirmParliament,
+};

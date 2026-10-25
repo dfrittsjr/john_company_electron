@@ -1,3 +1,4 @@
+import type { CommandHandler } from "../command-handler";
 import { rollDie } from "../rng";
 import { offices } from "../../data";
 import type {
@@ -220,3 +221,8 @@ function retireOfficeholder(state: GameState, officeId: OfficeId, holder: Player
 function officeOrder(officeId: OfficeId): number {
   return offices.find((office) => office.id === officeId)?.hiringOrder ?? Number.MAX_SAFE_INTEGER;
 }
+
+/** Commands this phase answers; composed by the dispatcher in ../commands.ts. */
+export const londonSeasonCommandHandlers: Record<string, CommandHandler> = {
+  "londonSeason.confirm": confirmLondonSeason,
+};

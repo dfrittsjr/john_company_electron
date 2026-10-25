@@ -1,3 +1,4 @@
+import type { CommandHandler } from "../command-handler";
 import { offices } from "../../data";
 import type { OfficeDefinition } from "../../data/types";
 import {
@@ -1361,3 +1362,12 @@ function isLegalPayload(state: GameState, type: string, payload: unknown): boole
     return JSON.stringify(command.payload ?? {}) === JSON.stringify(payload);
   });
 }
+
+/** Commands this phase answers; composed by the dispatcher in ../commands.ts. */
+export const hiringCommandHandlers: Record<string, CommandHandler> = {
+  "hiring.pass": passHiring,
+  "hiring.electChairman": electChairman,
+  "hiring.hireOffice": hireOffice,
+  "hiring.resolveNepotismConsent": resolveNepotismConsent,
+  "hiring.skipVacancy": skipHiringVacancy,
+};
