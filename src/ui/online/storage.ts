@@ -45,7 +45,13 @@ export function resetOnlineLocationCache(): void {
   cached = null;
 }
 
-/** Reads ?game= and the #seat= / #watch= fragment, and removes the secret from the address bar. */
+const PENDING_LINK_PREFIX = "john-company.pending-link.";
+
+/**
+ * Reads ?game= and the #seat= / #watch= fragment, and removes the secret from the address bar.
+ * Until the join succeeds (forgetPendingLink), the link's token waits in this tab's
+ * sessionStorage, so reloading after a failed join still has it.
+ */
 export function readOnlineLocation(): OnlineLocation {
   const params = new URLSearchParams(location.search);
   const gameId = params.get("game");
@@ -56,13 +62,45 @@ export function readOnlineLocation(): OnlineLocation {
   // The fragment is removed below, so a second read (React may run initialisers twice) reuses this one.
   if (!token && cached && cached.search === location.search) return cached.value;
   if (token) {
+    if (gameId) writePendingLink(gameId, { token, kind: seat ? "seat" : "watch" });
     try {
       window.history.replaceState(null, "", `${location.pathname}${location.search}`);
     } catch {
       // not fatal: the token just stays visible
     }
   }
-  const value: OnlineLocation = { gameId, token, kind: seat ? "seat" : watch ? "watch" : null };
+  const pending = !token && gameId ? readPendingLink(gameId) : null;
+  const value: OnlineLocation = pending
+    ? { gameId, token: pending.token, kind: pending.kind }
+    : { gameId, token, kind: seat ? "seat" : watch ? "watch" : null };
   cached = { search: location.search, value };
   return value;
+}
+
+type PendingLink = { token: string; kind: "seat" | "watch" };
+
+function writePendingLink(gameId: string, link: PendingLink): void {
+  try {
+    sessionStorage.setItem(PENDING_LINK_PREFIX + gameId, JSON.stringify(link));
+  } catch {
+    // Storage refused: a failed join then needs the link again.
+  }
+}
+
+function readPendingLink(gameId: string): PendingLink | null {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(PENDING_LINK_PREFIX + gameId) ?? "null");
+    return parsed && typeof parsed.token === "string" && (parsed.kind === "seat" || parsed.kind === "watch") ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Called once the link's token is joined and stored as a seat. */
+export function forgetPendingLink(gameId: string): void {
+  try {
+    sessionStorage.removeItem(PENDING_LINK_PREFIX + gameId);
+  } catch {
+    // nothing to forget
+  }
 }

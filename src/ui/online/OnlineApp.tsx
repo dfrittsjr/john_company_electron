@@ -5,7 +5,7 @@ import "../game-screen.css";
 import { installFlexGapFallback } from "../platform/flex-gap-fallback";
 import { OnlineGame } from "./OnlineGame";
 import { OnlineLanding } from "./OnlineLanding";
-import { loadStoredSeats, readOnlineLocation, saveStoredSeat, storedSeatFor } from "./storage";
+import { forgetPendingLink, loadStoredSeats, readOnlineLocation, saveStoredSeat, storedSeatFor } from "./storage";
 
 /**
  * The first time this browser opens a link, it exchanges the link's token for the viewer's role
@@ -29,6 +29,7 @@ function JoinGate({ gameId, token, onJoined }: { gameId: string; token: string; 
           playerName: joined.playerName,
           joinedAt: new Date().toISOString(),
         });
+        forgetPendingLink(gameId);
         onJoined();
       })
       .catch((reason: unknown) => {

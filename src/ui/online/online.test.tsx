@@ -45,6 +45,7 @@ beforeEach(() => {
   resetOnlineLocationCache();
   resetSiteKeyCache();
   localStorage.clear();
+  sessionStorage.clear();
   files.saved = [];
 });
 
@@ -295,6 +296,29 @@ describe("online game screen", () => {
     open(`/online/?game=${created.gameId}#seat=not-a-real-token`);
     await screen.findByText(/This link is not valid for this game/);
     expect(localStorage.getItem(STORED_SEATS_KEY)).toBeNull();
+  });
+
+  test("after a failed join, reloading without the fragment still has the link's token", async () => {
+    const created = server.createFromState(familyGame());
+    let failNextJoin = true;
+    setFetchImplementation((async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (failNextJoin && String(input).endsWith("/join")) {
+        failNextJoin = false;
+        return new Response(JSON.stringify({ error: { code: "RATE_LIMITED", message: "Too many requests." } }), { status: 429 });
+      }
+      return server.fetch(input as RequestInfo, init);
+    }) as typeof fetch);
+    openSeat(created, 1);
+    await screen.findByText(/Too many requests/);
+    expect(window.location.hash).toBe("");
+    expect(localStorage.getItem(STORED_SEATS_KEY)).toBeNull();
+
+    // The reload: same address, no fragment.
+    cleanup();
+    open(`/online/?game=${created.gameId}`);
+    await screen.findByText(/Waiting for|Your turn/);
+    expect(JSON.parse(localStorage.getItem(STORED_SEATS_KEY) ?? "[]")[0]).toMatchObject({ viewer: { kind: "seat", playerId: "player-blue" } });
+    expect(sessionStorage.length).toBe(0);
   });
 
   test("a stored token that stops working shows the can't-open screen", async () => {
