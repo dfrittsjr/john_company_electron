@@ -554,7 +554,6 @@ export function validateTransfer(
 }
 
 const ENTERPRISE_VICTORY_POINTS: Record<string, number> = { luxury: 2 };
-const ENTERPRISE_WINDOWS: Record<string, number> = { luxury: 1 };
 
 function setPrivateBlackmail(state: GameState, playerId: PlayerId, cards: CardInstance[]): GameState {
   return {
@@ -600,18 +599,15 @@ export function applyTransfer(state: GameState, from: PlayerId, to: PlayerId, it
       case "enterprise": {
         const enterprise = next.players[from].enterprises.find((candidate) => candidate.id === item.enterpriseId)!;
         const vp = ENTERPRISE_VICTORY_POINTS[enterprise.type] ?? 0;
-        const windows = ENTERPRISE_WINDOWS[enterprise.type] ?? 0;
         update(from, (player) => ({
           ...player,
           enterprises: player.enterprises.filter((candidate) => candidate.id !== enterprise.id),
           victoryPoints: player.victoryPoints - vp,
-          windows: player.windows - windows,
         }));
         update(to, (player) => ({
           ...player,
           enterprises: [...player.enterprises, enterprise],
           victoryPoints: player.victoryPoints + vp,
-          windows: player.windows + windows,
         }));
         break;
       }
@@ -619,18 +615,15 @@ export function applyTransfer(state: GameState, from: PlayerId, to: PlayerId, it
         const instance = next.players[from].prestigeCards.find((card) => card.id === item.cardInstanceId)!;
         const card = prestigeById.get(instance.cardId);
         const vp = card?.victoryPoints ?? 0;
-        const windows = card?.windowTaxIcons ?? 0;
         update(from, (player) => ({
           ...player,
           prestigeCards: player.prestigeCards.filter((candidate) => candidate.id !== instance.id),
           victoryPoints: player.victoryPoints - vp,
-          windows: player.windows - windows,
         }));
         update(to, (player) => ({
           ...player,
           prestigeCards: [...player.prestigeCards, instance],
           victoryPoints: player.victoryPoints + vp,
-          windows: player.windows + windows,
         }));
         break;
       }

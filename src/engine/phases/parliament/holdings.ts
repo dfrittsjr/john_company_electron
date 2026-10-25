@@ -153,7 +153,6 @@ export function surrenderItem(state: GameState, playerId: PlayerId, itemId: stri
     const withoutCard = updatePlayer(state, playerId, (player) => ({
       ...player,
       victoryPoints: player.victoryPoints - (card?.victoryPoints ?? 0),
-      windows: Math.max(0, player.windows - (card?.windowTaxIcons ?? 0)),
       enterprises: player.enterprises.filter((candidate) => candidate.id !== instanceId),
     }));
     if (enterprise.type !== "shipyard") return withoutCard;

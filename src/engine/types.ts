@@ -155,7 +155,6 @@ export type PlayerState = {
   blackmailCards: CardInstance[];
   trophies: number;
   passedLawTokens: number;
-  windows: number;
 };
 
 export type DeckState<CardId extends string = string> = {

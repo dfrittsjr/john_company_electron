@@ -1076,7 +1076,6 @@ function purchaseEnterprise(
     ...actor,
     cash: actor.cash - cost,
     victoryPoints: actor.victoryPoints + card.victoryPoints,
-    windows: actor.windows + card.windowTaxIcons,
     enterprises: [...actor.enterprises, instance],
   });
   const effects: Record<string, unknown> = { purchased: type, cardId: card.id, cost };

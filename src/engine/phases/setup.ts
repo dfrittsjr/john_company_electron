@@ -382,7 +382,6 @@ function addEnterprises(
       (player) => ({
         ...player,
         victoryPoints: player.victoryPoints + card.victoryPoints,
-        windows: player.windows + card.windowTaxIcons,
         enterprises: [...player.enterprises, instance],
       }),
     );

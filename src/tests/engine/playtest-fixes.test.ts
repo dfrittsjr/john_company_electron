@@ -9,6 +9,7 @@ import {
   OFFICES_BEFORE_PRESIDENCIES,
 } from "../fixtures/company-operation";
 import { withAssociatedRegion } from "../fixtures/builders";
+import { deserializeSave, serializeSave } from "../../save";
 import { createNewGame, chairmanHolder } from "../../engine";
 import { resolveNewCompanyShares, startFamilyPhase } from "../../engine/phases/family";
 import { startHiringPhase } from "../../engine/phases/hiring";
@@ -303,5 +304,19 @@ describe("Chairman allocation amounts (p.18)", () => {
     };
     expect(amountsFor(12)).toEqual([1, 2, 3, 5, 10, 12]);
     expect(amountsFor(4)).toEqual([1, 2, 3, 4]);
+  });
+});
+
+describe("player.windows is gone", () => {
+  it("new games have no windows counter, and an old save that still carries one loads", () => {
+    const state = createHotseatGame({ seed: "no-windows" });
+    expect("windows" in state.players[RED]).toBe(false);
+
+    const legacy = {
+      ...state,
+      players: { ...state.players, [RED]: { ...state.players[RED], windows: 3 } },
+    } as unknown as GameState;
+    const loaded = deserializeSave(serializeSave(legacy, { saveId: "legacy-windows" })).state;
+    expect(loaded.players[RED].cash).toBe(state.players[RED].cash);
   });
 });

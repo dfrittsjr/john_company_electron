@@ -335,7 +335,6 @@ function createPlayer(input: {
     blackmailCards: [],
     trophies: 0,
     passedLawTokens: 0,
-    windows: 0,
   };
 }
 

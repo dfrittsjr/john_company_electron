@@ -104,7 +104,6 @@ export function rejectedMessages(state: GameState, actorId: PlayerId, type: stri
 export function withEnterprise(state: GameState, playerId: PlayerId, enterprise: EnterpriseInstance): GameState {
   const player = state.players[playerId];
   const vp = enterprise.type === "luxury" ? 2 : 0;
-  const windows = enterprise.type === "luxury" ? 1 : 0;
   return {
     ...state,
     players: {
@@ -113,7 +112,6 @@ export function withEnterprise(state: GameState, playerId: PlayerId, enterprise:
         ...player,
         enterprises: [...player.enterprises, enterprise],
         victoryPoints: player.victoryPoints + vp,
-        windows: player.windows + windows,
       },
     },
   };

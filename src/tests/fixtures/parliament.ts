@@ -89,7 +89,6 @@ export function withEnterprises(
       [playerId]: {
         ...player,
         victoryPoints: player.victoryPoints + 2 * luxuries,
-        windows: player.windows + luxuries,
         enterprises: [...player.enterprises, ...added],
       },
     },

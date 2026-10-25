@@ -5,6 +5,7 @@ import {
   isActivatedThisPhase,
   markActivated,
   nepotismConsentGuarantors,
+  playerWindowIcons,
   powerMarkerPositions,
   prestigePickTakenBy,
   promiseCallOptions,
@@ -53,8 +54,10 @@ describe("binding immediate transfers (p.8)", () => {
     let state = withEnterprise(negotiationGame(), RED, { id: "lux-1", type: "luxury", cardId: "luxury-01" });
     state = give(state, RED, BLUE, [{ kind: "enterprise", enterpriseId: "lux-1" }]);
 
-    expect(state.players[RED]).toMatchObject({ victoryPoints: 0, windows: 0, enterprises: [] });
-    expect(state.players[BLUE]).toMatchObject({ victoryPoints: 2, windows: 1 });
+    expect(state.players[RED]).toMatchObject({ victoryPoints: 0, enterprises: [] });
+    expect(playerWindowIcons(state, RED)).toBe(0);
+    expect(state.players[BLUE]).toMatchObject({ victoryPoints: 2 });
+    expect(playerWindowIcons(state, BLUE)).toBe(1);
     expect(state.players[BLUE].enterprises.map((enterprise) => enterprise.id)).toEqual(["lux-1"]);
     expect(wasTransferredThisTurn(state, "lux-1")).toBe(true);
   });
@@ -74,7 +77,7 @@ describe("binding immediate transfers (p.8)", () => {
     state = give(state, RED, YELLOW, [{ kind: "prestige", cardInstanceId: "castle" }]);
 
     expect(state.players[YELLOW].prestigeCards.map((card) => card.id)).toEqual(["castle"]);
-    expect(state.players[YELLOW].windows).toBe(2);
+    expect(playerWindowIcons(state, YELLOW)).toBe(2);
     expect(rejectedMessages(state, RED, "negotiation.give", { to: YELLOW, items: [{ kind: "prestige", cardInstanceId: "highgate" }] })).toEqual([
       "Spouses cannot be transferred (p.8, p.12).",
     ]);

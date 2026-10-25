@@ -7,6 +7,7 @@ import {
   playerCourtShares,
   playerOffices,
   playerOfficers,
+  playerWindowIcons,
   playerStockExchangeSlots,
   playerWriters,
   presidentOf,
@@ -504,7 +505,7 @@ describe("command application", () => {
     );
     expect(luxuryState.players["player-red"].cash).toBe(0);
     expect(luxuryState.players["player-red"].victoryPoints).toBe(2);
-    expect(luxuryState.players["player-red"].windows).toBe(1);
+    expect(playerWindowIcons(luxuryState, "player-red")).toBe(1);
     expect(luxuryState.players["player-red"].enterprises[0]).toEqual(
       expect.objectContaining({
         type: "luxury",
