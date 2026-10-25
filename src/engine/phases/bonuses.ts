@@ -60,15 +60,12 @@ export function confirmBonuses(state: GameState, command: GameCommand): ApplyCom
   };
 }
 
-function calculateBonusIncome(state: GameState): Record<
-  string,
-  {
-    workshops: number;
-    fittedShipyards: number;
-    total: number;
-  }
-> {
-  const incomeByPlayer: Record<string, { workshops: number; fittedShipyards: number; total: number }> = {};
+type BonusIncome = { workshops: number; fittedShipyards: number; prizeFamilyMembers?: number; total: number };
+
+function calculateBonusIncome(state: GameState): Record<string, BonusIncome> {
+  const incomeByPlayer: Record<string, BonusIncome> = {};
+  // Inclosure Acts (law #36): each family member on a prize earns £1 during Bonuses.
+  const inclosureActs = state.parliament.passedLaws.some((law) => law.lawId === "inclosure-acts");
 
   for (const player of Object.values(state.players)) {
     if (player.isCrown) continue;
@@ -81,14 +78,15 @@ function calculateBonusIncome(state: GameState): Record<
         enterprise.cardId !== undefined &&
         isShipFitted(shipForShipyard(state, enterprise.cardId)),
     ).length;
-    const total = workshops + fittedShipyards;
+    const prizeFamilyMembers = inclosureActs
+      ? Object.values(player.familyMembers.prizes).reduce((sum, count) => sum + count, 0)
+      : 0;
+    const total = workshops + fittedShipyards + prizeFamilyMembers;
     if (total <= 0) continue;
 
-    incomeByPlayer[player.id] = {
-      workshops,
-      fittedShipyards,
-      total,
-    };
+    incomeByPlayer[player.id] = inclosureActs
+      ? { workshops, fittedShipyards, prizeFamilyMembers, total }
+      : { workshops, fittedShipyards, total };
   }
 
   return incomeByPlayer;

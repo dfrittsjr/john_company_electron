@@ -8,6 +8,7 @@ import {
   rollDie,
   type GameState,
 } from "../../engine";
+import { createNextCompanyOperationDecision } from "../../engine/phases/company-operation";
 import { serializeSave, deserializeSave, SaveValidationError, createSaveEnvelope } from "../../save";
 import { withCourtShares, withHiringQueue, withNoSupply, withOffice } from "../fixtures/builders";
 import {
@@ -120,8 +121,8 @@ describe("setup from scenario data", () => {
     expect(Object.values(regions).some((region) => region.associatedPresidency)).toBe(false);
     expect(Object.values(regions).some((region) => region.companyControlled)).toBe(false);
     expect(regions.bengal.exportIcons).toBe(2);
-    // Loot token values are on the punchboard and not transcribed yet.
-    expect(regions.hyderabad.lootToken.value).toBeNull();
+    // Loot token values from the punchboard (Hyderabad's £7 matches the p.22-23 example).
+    expect(regions.hyderabad.lootToken.value).toBe(7);
   });
 
   it("uses the Turn track dates and scenario cards for the later scenarios", () => {
@@ -285,107 +286,100 @@ describe("Chairman debt and allocation (p.18)", () => {
       { id: "share-blue-1", owner: "player-blue" },
     ]);
     state = withHiringQueue(withNoSupply(state), []);
-
-    return {
+    const ready: GameState = {
       ...state,
       phase: "companyOperation",
       company: { ...state.company, debt: options.debt, balance: options.balance },
-      pendingDecision: {
-        id: "decision-chairman-test",
-        phase: "companyOperation",
-        step: "companyOperation.resolveChairman",
-        actor: "player-red",
-        visibility: "private",
-        prompt: "Resolve Chairman.",
-        legalCommands: [
-          {
-            type: "companyOperation.resolveChairman",
-            label: "Resolve Chairman",
-            payload: { officeId: "chairman", debtTaken: 0, allocations: {} },
-          },
-        ],
-        canSave: true,
-      },
     };
+    return { ...ready, pendingDecision: createNextCompanyOperationDecision(ready) };
   }
 
-  function resolveChairman(state: GameState, debtTaken: number, allocations: Record<string, number>) {
+  function chairman(state: GameState, payload: unknown, actorId = "player-red") {
     return applyCommand(state, {
-      id: `command-chairman-${debtTaken}`,
+      id: `command-chairman-${state.log.length}`,
       gameId: state.gameId,
-      actorId: "player-red",
+      actorId,
       decisionId: state.pendingDecision.id,
-      type: "companyOperation.resolveChairman",
-      payload: { officeId: "chairman", debtTaken, allocations },
+      type: "companyOperation.chairman",
+      payload,
       clientTimestamp: "2026-06-13T12:20:00.000Z",
     });
   }
 
+  function chairmanOrThrow(state: GameState, payload: unknown): GameState {
+    const result = chairman(state, payload);
+    if (!result.ok) throw new Error(result.errors.map((error) => error.message).join(" "));
+    return result.state;
+  }
+
+  const offersDebt = (state: GameState) =>
+    state.pendingDecision.legalCommands.some((command) => (command.payload as { action?: string })?.action === "debt");
+
   it("takes up to three Debt freely: the Seeking Debt example ends with £18 to allocate", () => {
     // "The Company has 2 Debt and a Balance of £3 ... increase it 3 spaces ... a total of £18."
-    const state = chairmanState({ debt: 2, balance: 3 });
-    const result = resolveChairman(state, 3, { "manager-of-shipping": 10, "president-bengal": 8 });
+    let state = chairmanState({ debt: 2, balance: 3 });
+    for (let advance = 0; advance < 3; advance += 1) state = chairmanOrThrow(state, { action: "debt" });
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.state.company.debt).toBe(5);
-    expect(result.state.company.balance).toBe(0);
-    expect(result.state.company.offices["manager-of-shipping"].treasury).toBe(13);
-    expect(result.state.company.offices["president-bengal"].treasury).toBe(11);
+    expect(state.company.debt).toBe(5);
+    expect(state.company.balance).toBe(18);
+    expect(state.pendingDecision.step).toBe("companyOperation.chairman");
+
+    state = chairmanOrThrow(state, { action: "allocate", officeId: "manager-of-shipping", amount: 5 });
+    state = chairmanOrThrow(state, { action: "allocate", officeId: "manager-of-shipping", amount: 5 });
+    state = chairmanOrThrow(state, { action: "allocate", officeId: "president-bengal", amount: 8 });
+    expect(state.company.balance).toBe(0);
+    expect(state.company.offices["manager-of-shipping"].treasury).toBe(13);
+    expect(state.company.offices["president-bengal"].treasury).toBe(11);
+
+    state = chairmanOrThrow(state, { action: "finish" });
+    expect(state.companyOperation.actedOffices).toContain("chairman");
   });
 
   it("must allocate the whole Balance, and only to offices with a treasury", () => {
     const state = chairmanState({ debt: 0, balance: 6 });
 
-    const partial = resolveChairman(state, 0, { "manager-of-shipping": 5 });
-    expect(partial.ok).toBe(false);
-
-    const militaryAffairs = resolveChairman(state, 0, { "military-affairs": 6 });
-    expect(militaryAffairs.ok).toBe(false);
-
-    expect(resolveChairman(state, 0, { "director-of-trade": 6 }).ok).toBe(true);
+    expect(chairman(state, { action: "finish" }).ok).toBe(false);
+    expect(chairman(state, { action: "allocate", officeId: "military-affairs", amount: 6 }).ok).toBe(false);
+    expect(chairman(state, { action: "allocate", officeId: "director-of-trade", amount: 6 }).ok).toBe(true);
   });
 
   it("cannot advance Debt past the end of the track", () => {
-    const state = chairmanState({ debt: 6, balance: 0 });
-
-    expect(resolveChairman(state, 3, { "manager-of-shipping": 15 }).ok).toBe(false);
+    expect(offersDebt(chairmanState({ debt: 8, balance: 0 }))).toBe(false);
+    expect(offersDebt(chairmanState({ debt: 7, balance: 0 }))).toBe(true);
   });
 
   it("asks for Company-share majority consent beyond three advances", () => {
-    const state = chairmanState({ debt: 0, balance: 0 });
-    const request = resolveChairman(state, 4, { "manager-of-shipping": 20 });
+    let state = chairmanState({ debt: 0, balance: 0 });
+    for (let advance = 0; advance < 3; advance += 1) state = chairmanOrThrow(state, { action: "debt" });
+    state = chairmanOrThrow(state, { action: "debt" });
 
-    expect(request.ok).toBe(true);
-    if (!request.ok) return;
-    expect(request.state.pendingDecision.step).toBe("companyOperation.debtConsent");
+    expect(state.pendingDecision.step).toBe("companyOperation.debtConsent");
     // Two Court shares plus the Chairman's piece.
-    expect(request.state.pendingDecision.prompt).toContain("3 Company shares");
-    expect(request.state.company.debt).toBe(0);
-    expectSaveRoundTripPreservesPendingDecision(request.state);
+    expect(state.pendingDecision.prompt).toContain("3 Company shares");
+    expect(state.company.debt).toBe(3);
+    expectSaveRoundTripPreservesPendingDecision(state);
 
-    const accepted = applyFirstLegalCommand(request.state, { commandId: "command-consent", actorId: "system" });
+    const accepted = applyFirstLegalCommand(state, { commandId: "command-consent", actorId: "system" });
     expect(accepted.company.debt).toBe(4);
-    expect(accepted.company.offices["manager-of-shipping"].treasury).toBe(23);
+    expect(accepted.company.balance).toBe(20);
+    expect(accepted.pendingDecision.step).toBe("companyOperation.chairman");
   });
 
-  it("returns to the Chairman with a three-advance limit when the Court refuses", () => {
-    const state = chairmanState({ debt: 0, balance: 0 });
-    const request = resolveChairman(state, 5, { "manager-of-shipping": 25 });
-    if (!request.ok) throw new Error("expected consent request");
+  it("returns to the Chairman with no further advances when the Court refuses", () => {
+    let state = chairmanState({ debt: 0, balance: 0 });
+    for (let advance = 0; advance < 4; advance += 1) state = chairmanOrThrow(state, { action: "debt" });
 
-    const refuse = request.state.pendingDecision.legalCommands.find((command) => command.label === "Majority refuses");
-    const refused = applyCommandOrThrow(request.state, {
+    const refuse = state.pendingDecision.legalCommands.find((command) => command.label === "Majority refuses");
+    const refused = applyCommandOrThrow(state, {
       id: "command-refuse",
       actorId: "system",
       type: refuse?.type ?? "",
       payload: refuse?.payload,
     });
 
-    expect(refused.pendingDecision.step).toBe("companyOperation.resolveChairman");
-    expect(refused.company.debt).toBe(0);
-    expect(resolveChairman(refused, 4, { "manager-of-shipping": 20 }).ok).toBe(false);
-    expect(resolveChairman(refused, 3, { "manager-of-shipping": 15 }).ok).toBe(true);
+    expect(refused.pendingDecision.step).toBe("companyOperation.chairman");
+    expect(refused.company.debt).toBe(3);
+    expect(offersDebt(refused)).toBe(false);
   });
 });
 

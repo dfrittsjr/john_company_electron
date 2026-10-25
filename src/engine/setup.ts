@@ -1,4 +1,4 @@
-import { componentManifest, mapData, offices, stockExchangeTrack } from "../data";
+import { componentManifest, localAlliances, lootTokens, mapData, offices, stockExchangeTrack } from "../data";
 import type { ScenarioDefinition } from "../data/types";
 import { createInitialCompanyOperationState } from "./phases/company-operation.state";
 import { createInitialEventsInIndiaState } from "./phases/events-in-india.state";
@@ -416,7 +416,14 @@ function createInitialCompanyState(scenario: ScenarioDefinition): CompanyState {
 }
 
 function createArmy(id: ArmyId, regiments: number) {
-  return { id, officers: {}, regiments: { ready: regiments, exhausted: 0 } };
+  // Local alliances start unbought in the Army box where they are printed (setup step 3).
+  const alliances = localAlliances.filter((alliance) => toEnginePresidency(alliance.army) === id);
+  return {
+    id,
+    officers: {},
+    regiments: { ready: regiments, exhausted: 0 },
+    localAlliances: Object.fromEntries(alliances.map((alliance) => [alliance.id, "exhausted" as const])),
+  };
 }
 
 function createInitialIndiaState(scenario: ScenarioDefinition): IndiaState {
@@ -462,8 +469,11 @@ function createInitialIndiaState(scenario: ScenarioDefinition): IndiaState {
           associatedPresidency: undefined,
           governorOffice: region.governorOfficeId,
           unrest: 0,
-          // TODO: loot token values are printed on the punchboard tokens and not transcribed yet.
-          lootToken: { available: true, value: null, face: "loot" },
+          lootToken: {
+            available: true,
+            value: lootTokens.find((token) => token.region === region.id)?.lootValue ?? null,
+            face: "loot",
+          },
           exportIcons: region.exportIcons,
           partialCompanyShip: false,
         } satisfies RegionState,
