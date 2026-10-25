@@ -83,6 +83,15 @@ describe("Selecting a law and policy (pp.34-35)", () => {
     expect(state.parliament.session?.drawn).toHaveLength(1);
     expect(state.parliament.session?.drawn[0]).not.toBe("old-ideas-made-new");
   });
+
+  it("does not redraw Old Ideas Made New! forever when it is the last law (regression)", () => {
+    let state = start(parliamentState({ drawPile: ["old-ideas-made-new"] }));
+    state = choose(state, "parliament.selectLaw");
+
+    // No other law can be drawn, so no law comes before Parliament this turn.
+    expect(state.phase).toBe("upkeep");
+    expect(state.parliament.lawDeck.drawPile).toEqual(["old-ideas-made-new"]);
+  });
 });
 
 describe("Voting (p.35)", () => {

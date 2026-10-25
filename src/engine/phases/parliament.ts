@@ -428,16 +428,14 @@ function voteCommands(state: GameState, voter: PlayerId): { commands: LegalComma
   }
   const castCount = commands.length;
 
-  if (castCount > 0 && directions.includes("against")) {
-    const creditedTo = session.creditTo[voter] ?? voter;
+  // Coalitions: a voter may pledge their votes against to another player once per vote; the
+  // partner commits to the opposition (p.35).
+  if (castCount > 0 && directions.includes("against") && !session.creditTo[voter]) {
     for (const partner of state.seatingOrder) {
-      if (partner === creditedTo || partner === pm) continue;
+      if (partner === voter || partner === pm) continue;
       commands.push({
         type: "parliament.setVoteCredit",
-        label:
-          partner === voter
-            ? "Credit my votes against to myself"
-            : `Cast my votes against on behalf of ${playerName(state, partner)} (coalition; they join the opposition)`,
+        label: `Cast my votes against on behalf of ${playerName(state, partner)} (coalition; they join the opposition)`,
         payload: { creditTo: partner },
       });
     }
@@ -631,19 +629,18 @@ const selectLaw = handler<{ lawId: string }>("parliament.chooseLaw", "parliament
   if (law.effectHandler === "old-ideas-made-new") {
     if (state.parliament.lawDeck.discardPile.length === 0) {
       // No discards: ignore the card, shuffle it back into the deck and draw a new law.
-      const deck = state.parliament.lawDeck;
-      const reshuffled = shuffle(state.rng, [...deck.drawPile, lawId]);
+      // Assumption: the replacement is drawn first, so Old Ideas cannot be redrawn at once.
+      collector.notes.push("Old Ideas Made New! found no discards; a new law is drawn and it is shuffled back.");
+      const withoutCard = withSession(state, { drawn: session.drawn.filter((drawnId) => drawnId !== lawId) });
+      const replaced = drawIntoSession(withoutCard, collector);
+      const deck = replaced.parliament.lawDeck;
+      const reshuffled = shuffle(replaced.rng, [...deck.drawPile, lawId]);
       collector.rolls.push(...reshuffled.rolls.slice(0, 1));
-      collector.notes.push("Old Ideas Made New! found no discards; it was shuffled back and a new law is drawn.");
-      const replaced = withSession(
-        {
-          ...state,
-          rng: reshuffled.rng,
-          parliament: { ...state.parliament, lawDeck: { ...deck, drawPile: reshuffled.items } },
-        },
-        { drawn: session.drawn.filter((drawnId) => drawnId !== lawId) },
-      );
-      return drawIntoSession(replaced, collector);
+      return {
+        ...replaced,
+        rng: reshuffled.rng,
+        parliament: { ...replaced.parliament, lawDeck: { ...deck, drawPile: reshuffled.items } },
+      };
     }
     collector.notes.push("Old Ideas Made New!: the Prime Minister searches the discard pile.");
     return withSession(state, { oldIdeasMadeNew: true, stage: "chooseFromDiscard" });
