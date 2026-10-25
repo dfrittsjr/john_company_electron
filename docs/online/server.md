@@ -208,7 +208,7 @@ npx wrangler dev --port 8800       # http://localhost:8800, API at /api/*
   (`1x0000000000000000000000000000000AA`), any token verifies, including the widget's dummy token
   `XXXX.DUMMY.TOKEN.XXXX`. Verification still calls Cloudflare, so local dev needs network access.
 - **Local data:** state persists in `.wrangler/state` (or wherever `--persist-to` points).
-- **Types:** after changing `wrangler.jsonc`, regenerate the Worker types with `npm run cf:types`.
+- **Types:** `src/worker/worker-configuration.d.ts` is generated and gitignored. `npm run typecheck` and `npm run build` regenerate it first (`pretypecheck` / `prebuild`); run `npm run cf:types` by hand after changing `wrangler.jsonc`. Secrets that `wrangler types` can't see on a clean checkout are declared in `src/worker/secrets.d.ts`.
 - **Checks:** `npm run typecheck` covers the browser build and the Worker (`tsconfig.worker.json`);
   `npx vitest run` covers projection, automatic steps and the room core.
 

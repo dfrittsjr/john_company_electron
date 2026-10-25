@@ -1,6 +1,6 @@
 {
   // Type-checks the Cloudflare Worker (src/worker) against the Workers runtime instead of the DOM.
-  // Runtime and binding types come from `npm run cf:types` (src/worker/worker-configuration.d.ts).
+  // Runtime and binding types come from `npm run cf:types` (src/worker/worker-configuration.d.ts, generated and gitignored).
   // The main tsconfig.json excludes src/worker so the Astro/browser build never sees these types.
   "compilerOptions": {
     "target": "ES2022",

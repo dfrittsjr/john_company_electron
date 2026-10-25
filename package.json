@@ -7,10 +7,12 @@
   "scripts": {
     "dev": "astro dev --host 127.0.0.1",
     "start": "npm run dev",
+    "pretypecheck": "npm run cf:types",
+    "prebuild": "npm run cf:types",
     "build": "npm run typecheck && astro build",
     "preview": "astro preview --host 127.0.0.1",
     "cf:preview": "astro build && wrangler dev",
-    "deploy": "astro build && wrangler deploy",
+    "deploy": "npm run build && wrangler deploy",
     "typecheck": "astro check && tsc --noEmit && tsc --noEmit -p tsconfig.worker.json",
     "test": "vitest run",
     "test:watch": "vitest",
