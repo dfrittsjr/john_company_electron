@@ -840,10 +840,8 @@ export function removePromiseFromGame(state: GameState, guarantor: PlayerId, typ
 }
 
 /**
- * Company Operation records each officeholder bonus it pays, so "Take my officeholder's bonus" can
- * claim it. Do not record loot shares (card back).
- * TODO(CO): call this wherever an officeholder is paid a bonus (President £1 per order, Governor
- * Administer, China, Governor General) and voidOfficeholderBonuses after a catastrophic failure.
+ * Company Operation records each officeholder bonus it pays (payOfficeholderBonus), so "Take my
+ * officeholder's bonus" can claim it. Loot shares are not recorded (card back).
  */
 export function recordOfficeholderBonus(
   state: GameState,
@@ -870,8 +868,8 @@ export function voidOfficeholderBonuses(state: GameState, officeId: string): Gam
 function claimableBonuses(state: GameState, guarantor: PlayerId): Array<{ officeId: string; amount: number }> {
   const totals = new Map<string, number>();
   for (const record of state.negotiation.officeholderBonuses) {
+    // A recorded bonus has been paid, so its office has acted (card back: "after an office has acted").
     if (record.turn !== state.turn || record.taken || record.playerId !== guarantor) continue;
-    if (!state.company.offices[record.officeId]?.actedThisTurn) continue;
     totals.set(record.officeId, (totals.get(record.officeId) ?? 0) + record.amount);
   }
   return [...totals].map(([officeId, amount]) => ({ officeId, amount }));
@@ -886,7 +884,7 @@ function activeGrants(state: GameState, type: PromiseCardId): PromiseGrant[] {
 /**
  * Guarantors whose nepotism consent the hirer holds through a called-in promise this Hiring phase.
  * Not usable for Commanders or the Chairman election (card back).
- * TODO(FH): treat these players as consenting in the nepotism check, then call usePromiseGrant.
+ * Hiring treats these players as consenting (nepotismConsentNeededFrom).
  */
 export function nepotismConsentGuarantors(state: GameState, hirer: PlayerId): PlayerId[] {
   return activeGrants(state, "my-consent-for-nepotism")
@@ -897,7 +895,7 @@ export function nepotismConsentGuarantors(state: GameState, hirer: PlayerId): Pl
 /**
  * Families whose enterprises `voter` may vote with this Parliament (called-in promise), including
  * against the law even if the guarantor is Prime Minister (card back).
- * TODO(PA): add these enterprises' vote icons to the voter's options and mark the grant used.
+ * Parliament adds these enterprises to the voter's cards (availableVoteCards) for this phase.
  */
 export function enterpriseVoteGuarantors(state: GameState, voter: PlayerId): PlayerId[] {
   return activeGrants(state, "vote-with-my-enterprises")
@@ -907,8 +905,7 @@ export function enterpriseVoteGuarantors(state: GameState, voter: PlayerId): Pla
 
 /**
  * The player who takes `guarantor`'s London Season Display pick this season, if a promise was called in.
- * TODO(LS): at the start of the guarantor's turn in the Prestige Cards step, let this player choose
- * the card instead, then mark the grant used.
+ * The London Season gives this player the guarantor's pick (prestigeDecision) and uses the grant.
  */
 export function prestigePickTakenBy(state: GameState, guarantor: PlayerId): PlayerId | undefined {
   return activeGrants(state, "take-my-card-from-london-season-display").find((grant) => grant.guarantor === guarantor)

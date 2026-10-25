@@ -20,7 +20,7 @@ import {
   playerName,
   regimentsInSupply,
   shipDestinations,
-  vacateOffice,
+  vacateAfterCatastrophe,
   withCo,
 } from "./context";
 import { addUnrest } from "./governor";
@@ -185,7 +185,7 @@ export const governorGeneralStep: OperationStep = (state, command) => {
       if (check.outcome === "catastrophe") {
         const holder = officeHolder(state, OFFICE_ID);
         return {
-          state: finishOffice(vacateOffice(next, OFFICE_ID), OFFICE_ID),
+          state: finishOffice(vacateAfterCatastrophe(next, OFFICE_ID), OFFICE_ID),
           summary: `${head} ${playerName(state, holder)}'s Governor General returns to supply.`,
           rngRolls,
         };

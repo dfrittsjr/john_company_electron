@@ -12,7 +12,7 @@ import {
   decisionId,
   playerName,
   shipDestinations,
-  vacateOffice,
+  vacateAfterCatastrophe,
   withCo,
 } from "./context";
 import { finishOffice, type OperationStep } from "./step";
@@ -181,7 +181,7 @@ export const directorStep: OperationStep = (state, command) => {
       if (check.outcome === "catastrophe") {
         const holder = officeHolder(state, OFFICE_ID);
         return {
-          state: finishOffice(vacateOffice(rolled, OFFICE_ID), OFFICE_ID),
+          state: finishOffice(vacateAfterCatastrophe(rolled, OFFICE_ID), OFFICE_ID),
           summary: `Special Envoy was a catastrophic failure [${check.values.join(", ")}]; ${playerName(state, holder)}'s Director of Trade returns to supply.`,
           details,
           rngRolls,

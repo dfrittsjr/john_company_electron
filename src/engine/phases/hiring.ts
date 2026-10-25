@@ -23,6 +23,7 @@ import { createNextCompanyOperationDecision } from "./company-operation";
 import { takeFamilyPiece } from "./family";
 import { hiringResumeHandler } from "./hiring-resume";
 import type { ChairmanElectionState, HireOfficePayload, HireSource, HiringState } from "./hiring.state";
+import { nepotismConsentGuarantors } from "./negotiation";
 import {
   facedownBlackmailInstance,
   registerBlackmailResume,
@@ -664,6 +665,8 @@ function nepotismConsentNeededFrom(state: GameState, payload: HireOfficePayload,
     createHireOfficeCommands(state, payload.officeId).map((command) => (command.payload as HireOfficePayload).candidateId),
   );
   pool.delete(hirer);
+  // A called-in "My consent for nepotism" promise counts as that guarantor's consent (card back).
+  for (const guarantor of nepotismConsentGuarantors(state, hirer)) pool.delete(guarantor);
 
   return orderedFrom(state, hirer).filter((playerId) => pool.has(playerId));
 }

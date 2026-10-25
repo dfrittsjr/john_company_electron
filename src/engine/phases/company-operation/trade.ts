@@ -22,7 +22,7 @@ import {
   playerName,
   presidentOfficeId,
   unplayedBlackmailHolder,
-  vacateOffice,
+  vacateAfterCatastrophe,
   withCo,
 } from "./context";
 import { presidencyProgress, withActivity } from "./presidency-progress";
@@ -323,7 +323,7 @@ export function resolveTradeCheck(
   if (check.outcome === "catastrophe") {
     const president = presidentOf(state, presidency);
     return {
-      state: withActivity(vacateOffice(state, presidentOfficeId(presidency)), presidency, undefined),
+      state: withActivity(vacateAfterCatastrophe(state, presidentOfficeId(presidency)), presidency, undefined),
       note: `${playerName(state, president)}'s President of ${presidency} returns to supply; the Chairman orders the rest of this Presidency.`,
     };
   }

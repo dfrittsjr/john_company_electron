@@ -311,16 +311,9 @@ describe("promise cards (p.8 and card backs)", () => {
     const card = promiseId(RED, "take-my-officeholders-bonus");
     let state = withOffice(negotiationGame("companyOperation"), "president-madras", RED);
     state = give(state, RED, BLUE, [{ kind: "promise", promiseId: card }]);
-    state = recordOfficeholderBonus(state, { officeId: "president-madras", playerId: RED, amount: 4 });
     expect(promiseCallOptions(state, BLUE)).toEqual([]);
-
-    state = {
-      ...state,
-      company: {
-        ...state.company,
-        offices: { ...state.company.offices, "president-madras": { ...state.company.offices["president-madras"], actedThisTurn: true } },
-      },
-    };
+    // Company Operation records a bonus as it pays it, so the office has acted.
+    state = recordOfficeholderBonus(state, { officeId: "president-madras", playerId: RED, amount: 4 });
     expect(promiseCallOptions(state, BLUE).map((option) => option.option)).toEqual([{ officeId: "president-madras" }]);
 
     state = act(state, BLUE, "negotiation.callInPromises", { calls: [{ promiseId: card, option: { officeId: "president-madras" } }] });

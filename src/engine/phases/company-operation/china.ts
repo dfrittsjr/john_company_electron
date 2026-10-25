@@ -9,7 +9,7 @@ import {
   isLawInEffect,
   payOfficeholderBonus,
   playerName,
-  vacateOffice,
+  vacateAfterCatastrophe,
   withCo,
 } from "./context";
 import { finishOffice, type OperationStep } from "./step";
@@ -84,7 +84,7 @@ export const chinaStep: OperationStep = (state, command) => {
   if (check.outcome === "catastrophe") {
     const holder = officeHolder(state, CHINA_OFFICE_ID);
     return {
-      state: finishOffice(vacateOffice(next, CHINA_OFFICE_ID), CHINA_OFFICE_ID),
+      state: finishOffice(vacateAfterCatastrophe(next, CHINA_OFFICE_ID), CHINA_OFFICE_ID),
       summary: `${head} ${playerName(state, holder)}'s Superintendent returns to supply.`,
       rngRolls,
     };

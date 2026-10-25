@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applyCommand, resourceProblems, type GameState } from "../../engine";
+import { payOfficeholderBonus, vacateAfterCatastrophe } from "../../engine/phases/company-operation/context";
+import { withOffice } from "../fixtures/builders";
 import { withCash } from "../fixtures/builders";
 import { applyCommandOrThrow, createHotseatGame } from "../fixtures/game";
 import { atConfirmation, withDisplay, withPensioners } from "../fixtures/london-season";
@@ -166,5 +168,68 @@ describe("dispatcher guards", () => {
       `Red would have ${red.familyMembers.supply - 20} family members in supply.`,
       `Red's family pieces would total -2, not 18.`,
     ]);
+  });
+});
+
+describe("promise hooks", () => {
+  it("records each paid officeholder bonus for the promise card, and voids it on catastrophe", () => {
+    let state = withOffice(createHotseatGame({ seed: "bonus", gameId: "game-bonus" }), "governor-bengal", RED);
+    state = { ...state, phase: "companyOperation" };
+    state = payOfficeholderBonus(state, "governor-bengal", 2).state;
+    expect(state.negotiation.officeholderBonuses).toEqual([
+      expect.objectContaining({ officeId: "governor-bengal", playerId: RED, amount: 2, taken: false }),
+    ]);
+
+    state = vacateAfterCatastrophe(state, "governor-bengal");
+    expect(state.negotiation.officeholderBonuses[0].taken).toBe(true);
+    expect(state.company.offices["governor-bengal"].vacant).toBe(true);
+  });
+
+  it("lends the guarantor's enterprise votes once \"Vote with my enterprises\" is called in (card back)", () => {
+    let state = voteState({ [RED]: 1, [BLUE]: 0 });
+    state = withEnterprises(state, BLUE, [{ type: "workshop", cardId: "workshop-01" }]);
+    const promise = `promise-${BLUE}-vote-with-my-enterprises`;
+    state = act(state, BLUE, "negotiation.give", { to: RED, items: [{ kind: "promise", promiseId: promise }] });
+    const cardVotes = (game: GameState) =>
+      game.pendingDecision.legalCommands.filter((command) => (command.payload as { source?: string }).source === "card");
+    expect(state.pendingDecision.actor).toBe(RED);
+    expect(cardVotes(state)).toEqual([]);
+
+    state = act(state, RED, "negotiation.callInPromises", { calls: [{ promiseId: promise, option: {} }] });
+
+    expect(state.pendingDecision.actor).toBe(RED);
+    expect(cardVotes(state).length).toBeGreaterThan(0);
+  });
+
+  it("gives the guarantor's London Season pick to the holder of \"Take my card\" (card back)", () => {
+    const base = createHotseatGame({ seed: "integration-pick", gameId: "game-integration-pick" });
+    let state = withPensioners(withCash(atConfirmation({ ...base, turn: 2 }, "londonSeason", "londonSeason.confirm"), { [RED]: 2 }), RED, 1);
+    state = withDisplay(state, ["foundry", "stock-broker", "tax-collectors"]);
+    const promise = `promise-${RED}-take-my-card-from-london-season-display`;
+    state = act(state, RED, "negotiation.give", { to: BLUE, items: [{ kind: "promise", promiseId: promise }] });
+    state = confirmSystem(state);
+    state = act(state, BLUE, "negotiation.callInPromises", { calls: [{ promiseId: promise, option: {} }] });
+    const retire = state.pendingDecision.legalCommands.find((command) => command.type === "retirement.retirePensioner")!;
+    state = applyCommandOrThrow(state, { id: "retire", actorId: RED, type: retire.type, payload: retire.payload });
+
+    expect(state.pendingDecision).toEqual(expect.objectContaining({ step: "londonSeason.choosePrestigeCard", actor: BLUE }));
+    const take = state.pendingDecision.legalCommands.find((command) => command.label.includes("Foundry") && command.label.startsWith("Take"))!;
+    state = applyCommandOrThrow(state, { id: "take", actorId: BLUE, type: take.type, payload: take.payload });
+    expect(state.players[BLUE].prestigeCards.map((card) => card.cardId)).toContain("foundry");
+    expect(state.players[RED].prestigeCards).toEqual([]);
+  });
+
+  it("removes the Vote with my enterprises promise when Lady Newcome is taken", () => {
+    const base = createHotseatGame({ seed: "integration-newcome", gameId: "game-integration-newcome" });
+    let state = withPensioners(withCash(atConfirmation({ ...base, turn: 2 }, "londonSeason", "londonSeason.confirm"), { [RED]: 2 }), RED, 1);
+    state = withDisplay(state, ["lady-newcome", "stock-broker", "tax-collectors"]);
+    state = confirmSystem(state);
+    const retire = state.pendingDecision.legalCommands.find((command) => command.type === "retirement.retirePensioner")!;
+    state = applyCommandOrThrow(state, { id: "retire", actorId: RED, type: retire.type, payload: retire.payload });
+    const take = state.pendingDecision.legalCommands.find((command) => command.label.startsWith("Take Lady Newcome"))!;
+    state = applyCommandOrThrow(state, { id: "take", actorId: RED, type: take.type, payload: take.payload });
+
+    const card = state.negotiation.promiseCards.find((candidate) => candidate.id === `promise-${RED}-vote-with-my-enterprises`);
+    expect(card?.removedFromGame).toBe(true);
   });
 });

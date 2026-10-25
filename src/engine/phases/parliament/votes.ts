@@ -1,3 +1,4 @@
+import { enterpriseVoteGuarantors } from "../negotiation";
 import { policyDial } from "../../../data";
 import type { GameState, PlayerId } from "../../types";
 import type { ParliamentSession } from "../parliament.state";
@@ -70,7 +71,8 @@ export function ownedVoteCards(state: GameState, ownerId: PlayerId, session: Par
  * enterprises as if you owned them" promise they have called in this session.
  */
 export function availableVoteCards(state: GameState, voterId: PlayerId, session: ParliamentSession): VoteCardSource[] {
-  const lenders = session.borrowedEnterprises[voterId] ?? [];
+  // Lent through grantEnterpriseVotes, or through the promise called in with Negotiation this phase.
+  const lenders = [...new Set([...(session.borrowedEnterprises[voterId] ?? []), ...enterpriseVoteGuarantors(state, voterId)])];
   const borrowed = lenders.flatMap((lenderId) =>
     ownedVoteCards(state, lenderId, session).filter((source) => {
       const lender = state.players[lenderId];

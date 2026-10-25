@@ -445,6 +445,18 @@ describe("Hiring phase (pp.14-17)", () => {
     expect(state.company.offices["manager-of-shipping"].holder).toBe(RED);
   });
 
+  it("treats a called-in \"My consent for nepotism\" promise as that player's consent (card back)", () => {
+    let state = withOffice(baseGame("consent-promise"), "chairman", RED, { inHiringQueue: false });
+    state = withWriters(withWriters(state, RED, "Bombay", 1), BLUE, "Madras", 1);
+    state = hiring(withHiringQueue(withOffice(state, "manager-of-shipping", undefined), ["manager-of-shipping"]));
+    const promise = `promise-${BLUE}-my-consent-for-nepotism`;
+    state = applyCommandOrThrow(state, { id: "give-promise", actorId: BLUE, type: "negotiation.give", payload: { to: RED, items: [{ kind: "promise", promiseId: promise }] } });
+    state = applyCommandOrThrow(state, { id: "call-promise", actorId: RED, type: "negotiation.callInPromises", payload: { calls: [{ promiseId: promise, option: {} }] } });
+
+    state = choose(state, "Hire Red Bombay writer");
+    expect(state.company.offices["manager-of-shipping"].holder).toBe(RED);
+  });
+
   it("hires your own family member without consent when no other player is in the pool", () => {
     let state = withOffice(baseGame("no-pool"), "chairman", RED, { inHiringQueue: false });
     state = withWriters(state, RED, "Bombay", 1);

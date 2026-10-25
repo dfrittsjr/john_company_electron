@@ -16,7 +16,7 @@ import {
   playerName,
   presidentOfficeId,
   regimentsInSupply,
-  vacateOffice,
+  vacateAfterCatastrophe,
 } from "./context";
 import { presidencyProgress, withActivity, withPresidencyProgress } from "./presidency-progress";
 import { withBoardOfControlOffer, type StepResult } from "./step";
@@ -151,7 +151,7 @@ export function governorStep(
       }
       if (check.outcome === "catastrophe") {
         const holder = officeHolder(state, activity.officeId);
-        next = vacateOffice(next, activity.officeId);
+        next = vacateAfterCatastrophe(next, activity.officeId);
         const progress = presidencyProgress(next, presidency);
         next = withPresidencyProgress(next, {
           ...progress,

@@ -16,7 +16,7 @@ import type {
   RngRollRecord,
 } from "../types";
 import { startFamilyPhase } from "./family";
-import { okResult } from "./negotiation";
+import { okResult, prestigePickTakenBy, promiseGrantFor, removePromiseFromGame, usePromiseGrant } from "./negotiation";
 import {
   blackmailOptionsForCard,
   facedownBlackmailInstance,
@@ -258,15 +258,14 @@ function prestigeDecision(state: GameState, playerId: PlayerId): PendingDecision
     });
   }
 
-  // TODO(NG): before this decision, offer holders of the guarantor's "Take my card from the London
-  // Season Display" promise the chance to take this pick instead (card back: start of the
-  // guarantor's turn in this step). Promise card instances don't carry their type yet.
+  // A called-in "Take my card from the London Season Display" promise: its holder makes this pick.
+  const taker = prestigePickTakenBy(state, playerId) ?? playerId;
 
   return {
     id: `decision-london-season-prestige-t${state.turn}-${playerId}-${state.log.length + 1}`,
     phase: "londonSeason",
     step: "londonSeason.choosePrestigeCard",
-    actor: playerId,
+    actor: taker,
     visibility: "private",
     prompt: `${player.name}: take or discard one card from the London Season Display. You may look at face-down blackmail.`,
     legalCommands,
@@ -281,10 +280,13 @@ function choosePrestigeCard(state: GameState, command: GameCommand): ApplyComman
   if (!findLegalCommand(state, command)) return illegal("That card choice is not one of the listed choices.");
 
   const prestige = state.londonSeason.prestige!;
-  const playerId = prestige.order[prestige.current];
+  const guarantor = prestige.order[prestige.current];
+  // The pick may belong to a promise holder (see prestigeDecision); they take the card.
+  const playerId = state.pendingDecision.actor as PlayerId;
+  const grant = playerId !== guarantor ? promiseGrantFor(state, "take-my-card-from-london-season-display", playerId, guarantor) : undefined;
   const payload = command.payload as { action: "take" | "discard" | "takeTopOfDeck"; slot?: number; cardId?: string };
   let next: GameState = {
-    ...state,
+    ...(grant ? usePromiseGrant(state, grant.id) : state),
     londonSeason: { ...state.londonSeason, prestige: { ...prestige, current: prestige.current + 1 } },
   };
   let summary: string;
@@ -348,7 +350,8 @@ function takeCard(state: GameState, playerId: PlayerId, cardId: string): GameSta
   for (const effect of prestige.effects) next = applySpouseEffect(next, playerId, prestige, effect);
   if (cardId === JOSEPH_SEDLEY) next = sedleyLeavesChairman(next, playerId);
   if (cardId === ESTHER_SUMMERSON) next = discardFaceUpBlackmail(next, playerId);
-  // TODO(NG): Lady Newcome removes her family's "Vote with my enterprises" promise from the game.
+  // Lady Newcome: "Your 'Vote with my enterprises' promise is removed from the game."
+  if (cardId === "lady-newcome") next = removePromiseFromGame(next, playerId, "vote-with-my-enterprises");
 
   if (restrictedHoldings(next, playerId).length > 0) {
     next = { ...next, londonSeason: { ...next.londonSeason, restriction: { playerId, spouseCardId: cardId } } };

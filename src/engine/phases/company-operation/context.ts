@@ -1,5 +1,6 @@
 import { offices, punchboardPieces } from "../../../data";
 import { vacateOfficeWithoutRetirement } from "../../offices";
+import { recordOfficeholderBonus, voidOfficeholderBonuses } from "../negotiation";
 import { chairmanHolder, officeHolder } from "../../selectors";
 import type {
   ArmyId,
@@ -159,8 +160,8 @@ export type BonusRecipient = { kind: "player"; playerId: PlayerId } | { kind: "c
 
 /**
  * Officeholder bonuses (the green boxes on office cards, p.5). Trade Regulations (law #40) sends the
- * President's bonus to the Company Balance instead.
- * TODO(NG): the "Take my officeholder's bonus" promise card redirects a bonus to the promise holder.
+ * President's bonus to the Company Balance instead. Each paid bonus is recorded with Negotiation so
+ * a "Take my officeholder's bonus" promise holder can claim it (promise card back).
  */
 export function payOfficeholderBonus(
   state: GameState,
@@ -175,7 +176,10 @@ export function payOfficeholderBonus(
   const holder = officeHolder(state, officeId);
   if (!holder) return { state, recipient: { kind: "none" } };
 
-  return { state: payPlayer(state, holder, amount), recipient: { kind: "player", playerId: holder } };
+  return {
+    state: recordOfficeholderBonus(payPlayer(state, holder, amount), { officeId, playerId: holder, amount }),
+    recipient: { kind: "player", playerId: holder },
+  };
 }
 
 /**
@@ -184,6 +188,14 @@ export function payOfficeholderBonus(
  */
 export function vacateOffice(state: GameState, officeId: OfficeId): GameState {
   return vacateOfficeWithoutRetirement(state, officeId);
+}
+
+/**
+ * Catastrophic failure (p.17). A Governor removed this way forfeits the bonuses it made this turn
+ * to "Take my officeholder's bonus" promise holders (promise card back).
+ */
+export function vacateAfterCatastrophe(state: GameState, officeId: OfficeId): GameState {
+  return voidOfficeholderBonuses(vacateOffice(state, officeId), officeId);
 }
 
 export function regimentsInSupply(state: GameState): number {
