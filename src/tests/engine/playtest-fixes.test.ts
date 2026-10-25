@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GameState } from "../../engine";
+import { createNewGame } from "../../engine";
 import { withOffice } from "../fixtures/builders";
 import { choose, hasCommand, parliamentState, withBlackmail } from "../fixtures/parliament";
 
@@ -44,5 +45,23 @@ describe("Blackmail reactions restore a playable decision (Man on the Inside, p.
     expect(state.players[YELLOW].blackmailCards.find((card) => card.cardId === "scandal-on-leadenhall-street")?.facedown).toBe(false);
     expect(hasCommand(state, "revenue.playScandal", (payload) => Boolean(payload.cardInstanceId))).toBe(false);
     expect(state.pendingDecision.step).not.toBe("negotiation.blackmailReaction");
+  });
+});
+
+describe("Setup", () => {
+  it("starts the Company Balance at 5 (setup step 4, p.4)", () => {
+    const state = createNewGame({
+      mode: "hotseat",
+      scenario: "1710",
+      seed: "balance",
+      gameId: "game-balance",
+      now: "2026-06-13T12:00:00.000Z",
+      players: [
+        { id: RED, name: "Red", color: "red" },
+        { id: BLUE, name: "Blue", color: "blue" },
+        { id: YELLOW, name: "Yellow", color: "yellow" },
+      ],
+    });
+    expect(state.company.balance).toBe(5);
   });
 });

@@ -1814,7 +1814,7 @@ describe("command application", () => {
       applyCommandOrThrow(state, { id, actorId: "player-red", type: "companyOperation.chairman", payload });
     state = chairman("command-chairman-debt", { action: "debt" });
     expect(state.company.debt).toBe(1);
-    expect(state.company.balance).toBe(5);
+    expect(state.company.balance).toBe(10);
     // p.18: the whole Balance must be allocated before the Chairman may finish.
     expect(state.pendingDecision.legalCommands).not.toContainEqual(
       expect.objectContaining({ payload: { action: "finish" } }),
@@ -1824,6 +1824,7 @@ describe("command application", () => {
     state = chairman("command-chairman-shipping-3", { action: "allocate", officeId: "manager-of-shipping", amount: 1 });
     state = chairman("command-chairman-shipping-4", { action: "allocate", officeId: "manager-of-shipping", amount: 1 });
     state = chairman("command-chairman-bombay", { action: "allocate", officeId: "president-bombay", amount: 1 });
+    state = chairman("command-chairman-madras", { action: "allocate", officeId: "president-madras", amount: 5 });
     expect(state.company.balance).toBe(0);
     state = chairman("command-chairman-finish", { action: "finish" });
 

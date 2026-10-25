@@ -381,7 +381,7 @@ function createInitialCompanyState(scenario: ScenarioDefinition): CompanyState {
   return {
     standing: tracks.standingSpace ?? 4,
     debt: tracks.debt ?? 0,
-    balance: 0,
+    balance: 5,
     // Company share value magnitude: 1 from the Court's printed +1/-1; 1813 starts with the +2/-2 token.
     shareValue: scenario.id === "1813" ? 2 : 1,
     failed: false,

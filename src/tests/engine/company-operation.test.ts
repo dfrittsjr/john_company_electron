@@ -449,7 +449,7 @@ describe("Governor General (p.26)", () => {
 
     expect(state.pendingDecision.step).toBe("companyOperation.governorGeneral.begin");
     state = choose(state, { action: "collect" });
-    expect(state.company.balance).toBe(6);
+    expect(state.company.balance).toBe(11);
 
     const blue = state.players[BLUE].cash;
     const governed = withDice(
@@ -465,7 +465,7 @@ describe("Governor General (p.26)", () => {
     next = choose(next, { action: "taxUnrest", regionId: "bengal" });
     next = choose(next, { action: "regiment", army: "Bombay" });
 
-    expect(next.company.balance).toBe(8);
+    expect(next.company.balance).toBe(13);
     expect(next.india.regions.bengal.unrest).toBe(1);
     // One Govern per turn: only Finish remains.
     expect(payloads(next)).toEqual([{ action: "finish" }]);
