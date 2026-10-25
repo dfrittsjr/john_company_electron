@@ -14,6 +14,11 @@ export function nextActorName(game: GameState): string {
   const actor = game.pendingDecision.actor;
   if (actor === "simultaneous") return "everyone";
   if (actor === "system") return "anyone";
+  // The Crown acts through whoever chooses for it; otherwise whoever holds the game lets it act.
+  if (game.players[actor]?.isCrown) {
+    const chooser = game.pendingDecision.crown?.chooser;
+    return chooser ? game.players[chooser]?.name ?? chooser : "anyone";
+  }
 
   return game.players[actor]?.name ?? actor;
 }

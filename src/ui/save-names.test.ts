@@ -52,4 +52,12 @@ describe("suggestedSaveName", () => {
       suggestedSaveName(gameAt({ scenario: "1813", turn: 5, phase: "firms", actor: "simultaneous" })),
     ).toBe("1813-t5-firms-for-everyone.joco");
   });
+
+  test("names a Crown decision after whoever chooses for the Crown, else anyone", () => {
+    const players = { crown: { name: "The Crown", isCrown: true }, "player-ann": { name: "Ann" } };
+    const at = (crown: unknown) =>
+      ({ ...gameAt({ scenario: "1710", turn: 2, phase: "hiring", actor: "crown", players }), pendingDecision: { actor: "crown", crown } }) as unknown as GameState;
+    expect(suggestedSaveName(at({ all: [], reason: "", chooser: "player-ann" }))).toBe("1710-t2-hiring-for-Ann.joco");
+    expect(suggestedSaveName(at({ all: [], reason: "" }))).toBe("1710-t2-hiring-for-anyone.joco");
+  });
 });
