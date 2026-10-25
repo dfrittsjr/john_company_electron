@@ -250,7 +250,14 @@ function prestigeDecision(state: GameState, playerId: PlayerId): PendingDecision
 
   // Becky Sharp: "you may take a card from the top of the deck instead as long as there is at
   // least one card in the display."
-  if (playerHasPrestigeCard(state, playerId, BECKY_SHARP) && state.londonSeason.deck.length > 0) {
+  // Esther Summerson (#12): "You may no longer take or own blackmail cards", so a blackmail on top
+  // of the deck cannot be taken.
+  const topOfDeck = state.londonSeason.deck[0];
+  if (
+    playerHasPrestigeCard(state, playerId, BECKY_SHARP) &&
+    topOfDeck !== undefined &&
+    (!noBlackmail || prestigeById.has(topOfDeck))
+  ) {
     legalCommands.push({
       type: "londonSeason.choosePrestigeCard",
       label: "Take the top card of the deck (Becky Sharp)",

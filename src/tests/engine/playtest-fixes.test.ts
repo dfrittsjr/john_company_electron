@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { GameState } from "../../engine";
 import { createNewGame } from "../../engine";
 import { createRngState, rollDie } from "../../engine/rng";
-import { atConfirmation } from "../fixtures/london-season";
+import { atConfirmation, withDisplay, withPensioners, withPrestigeCards } from "../fixtures/london-season";
+import { withCash } from "../fixtures/builders";
+// from "../fixtures/london-season";
 import { applyCommandOrThrow } from "../fixtures/game";
 import { withOffice } from "../fixtures/builders";
 import { createHotseatGame } from "../fixtures/game";
@@ -97,5 +99,31 @@ describe("Tenure Limits (law #37)", () => {
   it("without the law a low roll leaves the Chairman in office", () => {
     const state = applyCommandOrThrow(londonSeason([]), { id: "tenure-2", actorId: "system", type: "londonSeason.confirm", payload: {} });
     expect(state.company.offices.chairman.vacant).toBe(false);
+  });
+});
+
+describe("Esther Summerson (card #12)", () => {
+  function beckyState(topOfDeck: string): GameState {
+    let state = createHotseatGame({ seed: "be1" });
+    state = atConfirmation({ ...state, turn: 2 }, "londonSeason", "londonSeason.confirm");
+    state = withPensioners(state, RED, 1);
+    state = withCash(state, { [RED]: 5 });
+    state = withPrestigeCards(state, RED, ["becky-sharp", "esther-summerson"]);
+    state = withDisplay(state, ["shipbuilders", "foundry", "social-magazine"], [topOfDeck, "labour-newspaper"]);
+    state = applyCommandOrThrow(state, { id: "be-1", actorId: "system", type: "londonSeason.confirm", payload: {} });
+    // Retiring the pensioner earns a Prestige Cards pick.
+    const retire = state.pendingDecision.legalCommands.find((command) => command.label.includes("£2 prize"));
+    return applyCommandOrThrow(state, { id: "be-2", actorId: RED, type: retire!.type, payload: retire!.payload });
+  }
+
+  it("Becky Sharp's top-of-deck option is not offered when the top card is blackmail", () => {
+    const state = beckyState("company-fraud");
+    expect(state.pendingDecision.step).toBe("londonSeason.choosePrestigeCard");
+    expect(hasCommand(state, "londonSeason.choosePrestigeCard", (payload) => payload.action === "takeTopOfDeck")).toBe(false);
+  });
+
+  it("Becky Sharp's top-of-deck option is still offered when the top card is a prestige card", () => {
+    const state = beckyState("labour-newspaper");
+    expect(hasCommand(state, "londonSeason.choosePrestigeCard", (payload) => payload.action === "takeTopOfDeck")).toBe(true);
   });
 });
