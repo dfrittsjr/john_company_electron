@@ -277,14 +277,14 @@ describe("London Season attrition (p.11)", () => {
 });
 
 describe("Chairman debt and allocation (p.18)", () => {
-  function chairmanState(options: { debt: number; balance: number }): GameState {
+  function chairmanState(options: { debt: number; balance: number; owners?: string[] }): GameState {
     let state = createHotseatGame({ seed: "chairman-debt", gameId: "game-chairman-debt" });
     state = withOffice(state, "chairman", "player-red");
     state = withOffice(state, "manager-of-shipping", "player-blue");
-    state = withCourtShares(state, [
-      { id: "share-red-1", owner: "player-red" },
-      { id: "share-blue-1", owner: "player-blue" },
-    ]);
+    state = withCourtShares(
+      state,
+      (options.owners ?? ["player-red", "player-blue"]).map((owner, index) => ({ id: `share-${owner}-${index}`, owner })),
+    );
     state = withHiringQueue(withNoSupply(state), []);
     const ready: GameState = {
       ...state,
@@ -348,31 +348,50 @@ describe("Chairman debt and allocation (p.18)", () => {
     expect(offersDebt(chairmanState({ debt: 7, balance: 0 }))).toBe(true);
   });
 
-  it("asks for Company-share majority consent beyond three advances", () => {
-    let state = chairmanState({ debt: 0, balance: 0 });
+  it("asks the shareholders in turn from the Chairman's left beyond three advances (p.18)", () => {
+    // Red is Chairman (1 share) and Blue and Yellow hold one each: 3 shares, a majority is 2.
+    let state = chairmanState({ debt: 0, balance: 0, owners: ["player-blue", "player-yellow"] });
     for (let advance = 0; advance < 3; advance += 1) state = chairmanOrThrow(state, { action: "debt" });
     state = chairmanOrThrow(state, { action: "debt" });
 
     expect(state.pendingDecision.step).toBe("companyOperation.debtConsent");
-    // Two Court shares plus the Chairman's piece.
+    expect(state.pendingDecision.actor).toBe("player-blue");
     expect(state.pendingDecision.prompt).toContain("3 Company shares");
     expect(state.company.debt).toBe(3);
     expectSaveRoundTripPreservesPendingDecision(state);
 
-    const accepted = applyFirstLegalCommand(state, { commandId: "command-consent", actorId: "system" });
+    // Blue's consent plus the Chairman's own share is a majority: Yellow is never asked.
+    const accepted = applyFirstLegalCommand(state, { commandId: "command-consent", actorId: "player-blue" });
     expect(accepted.company.debt).toBe(4);
     expect(accepted.company.balance).toBe(20);
     expect(accepted.pendingDecision.step).toBe("companyOperation.chairman");
   });
 
-  it("returns to the Chairman with no further advances when the Court refuses", () => {
-    let state = chairmanState({ debt: 0, balance: 0 });
+  it("goes on to the next shareholder after a refusal while a majority is still possible", () => {
+    let state = chairmanState({ debt: 0, balance: 0, owners: ["player-blue", "player-yellow"] });
+    for (let advance = 0; advance < 4; advance += 1) state = chairmanOrThrow(state, { action: "debt" });
+    const refuse = (s: GameState, actorId: string) => {
+      const command = s.pendingDecision.legalCommands.find((legal) => legal.label === "Refuse");
+      return applyCommandOrThrow(s, { id: `command-refuse-${actorId}`, actorId, type: command?.type ?? "", payload: command?.payload });
+    };
+
+    state = refuse(state, "player-blue");
+    expect(state.pendingDecision.step).toBe("companyOperation.debtConsent");
+    expect(state.pendingDecision.actor).toBe("player-yellow");
+    state = applyFirstLegalCommand(state, { commandId: "command-consent-yellow", actorId: "player-yellow" });
+    expect(state.company.debt).toBe(4);
+  });
+
+  it("stops asking as soon as a majority is impossible, with no further advances", () => {
+    let state = chairmanState({ debt: 0, balance: 0, owners: ["player-blue", "player-blue", "player-yellow"] });
     for (let advance = 0; advance < 4; advance += 1) state = chairmanOrThrow(state, { action: "debt" });
 
-    const refuse = state.pendingDecision.legalCommands.find((command) => command.label === "Majority refuses");
+    // Blue holds 2 of 4 shares and refuses: 4 - 2 < 3, so Yellow is not asked.
+    expect(state.pendingDecision.actor).toBe("player-blue");
+    const refuse = state.pendingDecision.legalCommands.find((command) => command.label === "Refuse");
     const refused = applyCommandOrThrow(state, {
       id: "command-refuse",
-      actorId: "system",
+      actorId: "player-blue",
       type: refuse?.type ?? "",
       payload: refuse?.payload,
     });
@@ -380,6 +399,13 @@ describe("Chairman debt and allocation (p.18)", () => {
     expect(refused.pendingDecision.step).toBe("companyOperation.chairman");
     expect(refused.company.debt).toBe(3);
     expect(offersDebt(refused)).toBe(false);
+  });
+
+  it("needs no question when the Chairman's own shares are already a majority", () => {
+    let state = chairmanState({ debt: 0, balance: 0, owners: ["player-red", "player-blue"] });
+    for (let advance = 0; advance < 4; advance += 1) state = chairmanOrThrow(state, { action: "debt" });
+    expect(state.company.debt).toBe(4);
+    expect(state.pendingDecision.step).toBe("companyOperation.chairman");
   });
 });
 

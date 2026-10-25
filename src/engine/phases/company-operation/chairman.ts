@@ -1,6 +1,6 @@
 import { MAX_COMPANY_DEBT } from "../../../data";
-import { COMPANY_TREASURY_OFFICE_IDS, chairmanHolder, companyShareCount } from "../../selectors";
-import type { GameCommand, GameState, LegalCommand, OfficeId, PendingDecision } from "../../types";
+import { COMPANY_TREASURY_OFFICE_IDS, chairmanHolder, clockwiseFrom, companyShareCount, companySharesByPlayer } from "../../selectors";
+import type { GameCommand, GameState, LegalCommand, OfficeId, PendingDecision, PlayerId } from "../../types";
 import type { OfficeProgress } from "../company-operation.state";
 import {
   GOVERNOR_GENERAL_OFFICE_ID,
@@ -62,7 +62,7 @@ export function chairmanDecision(state: GameState): PendingDecision {
 
   if (balance > 0) {
     for (const officeId of chairmanAllocationTargets(state)) {
-      const amounts = [...new Set([1, Math.min(5, balance), balance])].filter((amount) => amount <= balance);
+      const amounts = [...new Set([1, 2, 3, 5, 10, balance])].filter((amount) => amount <= balance).sort((a, b) => a - b);
       for (const amount of amounts) {
         commands.push({
           type: "companyOperation.chairman",
@@ -101,6 +101,17 @@ export const chairmanStep: OperationStep = (state, command) => {
 
   if (payload.action === "debt") {
     if (current.debtAdvances >= FREE_DEBT_ADVANCES) {
+      const tally = consentTally(state);
+      if (tally.consenting >= tally.majority) {
+        const result = advanceDebt(state, current);
+        return { ...result, summary: `The Chairman's own shares are a majority of the ${tally.total} Company shares. ${result.summary}` };
+      }
+      if (tally.pending.length === 0) {
+        return {
+          state: withCo(state, { current: { ...current, consentRefused: true } }),
+          summary: "No other shareholder can make a majority: no further Debt advances this turn.",
+        };
+      }
       return {
         state: withCo(state, { current, interrupt: { kind: "debtConsent" } }),
         summary: `The Chairman asked the Court to approve Debt advance ${current.debtAdvances + 1}.`,
@@ -152,24 +163,52 @@ function advanceDebt(state: GameState, current: ChairmanProgress) {
 
 export type DebtConsentPayload = { accepted: boolean };
 
-export function debtConsentDecision(state: GameState): PendingDecision {
+type ConsentTally = { pending: PlayerId[]; consenting: number; refusing: number; total: number; majority: number };
+
+/**
+ * Chairman Debt (p.18): "the consent of players who control a majority of Company shares". The
+ * Chairman's own shares count as consent; the other shareholders are asked in turn from the
+ * Chairman's left (Family/Hiring order for nepotism), until a majority has consented or can no
+ * longer be reached.
+ */
+function consentTally(state: GameState): ConsentTally {
+  const interrupt = coState(state).interrupt;
+  const open = interrupt?.kind === "debtConsent" ? interrupt : { kind: "debtConsent" as const };
+  const chairman = chairmanHolder(state);
+  const counts = companySharesByPlayer(state);
+  const total = companyShareCount(state);
+  const order = clockwiseFrom(state, chairman).filter((playerId) => playerId !== chairman && (counts.get(playerId) ?? 0) > 0);
   return {
-    id: decisionId(state, "company-operation-debt-consent"),
+    pending: open.pending ?? order,
+    consenting: open.consenting ?? (chairman ? (counts.get(chairman) ?? 0) : 0),
+    refusing: open.refusing ?? 0,
+    total,
+    majority: Math.floor(total / 2) + 1,
+  };
+}
+
+export function debtConsentDecision(state: GameState): PendingDecision {
+  const tally = consentTally(state);
+  const asked = tally.pending[0];
+  const shares = asked ? (companySharesByPlayer(state).get(asked) ?? 0) : 0;
+  const askedName = asked ? (state.players[asked]?.name ?? asked) : "system";
+  return {
+    id: decisionId(state, `company-operation-debt-consent-${asked ?? "none"}`),
     phase: "companyOperation",
     step: "companyOperation.debtConsent",
-    actor: "system",
+    actor: asked ?? "system",
     visibility: "public",
-    prompt: `Do players holding a majority of the ${companyShareCount(state)} Company shares (the Chairman counts) consent to another Debt advance?`,
+    prompt: `${askedName}: do you consent to another Company Debt advance? You hold ${shares} of ${tally.total} Company shares; a majority (${tally.majority}) must consent, with ${tally.consenting} consenting so far (the Chairman's own count).`,
     legalCommands: [
       {
         type: "companyOperation.resolveDebtConsent",
-        label: "Majority consents",
+        label: "Consent to the Debt advance",
         payload: { accepted: true } satisfies DebtConsentPayload,
       },
       {
         type: "companyOperation.resolveDebtConsent",
-        label: "Majority refuses",
-        description: "No further Debt advances this turn.",
+        label: "Refuse",
+        description: "A refusal may end the request if a majority is no longer possible.",
         payload: { accepted: false } satisfies DebtConsentPayload,
       },
     ],
@@ -180,13 +219,27 @@ export function debtConsentDecision(state: GameState): PendingDecision {
 export const debtConsentStep: OperationStep = (state, command: GameCommand) => {
   const payload = command.payload as DebtConsentPayload;
   const current = progress(state);
-  if (payload.accepted) {
-    const result = advanceDebt(state, current);
-    return { ...result, summary: `The Court consented. ${result.summary}` };
-  }
+  const tally = consentTally(state);
+  const asked = tally.pending[0];
+  const shares = asked ? (companySharesByPlayer(state).get(asked) ?? 0) : 0;
+  const consenting = tally.consenting + (payload.accepted ? shares : 0);
+  const refusing = tally.refusing + (payload.accepted ? 0 : shares);
+  const remaining = tally.pending.slice(1);
+  const askedName = asked ? (state.players[asked]?.name ?? asked) : "The Court";
+  const answer = `${askedName} ${payload.accepted ? "consented to" : "refused"} the Debt advance (${shares} share${shares === 1 ? "" : "s"}).`;
 
+  if (consenting >= tally.majority) {
+    const result = advanceDebt(state, current);
+    return { ...result, summary: `${answer} A majority of Company shares consented. ${result.summary}` };
+  }
+  if (tally.total - refusing < tally.majority || remaining.length === 0) {
+    return {
+      state: withCo(state, { current: { ...current, consentRefused: true }, interrupt: undefined }),
+      summary: `${answer} A majority of Company shares cannot consent: no further Debt advances this turn.`,
+    };
+  }
   return {
-    state: withCo(state, { current: { ...current, consentRefused: true }, interrupt: undefined }),
-    summary: "The Court refused another Debt advance.",
+    state: withCo(state, { current, interrupt: { kind: "debtConsent", pending: remaining, consenting, refusing } }),
+    summary: answer,
   };
 };

@@ -97,7 +97,15 @@ export type PendingCheck =
     };
 
 export type OperationInterrupt =
-  | { kind: "debtConsent" }
+  | {
+      kind: "debtConsent";
+      /** Shareholders still to be asked, in order from the Chairman's left (p.18). */
+      pending?: PlayerId[];
+      /** Company shares whose owners have consented so far (the Chairman's own count). */
+      consenting?: number;
+      /** Company shares whose owners have refused so far. */
+      refusing?: number;
+    }
   | {
       kind: "connection";
       cardId: "mercantile-connection" | "diplomatic-connection";
