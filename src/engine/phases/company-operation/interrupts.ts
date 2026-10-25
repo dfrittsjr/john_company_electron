@@ -1,4 +1,5 @@
 import { rollCheck } from "../../checks";
+import { crownEffects } from "../../crown/state";
 import { PRESIDENCY_IDS, clockwiseFrom, commanderOf, officeHolder, presidentOf } from "../../selectors";
 import type { ArmyId, GameState, LegalCommand, PendingDecision, PlayerId, RngRollRecord } from "../../types";
 import { appendLog, nepotismConsentGuarantors, registerDecisionRefresher } from "../negotiation";
@@ -72,9 +73,14 @@ export function interruptDecision(state: GameState, interrupt: OperationInterrup
     }
     case "allianceConsent": {
       const definition = localAlliances.find((alliance) => alliance.id === interrupt.allianceId)!;
-      return decision(state, "allianceConsent", presidentOf(state, interrupt.presidency) ?? "system", `The Commander asks the President of ${interrupt.presidency} to pay £${definition.cost} for ${definition.name}.`, [
+      const president = presidentOf(state, interrupt.presidency);
+      // Crown favour (Handbook p.11): a President who paid for the Crown's extra Local Alliance must consent.
+      const bound = crownEffects(state, "presidencies.commander.alliance.extra").some(
+        (effect) => effect.by === president && (effect.option as { scope?: string } | undefined)?.scope === `commander:${interrupt.presidency}`,
+      );
+      return decision(state, "allianceConsent", president ?? "system", `The Commander asks the President of ${interrupt.presidency} to pay £${definition.cost} for ${definition.name}.${bound ? " You paid the Crown for an extra Local Alliance, so you must consent." : ""}`, [
         command("Approve the purchase", { action: "approveAlliance" }),
-        command("Refuse", { action: "refuseAlliance" }),
+        ...(bound ? [] : [command("Refuse", { action: "refuseAlliance" })]),
       ]);
     }
     case "boardOfControl": {

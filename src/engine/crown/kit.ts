@@ -44,7 +44,11 @@ export type CrownArea = {
 };
 
 /** Where a favour is printed: a Handbook page and the start of its text, or the Crown's board. */
-export type CrownFavorSource = { page: number; text: string } | { board: string; take?: boolean };
+export type CrownFavorSource =
+  // `nth`: which one (from 0) when several favours on the page start with the same text (p.13's two
+  // "Increase or decrease the required number of dice by 1").
+  | { page: number; text: string; nth?: number }
+  | { board: string; take?: boolean };
 
 export type CrownFavorDefinition = {
   /** Stable and readable, e.g. "chairman.seekDebt.extra". */
@@ -142,8 +146,12 @@ export function printedFavor(source: CrownFavorSource): { text: string; cost: st
     return { text: favor.text, cost: source.take ? favor.take ?? "—" : favor.gain };
   }
   const matches = handbookFavors.filter(({ page, favor }) => page === source.page && favor.text.startsWith(source.text));
-  if (matches.length !== 1) throw new Error(`${matches.length} Handbook favours on p.${source.page} start "${source.text}".`);
-  const { favor } = matches[0];
+  if (matches.length !== 1 && source.nth === undefined) {
+    throw new Error(`${matches.length} Handbook favours on p.${source.page} start "${source.text}".`);
+  }
+  const match = matches[source.nth ?? 0];
+  if (!match) throw new Error(`No favour number ${source.nth} on p.${source.page} starts "${source.text}".`);
+  const { favor } = match;
   return { text: favor.text, cost: typeof favor.cost === "string" ? favor.cost : JSON.stringify(favor.cost) };
 }
 
@@ -153,7 +161,7 @@ export function printedCost(state: GameState, source: CrownFavorSource): number 
   if ("board" in source) {
     cost = printedFavor(source).cost;
   } else {
-    const { favor } = handbookFavors.find(({ page, favor }) => page === source.page && favor.text.startsWith(source.text))!;
+    const { favor } = handbookFavors.filter(({ page, favor }) => page === source.page && favor.text.startsWith(source.text))[source.nth ?? 0];
     cost = typeof favor.cost === "string" ? favor.cost : favor.cost[crownClimate(state)];
   }
   const text = cost.trim();

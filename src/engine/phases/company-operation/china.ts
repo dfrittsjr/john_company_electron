@@ -1,4 +1,5 @@
 import { rollCheck } from "../../checks";
+import { clearScopedCrownEffects } from "../../crown/state";
 import { officeHolder } from "../../selectors";
 import type { GameState, LegalCommand, PendingDecision } from "../../types";
 import {
@@ -58,8 +59,9 @@ export function chinaDecision(state: GameState): PendingDecision {
   };
 }
 
-export const chinaStep: OperationStep = (state, command) => {
+export const chinaStep: OperationStep = (start, command) => {
   const payload = command.payload as ChinaPayload;
+  const state = clearScopedCrownEffects(start, "presidencies.china.", "china");
   if (payload.action === "finish") {
     return { state: finishOffice(state, CHINA_OFFICE_ID), summary: "The Superintendent of Trade in China finished." };
   }

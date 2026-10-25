@@ -1,3 +1,4 @@
+import { clearScopedCrownEffects } from "../../crown/state";
 import { chairmanHolder, commanderOf, officeHolder, presidentOf } from "../../selectors";
 import type { GameState, LegalCommand, OfficeId, PendingDecision, PresidencyId } from "../../types";
 import { coState, decisionId, officeLabel, playerName, presidentOfficeId, regionPresidencyId } from "./context";
@@ -137,6 +138,7 @@ export const presidencyStep: OperationStep = (state, command) => {
         summary: `The ${officeLabel(payload.officeId)} began acting.`,
       };
     case "end": {
+      state = clearScopedCrownEffects(state, "presidencies.trade.", `trade:${presidency}`);
       // With no successful Trade this turn the firms fill after everyone else has acted (p.40).
       if (isDeregulated(state) && pendingFillers(state, presidency).length > 0) {
         const started = startFirmFill(state, presidency, undefined, true);
