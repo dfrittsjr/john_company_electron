@@ -187,3 +187,28 @@ a {
     columns: 1;
   }
 }
+
+.rules-figure {
+  margin: 16px 0;
+  max-width: 800px;
+}
+
+.rules-figure a {
+  display: block;
+}
+
+.rules-figure img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid #cfc3b1;
+  border-radius: 4px;
+  background: #f4ecdc;
+}
+
+.rules-figure figcaption {
+  margin-top: 4px;
+  color: #6c6155;
+  font-size: 13px;
+  font-style: italic;
+}

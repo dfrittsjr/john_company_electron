@@ -1,6 +1,6 @@
 ---
 import SiteLayout from "../layouts/SiteLayout.astro";
-import { RULES_ATTRIBUTION, rulesSections } from "../data/rules-text";
+import { RULES_ATTRIBUTION, figureCaption, rulesSections } from "../data/rules-text";
 ---
 
 <SiteLayout title="Rules">
@@ -43,6 +43,14 @@ import { RULES_ATTRIBUTION, rulesSections } from "../data/rules-text";
             <p>{block.text}</p>
           ),
         )}
+        {(section.figures ?? []).map((figure) => (
+          <figure class="rules-figure">
+            <a href={figure.src} target="_blank" rel="noreferrer" title="Open full size">
+              <img src={figure.src} alt={figure.alt} width={figure.width} height={figure.height} loading="lazy" />
+            </a>
+            <figcaption>{figureCaption(figure)}</figcaption>
+          </figure>
+        ))}
       </section>
     ))
   }
