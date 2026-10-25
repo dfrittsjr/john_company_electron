@@ -1,4 +1,4 @@
-import { componentManifest, localAlliances, lootTokens, mapData, offices, stockExchangeTrack } from "../data";
+import { componentManifest, localAlliances, lootTokens, mapData, offices, scenarios, stockExchangeTrack } from "../data";
 import type { ScenarioDefinition } from "../data/types";
 import { createInitialCompanyOperationState } from "./phases/company-operation.state";
 import { createInitialEventsInIndiaState } from "./phases/events-in-india.state";
@@ -172,7 +172,7 @@ export function createNewGame(options: NewGameOptions): GameState {
         state,
         now: createdAt,
         type: "game.created",
-        summary: `${modeLabel(options.mode)} game created for the ${options.scenario} scenario.`,
+        summary: `${modeLabel(options.mode)} game created for the ${scenarios.find((scenario) => scenario.id === options.scenario)?.name ?? options.scenario} scenario.`,
         details: {
           mode: options.mode,
           scenario: options.scenario,

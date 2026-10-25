@@ -1,6 +1,6 @@
 # Status
 
-Current state of the 1710 build. Details live in the phase notes:
+Current state of the build: 1710 and Long 1710 with Deregulation. Details live in the phase notes:
 
 - `docs/phase-build-guide.md`: scope, decision design, rulings, ownership.
 - `docs/phases/*.md`: each phase's rules coverage and assumptions. Their "for other areas" lists
@@ -25,20 +25,25 @@ Current state of the 1710 build. Details live in the phase notes:
   face-down card), live WebSocket updates, server-side undo, table-talk chat, `.joco` import and
   export, and Turnstile on create and join. See `online/server.md`.
 - **Six-player playtest:** a full game through the web UI reached turn 5 with the Company alive.
+- **Deregulation and Long 1710 (pp.36-42):** the Vote to Deregulate, the Firms phase (forming,
+  investing, ships, takeovers, mergers, dissolution, secret strategies), firm trading in initiative
+  order with half-value refills, firm expenses and dividends with emergency rescues, storms on firm
+  ships, special retirements, and firm shares and Debtor's Prison in Final Scoring. Long 1710 runs
+  to turn 8 and can be started in hotseat and online. See `phases/deregulation.md`.
 - **Undo and rules reference:** step-back undo that refuses dice, draws and reveals; the rulebook
   text in a searchable panel and on `/rules`.
-- **Save format:** schema 3, ruleset `john-company-2e-data-3`. Older saves are refused with a
-  readable message.
+- **Save format:** schema 3, ruleset `john-company-2e-data-3`. Deregulation only added optional
+  fields, so 1710 saves from before it still load. Older schemas are refused with a readable message.
 
 ## Next
 
 - **Human playtest:** play a full 1710 game with the group and fix what comes up.
 - **Rules questions:** confirm the assumptions recorded in the phase notes with the group.
 - **Online polish:** a fork warning for file mode, and the remaining gaps in `online/server.md`.
-- **Plans:** `plans/remaining-game.md` (Deregulation and firms, Long 1710, 1758, 1813, draft
-  variant, the Crown) and `plans/online-multiplayer.md` (Cloudflare Worker and Durable Objects).
+- **Plans:** `plans/remaining-game.md` (1758, 1813, draft variant, the Crown) and
+  `plans/online-multiplayer.md` (Cloudflare Worker and Durable Objects).
 
-## Later (out of scope for 1710)
+## Later
 
-- Deregulation and firms, the Vote to Deregulate, 1758/1813 setup and maps.
+- 1758 and 1813 setup and maps.
 - The Crown (solo and two-player AI).

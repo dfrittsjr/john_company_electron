@@ -1,5 +1,10 @@
 # Deregulation and firms (rulebook pp.36-42)
 
+**Status: built.** Each area's rules coverage and assumptions are in `deregulation-vr.md` (Vote and
+Revenue), `deregulation-fp.md` (Firms phase), `deregulation-tr.md` (trading and storms),
+`deregulation-sc.md` (special retirement, scoring, Refresh) and `deregulation-ui.md`. Integration
+notes are at the end of this file.
+
 The shared spec for building Deregulation. Scope: everything in pp.36-42, plus making **Long 1710**
 (8 turns, Vote to Deregulate available) playable. 1758 and 1813 setup are out of scope.
 
@@ -71,3 +76,15 @@ So the areas agree. Record any further assumption in your own notes, with a test
 - Optional Dividends (p.42): Blue 2 shares + manager, Yellow 2, £8 paid as £4 each.
 - Vote to Deregulate pass and fail (p.36); Debt halved, Standing to "S" (£10, the `deregulationReset`
   space).
+
+## Integration notes
+
+- **Save format** stays at schema 3: every Deregulation field is optional, and 1710 saves from
+  before it load and play on (checked with a six-player playtest save).
+- **Firm shares in Deals & Cards:** one checkbox per share; shares of one firm combine into one
+  `firmShare` transfer item.
+- **Harness:** `--deregulated` starts a deregulated Long 1710 game; `--until <step prefix>` stops
+  random play at a decision; the greedy policy forms firms, fits ships, bids a few dice, pays
+  dividends and agrees to firm requests. Greedy, funded four-player games run all 8 turns with
+  firms trading, paying dividends and dissolving; random games exercise takeovers, mergers and
+  rescues.

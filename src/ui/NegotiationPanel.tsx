@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { prestigeCards, prizes } from "../data";
 import {
+  allFirms,
   blackmailCardName,
+  firmName,
   blackmailPlayChoices,
   promiseCallOptions,
   promiseCardsHeldBy,
@@ -61,6 +63,17 @@ function transferableAssets(game: GameState, playerId: PlayerId, showIdentities:
   for (const share of game.company.court.filter((candidate) => candidate.owner === playerId)) {
     assets.push({ key: `share:${share.id}`, label: "Company share", item: { kind: "share", shareId: share.id } });
   }
+  // Firm shares trade like Company shares (p.38); one box per share, combined in buildItems.
+  for (const firm of allFirms(game)) {
+    const held = firm.shares[playerId] ?? 0;
+    for (let index = 0; index < held; index += 1) {
+      assets.push({
+        key: `firmShare:${firm.id}:${index}`,
+        label: held > 1 ? `${firmName(game, firm)} share (${index + 1} of ${held})` : `${firmName(game, firm)} share`,
+        item: { kind: "firmShare", firmId: firm.id, count: 1 },
+      });
+    }
+  }
   for (const card of promiseCardsHeldBy(game, playerId)) {
     assets.push({
       key: `promise:${card.id}`,
@@ -87,6 +100,13 @@ function buildItems(
   for (const key of selected(selection)) {
     const asset = assets.find((candidate) => candidate.key === key);
     if (!asset) continue;
+    if (asset.item.kind === "firmShare") {
+      const firmId = asset.item.firmId;
+      const existing = items.find((item) => item.kind === "firmShare" && item.firmId === firmId);
+      if (existing && existing.kind === "firmShare") existing.count += 1;
+      else items.push({ ...asset.item });
+      continue;
+    }
     if (asset.item.kind === "share" && supply <= 0 && prizeForShares) {
       items.push({ ...asset.item, fromPrizeId: prizeForShares });
     } else {
