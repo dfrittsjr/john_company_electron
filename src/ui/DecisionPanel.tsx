@@ -1,4 +1,4 @@
-import type { GameState, LegalCommand } from "../engine";
+import { crownChooser, type GameState, type LegalCommand } from "../engine";
 import { ruleSectionForPhase } from "../data/rules-text";
 import { HIDDEN_PLAYER_ID } from "../online/protocol";
 import { commandTargets, groupLegalCommands, phaseLabel, playerColors, playerName } from "./view-model";
@@ -26,6 +26,7 @@ const COMPACT_GROUP_SIZE = 7;
 export function DecisionPanel({ game, hidden, onReveal, onRun, onHover, filter, onClearFilter, error, onOpenRules, note }: Props) {
   const decision = game.pendingDecision;
   const actor = decision.actor;
+  const crownActs = actor !== "system" && actor !== "simultaneous" && Boolean(game.players[actor]?.isCrown);
   const actorName =
     actor === "system"
       ? "Anyone (automatic step)"
@@ -35,6 +36,10 @@ export function DecisionPanel({ game, hidden, onReveal, onRun, onHover, filter, 
           ? "A private decision"
           : playerName(game, actor);
   const color = actor !== "system" && actor !== "simultaneous" ? playerColors(game)[actor] : undefined;
+  // The Crown's decision: it takes its one option itself, or the soloist / Button holder chooses for it (p.46).
+  const crownInfo = crownActs ? decision.crown : undefined;
+  const crownOnly = crownActs && decision.legalCommands.length === 1 && !crownInfo?.chooser ? decision.legalCommands[0] : undefined;
+  const crownChooserId = crownActs && !crownOnly && decision.legalCommands.length > 0 ? (crownInfo?.chooser ?? crownChooser(game)) : undefined;
 
   const visible = filter
     ? decision.legalCommands.filter((command) => commandTargets(command).includes(filter))
@@ -53,6 +58,22 @@ export function DecisionPanel({ game, hidden, onReveal, onRun, onHover, filter, 
         {actorName}
       </h2>
       <p className="decision-prompt">{decision.prompt}</p>
+      {crownInfo?.reason ? (
+        <p className="crown-reason">
+          <strong>The Crown:</strong> {crownInfo.reason}
+        </p>
+      ) : null}
+      {crownOnly ? (
+        <p className="crown-will">
+          The Crown will: <strong>{crownOnly.label}</strong>
+        </p>
+      ) : null}
+      {crownChooserId ? (
+        <p className="crown-will">
+          <strong>{playerName(game, crownChooserId)}</strong> chooses for the Crown
+          {game.crown?.playerButton ? " (holding the Player Button)" : ""}:
+        </p>
+      ) : null}
       {onOpenRules && phaseRules ? (
         <p className="rules-link-row">
           <button type="button" className="link-button" onClick={() => onOpenRules(phaseRules.id)}>
@@ -67,6 +88,20 @@ export function DecisionPanel({ game, hidden, onReveal, onRun, onHover, filter, 
           <button type="button" onClick={onReveal}>
             I am {actorName}: reveal
           </button>
+        </div>
+      ) : crownOnly ? (
+        <div className="command-groups" onMouseLeave={() => onHover([])}>
+          <button
+            type="button"
+            className="command-button"
+            title={crownOnly.description}
+            onClick={() => onRun(crownOnly)}
+            onMouseEnter={() => onHover(commandTargets(crownOnly))}
+            onFocus={() => onHover(commandTargets(crownOnly))}
+          >
+            Let the Crown act
+          </button>
+          {crownOnly.description ? <small className="command-description">{crownOnly.description}</small> : null}
         </div>
       ) : decision.legalCommands.length === 0 ? (
         <p className="status-note">

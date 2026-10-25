@@ -246,6 +246,11 @@ export function handoffTarget(after: GameState, actedBy: ActorId): PlayerId | nu
   const next = after.pendingDecision.actor;
   if (next === "system" || next === "simultaneous") return null;
   if (after.pendingDecision.legalCommands.length === 0) return null;
+  // The Crown acts through whoever chooses for it (the soloist or the Player Button holder).
+  if (next === "crown" && after.players.crown?.isCrown) {
+    const chooser = after.pendingDecision.crown?.chooser;
+    return chooser && chooser !== actedBy ? chooser : null;
+  }
   return next === actedBy ? null : next;
 }
 

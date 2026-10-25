@@ -57,10 +57,10 @@ export const requiredCrownAiCardFieldPaths = [
 ] as const;
 
 /**
- * The Crown's behaviour (the Crown Handbook) isn't built yet, so solo and two-player games stay
- * blocked even though its data is complete. The Crown build sets this to true.
+ * The Crown's behaviour (the Crown Handbook) is built, so solo and two-player games can start.
+ * Set to false to block the Crown modes again.
  */
-export const CROWN_BEHAVIOUR_BUILT = false;
+export const CROWN_BEHAVIOUR_BUILT = true;
 
 export const staticData: StaticDataSet = {
   scenarios,

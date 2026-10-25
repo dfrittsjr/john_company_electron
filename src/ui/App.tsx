@@ -4,6 +4,7 @@ import {
   createNewGame,
   standingLabel,
   undoBlockReason,
+  runCrownSteps,
   type GameCommand,
   type GameState,
   type LegalCommand,
@@ -56,6 +57,13 @@ function createPlayers(count: number): PlayerSetup[] {
     color: FAMILY_PALETTE[index],
   }));
 }
+
+const CROWN_DIFFICULTIES: Array<{ id: CrownDifficulty; name: string; description: string }> = [
+  { id: "easy", name: "Easy", description: "Each player also holds 5 promise cards, which can be traded to the Crown for promise cubes." },
+  { id: "normal", name: "Normal", description: "The standard game: the cubes are split evenly between the Crown and the players." },
+  { id: "hard", name: "Hard", description: "As Normal, but the Crown starts with 4 more promise cubes, taken from the players." },
+  { id: "expert", name: "Expert", description: "As Hard, and the Crown also gets 3 extra setup cards." },
+];
 
 function modeForPlayerCount(playerCount: number): PlayMode {
   if (playerCount === 1) return "soloCrown";
@@ -133,6 +141,12 @@ function buildSaveSummary(game: GameState): string {
   }
 
   return lines.join("\n");
+}
+
+/** Plays the Crown's automatic steps; stops when a player must act, choose for the Crown, or buy a favour. */
+function playCrown(state: GameState, idPrefix: string): GameState {
+  if (!state.crown) return state;
+  return runCrownSteps(state, { now: new Date().toISOString(), idPrefix: `${idPrefix}-crown` }).state;
 }
 
 export function App() {
@@ -218,10 +232,10 @@ export function App() {
       })),
       crownDifficulty: setup.crownDifficulty,
       setupDistribution: "random",
-      seed: `${setup.scenario}:${mode}:${setup.players.map((player) => player.name).join("|")}`,
+      seed: `${setup.scenario}:${mode}:${setup.players.map((player) => player.name).join("|")}${crownEnabled ? `:${Date.now()}` : ""}`,
     });
 
-    setGame(nextGame);
+    setGame(playCrown(nextGame, `crown-${Date.now()}`));
     setHistory([]);
     setUndoStatus(null);
     setCommandError(null);
@@ -260,10 +274,13 @@ export function App() {
       return;
     }
 
-    const next = handoffTarget(result.state, command.actorId);
+    // In a Crown game the Crown's single-option steps follow without anyone clicking. They share
+    // this move's history entry, so one Undo takes back the move and everything it triggered.
+    const state = playCrown(result.state, command.id);
+    const next = handoffTarget(state, command.actorId);
     setHistory((current) => [...current, game]);
     setUndoStatus(null);
-    setGame(result.state);
+    setGame(state);
     setCommandError(null);
     if (next) {
       // Someone else decides next: hide private information until they reveal it.
@@ -451,26 +468,26 @@ export function App() {
 
             {crownEnabled ? (
               <div className="crown-settings">
-                <label className="field">
-                  <span>Crown difficulty</span>
-                  <select
-                    value={setup.crownDifficulty}
-                    onChange={(event) =>
-                      setSetup((current) => ({
-                        ...current,
-                        crownDifficulty: event.target.value as CrownDifficulty,
-                      }))
-                    }
-                  >
-                    <option value="easy">Easy</option>
-                    <option value="normal">Normal</option>
-                    <option value="hard">Hard</option>
-                    <option value="expert">Expert</option>
-                  </select>
-                </label>
+                <fieldset className="difficulty-list">
+                  <legend>Crown difficulty</legend>
+                  {CROWN_DIFFICULTIES.map((difficulty) => (
+                    <label key={difficulty.id} className="scenario-option">
+                      <input
+                        type="radio"
+                        name="crown-difficulty"
+                        checked={setup.crownDifficulty === difficulty.id}
+                        onChange={() => setSetup((current) => ({ ...current, crownDifficulty: difficulty.id }))}
+                      />
+                      <span>
+                        <strong>{difficulty.name}</strong>
+                        <small>{difficulty.description}</small>
+                      </span>
+                    </label>
+                  ))}
+                </fieldset>
                 <p className="status-note">
-                  Crown mode initializes with promise cubes, AI deck, climate, and Player Button
-                  state once the engine data milestone is complete.
+                  The Crown plays itself from the Crown Handbook. Crown games are played from a save file (no online play), in 1710 or
+                  Long 1710.
                 </p>
               </div>
             ) : null}

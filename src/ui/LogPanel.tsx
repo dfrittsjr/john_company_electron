@@ -18,6 +18,7 @@ export function LogPanel({ game, limit = 60 }: Props) {
             {entry.actor && entry.actor !== "system" ? ` · ${playerName(game, entry.actor)}` : ""}
           </span>
           <span className="log-summary">{entry.summary}</span>
+          {entry.crownReason ? <span className="log-reason">{entry.crownReason}</span> : null}
           {logDice(entry).map((dice, index) => (
             <span key={index} className="log-dice" title={humanize(dice.label)}>
               {dice.dieFaces
