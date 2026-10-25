@@ -113,3 +113,83 @@
   background: #fbe9d7;
   font-weight: 600;
 }
+
+/* Table talk */
+
+.tab-count {
+  display: inline-block;
+  min-width: 18px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 9px;
+  color: #fffaf0;
+  background: #a8521f;
+  font-size: 0.75rem;
+  line-height: 18px;
+  text-align: center;
+}
+
+.chat-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.chat-panel h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.chat-messages {
+  display: grid;
+  gap: 6px;
+  max-height: 420px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.chat-messages li {
+  display: grid;
+  gap: 2px;
+  border-bottom: 1px solid #efe4d2;
+  padding-bottom: 4px;
+}
+
+.chat-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #6b5d4d;
+  font-size: 0.75rem;
+}
+
+.chat-meta .swatch {
+  width: 10px;
+  height: 10px;
+}
+
+.chat-meta time {
+  margin-left: auto;
+}
+
+.chat-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: end;
+}
+
+.chat-form textarea {
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid #beb2a2;
+  border-radius: 6px;
+  font: inherit;
+  resize: vertical;
+}

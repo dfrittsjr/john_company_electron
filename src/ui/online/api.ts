@@ -3,6 +3,8 @@
 
 import type {
   ApiError,
+  ChatMessage,
+  ChatResponse,
   ClientMessage,
   CommandRequest,
   CommandResponse,
@@ -118,6 +120,19 @@ export function sendUndo(gameId: string, token: string): Promise<UndoResponse> {
   return request(gamePath(gameId, "/undo"), { method: "POST", token, json: {} });
 }
 
+/** POST /chat. The server also pushes the message to every open socket, this one included. */
+export function sendChat(gameId: string, token: string, text: string): Promise<ChatResponse> {
+  return request(gamePath(gameId, "/chat"), { method: "POST", token, json: { text } });
+}
+
+/** Adds newly arrived table talk to what is already shown: no duplicates, in id order. */
+export function mergeChat(current: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
+  if (incoming.length === 0) return current;
+  const byId = new Map(current.map((message) => [message.id, message]));
+  for (const message of incoming) byId.set(message.id, message);
+  return [...byId.values()].sort((left, right) => left.id - right.id);
+}
+
 /** The .joco save text. */
 export async function exportGame(gameId: string, token: string): Promise<string> {
   let response: Response;
@@ -163,6 +178,8 @@ export type ConnectionOptions = {
   onFatal?: (error: { code: string; message: string }) => void;
   /** Server refused a command sent over the socket. */
   onRejected?: (errors: Array<{ code: string; message: string }>, commandId?: string) => void;
+  /** A table-talk message pushed over the socket. */
+  onChat?: (message: ChatMessage) => void;
   createSocket?: (url: string) => SocketLike;
   /** Defaults to wss://host/api/games/:id/ws on the page's own origin. */
   url?: string;
@@ -382,6 +399,9 @@ export class OnlineConnection {
         break;
       case "rejected":
         this.options.onRejected?.(message.errors, message.commandId);
+        break;
+      case "chat":
+        this.options.onChat?.(message.message);
         break;
       case "error":
         if (isFatalApiError({ code: message.code })) {

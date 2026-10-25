@@ -22,6 +22,7 @@ import {
 import { deserializeGameState, serializeSave } from "../../save";
 import type {
   ApiError,
+  ChatMessage,
   ClientMessage,
   CommandRequest,
   CommandResponse,
@@ -46,6 +47,7 @@ type MockGame = {
   history: HistoryEntry[];
   /** The first seat may always export; others only once the game is over. */
   creatorToken: string;
+  chat: ChatMessage[];
 };
 
 let counter = 0;
@@ -144,6 +146,7 @@ export class MockServer {
       seats,
       spectatorToken: nextToken("watch"),
       history: [],
+      chat: [],
       creatorToken: seats[0].token,
     };
     this.games.set(id, game);
@@ -190,6 +193,7 @@ export class MockServer {
       state: projectForViewer(game.state, viewer),
       undo: this.undoFor(game, viewer),
       export: this.exportFor(game, viewer),
+      chat: game.chat.slice(-100),
     };
   }
 
@@ -354,7 +358,7 @@ export class MockServer {
       return json(this.createFromState(state));
     }
 
-    const match = path.match(/^\/api\/games\/([^/]+)\/(view|commands|undo|export|join)$/);
+    const match = path.match(/^\/api\/games\/([^/]+)\/(view|commands|undo|export|join|chat)$/);
     if (!match) throw new HttpError(404, "NOT_FOUND", "No such route.");
     const game = this.games.get(decodeURIComponent(match[1]));
     if (!game) throw new HttpError(404, "GAME_NOT_FOUND", "There is no game with this id.");
@@ -384,6 +388,15 @@ export class MockServer {
       game.version += 1;
       this.broadcast(game);
       return json({ ok: true, view: this.viewFor(game, viewer) });
+    }
+    if (route === "chat" && method === "POST") {
+      if (viewer.kind !== "seat") throw new HttpError(403, "SPECTATOR_READ_ONLY", "Spectators can read the table talk but not post.");
+      const text = typeof body.text === "string" ? body.text.trim() : "";
+      if (!text) throw new HttpError(400, "BAD_REQUEST", "A message needs some text.");
+      const message: ChatMessage = { id: game.chat.length + 1, at: new Date().toISOString(), playerId: viewer.playerId, name: game.state.players[viewer.playerId].name, text };
+      game.chat.push(message);
+      for (const socket of this.sockets) if (socket.gameId === game.id && socket.viewer) socket.push({ type: "chat", message });
+      return json({ message });
     }
     if (route === "export" && method === "GET") {
       const status = this.exportFor(game, viewer);

@@ -47,6 +47,8 @@ export type GameScreenProps = {
   fixedPlayer?: PlayerId;
   /** Extra header content next to the title (e.g. a connection indicator). */
   titleExtra?: ReactNode;
+  /** Online: one more sidebar tab (table talk). `onShow` runs while it is open and `unread` changes. */
+  extraTab?: { label: string; unread?: number; content: ReactNode; onShow?: () => void };
 };
 
 export function GameScreen({
@@ -67,11 +69,18 @@ export function GameScreen({
   readOnly,
   fixedPlayer,
   titleExtra,
+  extraTab,
 }: GameScreenProps) {
   const [selected, setSelected] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string[]>([]);
-  const [sideTab, setSideTab] = useState<"log" | "deals" | "laws">("log");
+  const [sideTab, setSideTab] = useState<"log" | "deals" | "laws" | "extra">("log");
   const [rulesOpen, setRulesOpen] = useState<{ sectionId?: string } | null>(null);
+  const extraShown = sideTab === "extra" && Boolean(extraTab);
+  const extraUnread = extraTab?.unread ?? 0;
+  const onExtraShown = extraTab?.onShow;
+  useEffect(() => {
+    if (extraShown) onExtraShown?.();
+  }, [extraShown, extraUnread, onExtraShown]);
   const [finalScoringDismissed, setFinalScoringDismissed] = useState(false);
 
   useEffect(() => {
@@ -235,9 +244,21 @@ export function GameScreen({
             <button type="button" role="tab" aria-selected={sideTab === "laws"} className={sideTab === "laws" ? "tab tab-active" : "tab"} onClick={() => setSideTab("laws")}>
               Laws
             </button>
+            {extraTab ? (
+              <button type="button" role="tab" aria-selected={sideTab === "extra"} className={sideTab === "extra" ? "tab tab-active" : "tab"} onClick={() => setSideTab("extra")}>
+                {extraTab.label}
+                {extraTab.unread && sideTab !== "extra" ? (
+                  <span className="tab-count" aria-label={`${extraTab.unread} unread`}>
+                    {extraTab.unread}
+                  </span>
+                ) : null}
+              </button>
+            ) : null}
           </div>
           <div className="sidebar-tab-body">
-            {sideTab === "log" ? (
+            {sideTab === "extra" && extraTab ? (
+              extraTab.content
+            ) : sideTab === "log" ? (
               <LogPanel game={game} />
             ) : sideTab === "laws" ? (
               <ParliamentPanel game={game} />

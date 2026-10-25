@@ -23,6 +23,8 @@ import type { ScenarioId } from "../data/types";
 import {
   ONLINE_LIMITS,
   ONLINE_PAGE_PATH,
+  type ChatMessage,
+  type ChatResponse,
   type CommandRequest,
   type CommandResponse,
   type CreateGameResponse,
@@ -95,6 +97,10 @@ export interface RoomStorage {
   /** Delete every snapshot whose version is not listed. */
   pruneSnapshots(keep: number[]): void;
   appendCommands(records: CommandRecord[]): void;
+  /** The newest `limit` table-talk messages, oldest first. */
+  readChat(limit: number): ChatMessage[];
+  /** Stores a message and returns it with its new id. */
+  appendChat(message: Omit<ChatMessage, "id">): ChatMessage;
   /** Runs `fn` atomically: all of its writes happen, or none. */
   transaction<T>(fn: () => T): T;
 }
@@ -105,6 +111,7 @@ export class MemoryRoomStorage implements RoomStorage {
   seats = new Map<string, SeatRecord>();
   snapshots = new Map<number, string>();
   commands: CommandRecord[] = [];
+  chat: ChatMessage[] = [];
 
   readMeta() {
     return this.meta ? structuredClone(this.meta) : null;
@@ -131,12 +138,21 @@ export class MemoryRoomStorage implements RoomStorage {
   appendCommands(records: CommandRecord[]) {
     this.commands.push(...structuredClone(records));
   }
+  readChat(limit: number) {
+    return this.chat.slice(-limit).map((message) => ({ ...message }));
+  }
+  appendChat(message: Omit<ChatMessage, "id">) {
+    const stored = { id: this.chat.length + 1, ...message };
+    this.chat.push(stored);
+    return { ...stored };
+  }
   transaction<T>(fn: () => T): T {
     const saved = {
       meta: this.meta,
       seats: new Map(this.seats),
       snapshots: new Map(this.snapshots),
       commands: [...this.commands],
+      chat: [...this.chat],
     };
     try {
       return fn();
@@ -287,6 +303,9 @@ export type ImportRequestInput = { gameId: string; origin: string; body: unknown
 
 type Bucket = { tokens: number; at: number };
 
+/** Control characters other than tab and newline are dropped from chat. */
+const CONTROL_CHARACTERS = /[\u0000-\u0008\u000B-\u001F\u007F]/g;
+
 export class GameRoomCore {
   private readonly now: () => Date;
   private readonly random: (length: number) => Uint8Array;
@@ -294,6 +313,7 @@ export class GameRoomCore {
   private cache?: { version: number; state: GameState };
   private beforeCache?: { version: number; state: GameState };
   private seatCache?: SeatRecord[];
+  private chatCache?: ChatMessage[];
   private readonly buckets = new Map<string, Bucket>();
 
   constructor(
@@ -484,6 +504,7 @@ export class GameRoomCore {
       state: projectForViewer(state, viewer),
       undo: this.undoStatus(seat, meta, state),
       export: this.exportStatus(seat, state),
+      chat: this.recentChat(),
     };
   }
 
@@ -647,6 +668,35 @@ export class GameRoomCore {
     if (state.finalScoring.complete === true) return { available: true };
     if (seat.creator) return { available: true };
     return { available: false, reason: "Only the game's creator can download it before the game ends." };
+  }
+
+  // --- table talk ------------------------------------------------------------------------------------
+
+  async chat(token: unknown, body: unknown): Promise<CoreResult<ChatResponse>> {
+    return this.withSeat(token, (seat) => this.chatAs(seat, isRecord(body) ? body.text : undefined));
+  }
+
+  /** Posts a table-talk message from an authenticated seat; the caller sends it to everyone. */
+  chatAs(seat: SeatRecord, text: unknown): CoreResult<ChatResponse> {
+    if (seat.role !== "seat" || !seat.playerId) return fail(403, "SPECTATOR_READ_ONLY", "Spectators can read the table talk but not post.");
+    const limited = this.rateLimited(seat);
+    if (limited) return limited;
+    const cleaned = typeof text === "string" ? text.replace(CONTROL_CHARACTERS, "").trim() : "";
+    if (!cleaned) return fail(400, "BAD_REQUEST", "A message needs some text.");
+    if ([...cleaned].length > this.limits.maxChatLength) {
+      return fail(413, "PAYLOAD_TOO_LARGE", `Messages may be at most ${this.limits.maxChatLength} characters.`);
+    }
+    const state = this.current(this.meta());
+    const name = state.players[seat.playerId]?.name ?? seat.name ?? seat.playerId;
+    const recent = this.recentChat();
+    const message = this.storage.appendChat({ at: this.timestamp(), playerId: seat.playerId, name, text: cleaned });
+    this.chatCache = [...recent, message].slice(-this.limits.chatHistory);
+    return ok({ message });
+  }
+
+  private recentChat(): ChatMessage[] {
+    this.chatCache ??= this.storage.readChat(this.limits.chatHistory);
+    return this.chatCache;
   }
 
   // --- internals -------------------------------------------------------------------------------------

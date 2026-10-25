@@ -469,6 +469,37 @@ describe("export and import", () => {
   });
 });
 
+describe("table talk", () => {
+  it("stores seats' messages, sends them with every view, and keeps spectators read-only", async () => {
+    const table = await newTable({ limits: { chatHistory: 3 } });
+    const [ann, ben] = table.created.seats.map((seat) => table.tokens[seat.playerId]);
+    const first = body(await table.core.chat(ann, { text: "  Ben, back me for Chairman?\u0007  " }));
+    expect(first.message).toMatchObject({ id: 1, name: "Ann", text: "Ben, back me for Chairman?" });
+    body(await table.core.chat(ben, { text: "Only for £2." }));
+
+    for (const token of [ann, ben, table.watch]) {
+      expect(body(await table.core.view(token)).chat?.map((message) => message.text)).toEqual(["Ben, back me for Chairman?", "Only for £2."]);
+    }
+    const versionBefore = table.core.version();
+    expect(versionBefore).toBe(body(await table.core.view(ann)).version);
+
+    const spectator = await table.core.chat(table.watch, { text: "hi" });
+    expect(spectator.ok ? 200 : spectator.status).toBe(403);
+    for (const text of ["", "   ", 42, "x".repeat(501)]) expect((await table.core.chat(ann, { text })).ok).toBe(false);
+    expect((await table.core.chat("not-a-token", { text: "hi" })).ok).toBe(false);
+
+    // Only the newest messages ride along with views; the game itself never changes.
+    body(await table.core.chat(ann, { text: "Deal." }));
+    body(await table.core.chat(ben, { text: "Deal." }));
+    expect(body(await table.core.view(ben)).chat?.map((message) => message.id)).toEqual([2, 3, 4]);
+    expect(table.core.version()).toBe(versionBefore);
+
+    // A restarted object reads them back from storage.
+    const restarted = new GameRoomCore(table.storage, { now: table.clock.now, limits: { chatHistory: 3 } });
+    expect(body(await restarted.view(ann)).chat?.map((message) => message.id)).toEqual([2, 3, 4]);
+  });
+});
+
 describe("system decisions with a real choice", () => {
   it("are answered by the named seat on the system's behalf", async () => {
     const base = negotiationGame("revenue");

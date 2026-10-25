@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { HIDDEN_PLAYER_ID, type GameView } from "../../online/protocol";
+import { HIDDEN_PLAYER_ID, type ChatMessage, type GameView } from "../../online/protocol";
 import { GameScreen } from "../GameScreen";
 import { saveTextFile } from "../platform/files";
 import { suggestedSaveName } from "../save-names";
@@ -12,10 +12,13 @@ import {
   exportGame,
   fetchView,
   isFatalApiError,
+  mergeChat,
+  sendChat,
   sendCommand,
   sendUndo,
   type ConnectionStatus,
 } from "./api";
+import { ChatPanel } from "./ChatPanel";
 import { saveStoredSeat } from "./storage";
 import "./online.css";
 
@@ -63,12 +66,23 @@ export function OnlineGame({ gameId, token, connectionFactory }: Props) {
   const [permission, setPermission] = useState<string>(() => (typeof Notification === "undefined" ? "unsupported" : Notification.permission));
   const connection = useRef<OnlineConnection | null>(null);
   const previousMine = useRef<boolean | null>(null);
+  const [chat, setChat] = useState<ChatMessage[]>([]);
+  // Messages up to this id have been on screen, or were there when the page opened.
+  const [chatSeen, setChatSeen] = useState<number | null>(null);
 
   useEffect(() => {
     const options = {
       gameId,
       token,
-      onView: (next: GameView) => setView(next),
+      onView: (next: GameView) => {
+        setView(next);
+        if (!next.chat) return;
+        // What was already said before this page opened counts as read.
+        const newest = next.chat[next.chat.length - 1]?.id ?? 0;
+        setChatSeen((seen) => seen ?? newest);
+        setChat((current) => mergeChat(current, next.chat ?? []));
+      },
+      onChat: (message: ChatMessage) => setChat((current) => mergeChat(current, [message])),
       onStatus: (next: ConnectionStatus, detail?: { polling: boolean }) => {
         setStatus(next);
         setPolling(Boolean(detail?.polling));
@@ -114,6 +128,22 @@ export function OnlineGame({ gameId, token, connectionFactory }: Props) {
   }, [gameId, token, viewerKey]);
 
   const mine = view ? isMyDecision(view) : false;
+
+  const viewerSeat = view?.viewer.kind === "seat" ? view.viewer.playerId : null;
+  const unread = chat.filter((message) => message.id > (chatSeen ?? Infinity) && message.playerId !== viewerSeat).length;
+  const markChatSeen = useCallback(() => setChatSeen(chat[chat.length - 1]?.id ?? 0), [chat]);
+
+  const postChat = useCallback(
+    async (text: string) => {
+      try {
+        const response = await sendChat(gameId, token, text);
+        setChat((current) => mergeChat(current, [response.message]));
+      } catch (error) {
+        throw new Error(describeError(error, "The message was not sent."));
+      }
+    },
+    [gameId, token],
+  );
 
   useEffect(() => {
     document.title = mine ? TURN_TITLE : BASE_TITLE;
@@ -296,6 +326,12 @@ export function OnlineGame({ gameId, token, connectionFactory }: Props) {
           </>
         ) : null
       }
+      extraTab={{
+        label: "Chat",
+        unread,
+        onShow: markChatSeen,
+        content: <ChatPanel game={view.state} messages={chat} canPost={isSeat} onSend={postChat} />,
+      }}
       banner={
         waiting ? (
           <div className="waiting-banner" role="status">

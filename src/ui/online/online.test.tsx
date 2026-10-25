@@ -415,6 +415,44 @@ describe("online game screen", () => {
   });
 });
 
+describe("table talk", () => {
+  test("a message reaches the other seats live, counts as unread until opened, and spectators only read", async () => {
+    const created = server.createFromState(familyGame());
+    const red = render(<OnlineGame gameId={created.gameId} token={server.tokenFor(created, 0)} />);
+    const blue = render(<OnlineGame gameId={created.gameId} token={server.tokenFor(created, 1)} />);
+    const watcher = render(<OnlineGame gameId={created.gameId} token={server.tokenFor(created, "spectator")} />);
+    const at = (rendered: ReturnType<typeof render>) => within(rendered.container);
+    for (const rendered of [red, blue, watcher]) await at(rendered).findByRole("tab", { name: "Chat" });
+
+    fireEvent.click(at(red).getByRole("tab", { name: "Chat" }));
+    fireEvent.change(at(red).getByLabelText("Message"), { target: { value: "Blue, back me for Chairman?" } });
+    fireEvent.click(at(red).getByRole("button", { name: "Send" }));
+    await at(red).findByText("Blue, back me for Chairman?");
+    await waitFor(() => expect((at(red).getByLabelText("Message") as HTMLTextAreaElement).value).toBe(""));
+    // Your own message isn't unread, and an open tab has no count.
+    expect(at(red).queryByLabelText(/unread/)).toBeNull();
+
+    // Blue's tab shows one unread message until Blue opens it.
+    await at(blue).findByLabelText("1 unread");
+    fireEvent.click(at(blue).getByRole("tab", { name: /Chat/ }));
+    expect(at(blue).getByText("Blue, back me for Chairman?")).toBeTruthy();
+    expect(at(blue).queryByLabelText(/unread/)).toBeNull();
+
+    fireEvent.click(at(watcher).getByRole("tab", { name: /Chat/ }));
+    expect(at(watcher).getByText("Blue, back me for Chairman?")).toBeTruthy();
+    expect(at(watcher).queryByLabelText("Message")).toBeNull();
+    expect(at(watcher).getByText(/Only seated players can post/)).toBeTruthy();
+
+    // A page opened later shows the history from its first view, all of it already read.
+    cleanup();
+    const later = render(<OnlineGame gameId={created.gameId} token={server.tokenFor(created, 2)} />);
+    await within(later.container).findByRole("tab", { name: "Chat" });
+    expect(within(later.container).queryByLabelText(/unread/)).toBeNull();
+    fireEvent.click(within(later.container).getByRole("tab", { name: "Chat" }));
+    expect(within(later.container).getByText("Blue, back me for Chairman?")).toBeTruthy();
+  });
+});
+
 describe("connection", () => {
   const fast = { baseDelayMs: 5, maxDelayMs: 20, pollIntervalMs: 15, pingIntervalMs: 1000 };
 

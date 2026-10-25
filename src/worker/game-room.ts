@@ -4,7 +4,7 @@
 // connected.
 
 import { DurableObject } from "cloudflare:workers";
-import { ONLINE_LIMITS, type ClientMessage, type ServerMessage, type Viewer } from "../online/protocol";
+import { ONLINE_LIMITS, type ChatMessage, type ClientMessage, type ServerMessage, type Viewer } from "../online/protocol";
 import type { GameState } from "../engine";
 import {
   GameRoomCore,
@@ -37,7 +37,7 @@ type SeatRow = {
   joined_at: string | null;
 };
 
-/** RoomStorage on the Durable Object's SQLite database: tables meta, seats, snapshots, commands. */
+/** RoomStorage on the Durable Object's SQLite database: tables meta, seats, snapshots, commands, chat. */
 export class SqlRoomStorage implements RoomStorage {
   constructor(
     private readonly sql: SqlStorage,
@@ -57,6 +57,10 @@ export class SqlRoomStorage implements RoomStorage {
       `CREATE TABLE IF NOT EXISTS commands (
         seq INTEGER PRIMARY KEY AUTOINCREMENT, version INTEGER NOT NULL, seat_id TEXT, kind TEXT NOT NULL,
         command_id TEXT, type TEXT, actor_id TEXT, payload TEXT, created_at TEXT NOT NULL)`,
+    );
+    sql.exec(
+      `CREATE TABLE IF NOT EXISTS chat (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL, player_id TEXT NOT NULL, name TEXT NOT NULL, text TEXT NOT NULL)`,
     );
   }
 
@@ -138,6 +142,30 @@ export class SqlRoomStorage implements RoomStorage {
     }
   }
 
+  readChat(limit: number): ChatMessage[] {
+    return this.sql
+      .exec<{ id: number; created_at: string; player_id: string; name: string; text: string }>(
+        `SELECT id, created_at, player_id, name, text FROM chat ORDER BY id DESC LIMIT ?`,
+        limit,
+      )
+      .toArray()
+      .reverse()
+      .map((row) => ({ id: row.id, at: row.created_at, playerId: row.player_id, name: row.name, text: row.text }));
+  }
+
+  appendChat(message: Omit<ChatMessage, "id">): ChatMessage {
+    const row = this.sql
+      .exec<{ id: number }>(
+        `INSERT INTO chat (created_at, player_id, name, text) VALUES (?, ?, ?, ?) RETURNING id`,
+        message.at,
+        message.playerId,
+        message.name,
+        message.text,
+      )
+      .one();
+    return { id: row.id, ...message };
+  }
+
   transaction<T>(fn: () => T): T {
     return this.storage.transactionSync(fn);
   }
@@ -181,6 +209,12 @@ export class GameRoom extends DurableObject<Env> {
 
   async exportSave(token: string) {
     return this.core.exportSave(token);
+  }
+
+  async chat(token: string, body: unknown) {
+    const result = await this.core.chat(token, body);
+    if (result.ok) this.broadcastChat(result.body.message);
+    return result;
   }
 
   private afterChange<T>(result: CoreResult<T>): CoreResult<T> {
@@ -253,6 +287,11 @@ export class GameRoom extends DurableObject<Env> {
         if (result.changed) return this.broadcast();
         return send(ws, { type: "view", view: result.body.view });
       }
+      case "chat": {
+        const result = this.core.chatAs(seat, parsed.text);
+        if (!result.ok) return send(ws, { type: "rejected", errors: [result.error] });
+        return this.broadcastChat(result.body.message);
+      }
       default:
         return send(ws, { type: "error", code: "BAD_REQUEST", message: "Unknown message type." });
     }
@@ -287,6 +326,15 @@ export class GameRoom extends DurableObject<Env> {
     if (waiting) await this.ctx.storage.setAlarm(Date.now() + HELLO_TIMEOUT_MS);
   }
 
+  /** Sends a new table-talk message to every viewer that has said hello. Everyone sees the same text. */
+  private broadcastChat(message: ChatMessage): void {
+    const text = JSON.stringify({ type: "chat", message } satisfies ServerMessage);
+    for (const ws of this.ctx.getWebSockets()) {
+      const attachment = ws.deserializeAttachment() as SocketAttachment | null;
+      if (attachment?.seatId) sendText(ws, text);
+    }
+  }
+
   /** Sends every connected viewer its own projected view of the current state. */
   private broadcast(): void {
     const messages = new Map<string, string>();
@@ -305,6 +353,14 @@ export class GameRoom extends DurableObject<Env> {
         // The socket closed meanwhile; the runtime drops it.
       }
     }
+  }
+}
+
+function sendText(ws: WebSocket, text: string): void {
+  try {
+    ws.send(text);
+  } catch {
+    // The socket closed meanwhile; the runtime drops it.
   }
 }
 

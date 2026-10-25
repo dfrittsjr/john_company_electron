@@ -29,7 +29,7 @@ type Route =
   | { name: "config" }
   | { name: "create" }
   | { name: "import" }
-  | { name: "join" | "view" | "commands" | "undo" | "export" | "ws"; gameId: string };
+  | { name: "join" | "view" | "commands" | "undo" | "chat" | "export" | "ws"; gameId: string };
 
 const ROUTES: Array<{ method: string; pattern: RegExp; route: (match: RegExpMatchArray) => Route }> = [
   { method: "GET", pattern: /^\/api\/config$/, route: () => ({ name: "config" }) },
@@ -40,6 +40,7 @@ const ROUTES: Array<{ method: string; pattern: RegExp; route: (match: RegExpMatc
   { method: "GET", pattern: /^\/api\/games\/([^/]+)$/, route: (match) => ({ name: "view", gameId: match[1] }) },
   { method: "POST", pattern: /^\/api\/games\/([^/]+)\/commands$/, route: (match) => ({ name: "commands", gameId: match[1] }) },
   { method: "POST", pattern: /^\/api\/games\/([^/]+)\/undo$/, route: (match) => ({ name: "undo", gameId: match[1] }) },
+  { method: "POST", pattern: /^\/api\/games\/([^/]+)\/chat$/, route: (match) => ({ name: "chat", gameId: match[1] }) },
   { method: "GET", pattern: /^\/api\/games\/([^/]+)\/export$/, route: (match) => ({ name: "export", gameId: match[1] }) },
   { method: "GET", pattern: /^\/api\/games\/([^/]+)\/ws$/, route: (match) => ({ name: "ws", gameId: match[1] }) },
 ];
@@ -96,6 +97,11 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       const body = await readJson(request, ONLINE_LIMITS.maxRequestBytes, { optional: true });
       if (!body.ok) return body.response;
       return fromCore(await room.undo(bearer(request)));
+    }
+    case "chat": {
+      const body = await readJson(request, ONLINE_LIMITS.maxRequestBytes);
+      if (!body.ok) return body.response;
+      return fromCore(await room.chat(bearer(request), body.value));
     }
     case "export": {
       const result = await room.exportSave(bearer(request));

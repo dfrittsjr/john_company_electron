@@ -71,7 +71,23 @@ export type GameView = {
   undo: { available: boolean; reason?: string };
   /** Added: whether this viewer may download a .joco now (GET /api/games/:id/export), and why not. */
   export?: { available: boolean; reason?: string };
+  /** Added: the newest table-talk messages (at most ONLINE_LIMITS.chatHistory), oldest first. */
+  chat?: ChatMessage[];
 };
+
+/** Table talk for negotiation. Seats may post; spectators read. Stored with the game. */
+export type ChatMessage = {
+  /** Increases by one per message in a game. */
+  id: number;
+  at: string;
+  playerId: PlayerId;
+  name: string;
+  text: string;
+};
+
+/** POST /api/games/:id/chat */
+export type ChatRequest = { text: string };
+export type ChatResponse = { message: ChatMessage };
 
 /** POST /api/games/:id/commands */
 export type CommandRequest = {
@@ -99,12 +115,15 @@ export type ClientMessage =
   | { type: "hello"; token: string }
   | { type: "command"; command: CommandRequest["command"] }
   | { type: "undo" }
+  | { type: "chat"; text: string }
   | { type: "ping" };
 
 export type ServerMessage =
   | { type: "view"; view: GameView }
   | { type: "rejected"; commandId?: string; errors: Array<{ code: string; message: string }> }
   | { type: "error"; code: string; message: string }
+  /** A new table-talk message, sent to every connected viewer. */
+  | { type: "chat"; message: ChatMessage }
   | { type: "pong" };
 
 /** Browser-side record of games this browser has joined, for the "games waiting for you" list. */
@@ -143,6 +162,9 @@ export const ONLINE_LIMITS = {
   ratePerSecond: 2,
   /** How many of a seat's latest commands the server can still undo, one at a time. */
   undoDepth: 20,
+  /** Longest table-talk message, in characters, and how many recent messages each view carries. */
+  maxChatLength: 500,
+  chatHistory: 100,
 } as const;
 
 /**

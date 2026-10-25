@@ -66,7 +66,8 @@ projected view. Placeholders all start with `hidden:` (`isHiddenId`).
 | Crown internals | `hidden.crownDeck`, `hidden.crownBlackmail` and `crown.currentDecisionProfile` removed. |
 | Who holds a face-down card | Company Fraud and Scandal candidates, Envoy offers and Hiring Preference offers cut to the viewer; a pending Connection interrupt or Scandal pick is dropped for others. |
 | Legal commands | Only for the player who must decide (including interrupted decisions saved in negotiation). Spectators never get any. |
-| Decisions that exist only because the actor holds a face-down card | Shown to others with step `hidden:private`, a neutral id and the prompt "Waiting for X to make a private decision." The steps are `CARD_REVEALING_STEPS` in `projection.ts`. |
+| Decisions that exist only because the actor holds a face-down card | Shown to others with step `hidden:private`, actor `hidden:player`, a neutral id and the prompt "A player is making a private decision." The steps are `CARD_REVEALING_STEPS` in `projection.ts`. |
+| Log lines for a declined face-down card | Entries with a `publicSummary` ("Ann kept their blackmail card.") show others that neutral text and no actor; the same command's other entries lose their actor too. |
 
 Clients send another player's blackmail placeholder back unchanged, for example to ask for that
 card in a deal. The server maps it to the real card (`resolveHiddenIds`).
@@ -86,6 +87,7 @@ card in a deal. The server maps it to the real card (`resolveHiddenIds`).
 | `GET /api/games/:id/view` (also `GET /api/games/:id`) | Bearer | → `GameView` | Counts against the rate limit. |
 | `POST /api/games/:id/commands` | Bearer | `CommandRequest` → `CommandResponse` | See below. |
 | `POST /api/games/:id/undo` | Bearer | (empty) → `UndoResponse` | See Undo. |
+| `POST /api/games/:id/chat` | Bearer | `ChatRequest` `{ text }` → `ChatResponse` `{ message }` | See Chat. |
 | `GET /api/games/:id/export` | Bearer | → `.joco` text, `Content-Disposition: attachment` | See Export. |
 | `GET /api/games/:id/ws` | hello message | WebSocket upgrade | See below. |
 
@@ -122,6 +124,7 @@ authenticates.
 | `{"type":"hello","token":"…"}` (first message) | `{"type":"view",…}`. A bad token gets `{"type":"error","code":"INVALID_TOKEN"}` and the socket closes (1008). |
 | `{"type":"command","command":{…}}` | On success, every connected socket gets its own `view`. On failure, the sender gets `{"type":"rejected","commandId",errors}`, then a fresh `view` if the engine refused it. |
 | `{"type":"undo"}` | Same as a command. |
+| `{"type":"chat","text":"…"}` | Every authenticated socket gets `{"type":"chat","message":{…}}`. A refused message gets the sender `{"type":"rejected",errors}`. |
 | `{"type":"ping"}` | `{"type":"pong"}`, answered by the runtime without waking the object (send exactly this text). |
 
 - **Pushes:** after any change through HTTP or the socket, every authenticated socket gets its own
@@ -132,6 +135,17 @@ authenticates.
   the socket's serialized attachment, so an idle game costs nothing while players stay connected.
 - **Deploys:** a deploy disconnects every socket. Clients should reconnect with backoff and say
   hello again.
+
+## Chat
+
+Table talk for negotiating; binding deals still go through Deals & Cards.
+- **Who:** seats post; spectators read (403 `SPECTATOR_READ_ONLY`).
+- **Text:** 1-500 characters after trimming; control characters other than tab and newline are
+  dropped. Longer is 413 `PAYLOAD_TOO_LARGE`. Posting counts against the rate limit.
+- **Delivery:** a new message goes to every connected socket as `{"type":"chat","message"}`, and
+  every `GameView` carries the newest 100 as `chat`, so polling clients and reloads see them too.
+  A message never changes the game's `version`.
+- **Storage:** the `chat` table, kept for the life of the game. Not part of exports.
 
 ## Undo
 
@@ -172,13 +186,14 @@ in between. The server keeps the last 20 commands' snapshots.
 | Create and import bodies (the `.joco` text included) | 8 MB |
 | Players | 3-6 (hotseat only; Crown modes stay file-only) |
 | Player name | 1-40 characters, no control characters, unique |
-| Rate limit | Per seat: 60-request burst, refilled at 2 per second. Covers views, commands, undo and export, but not WebSocket pushes or pings. Kept in memory, so it resets when the object restarts. |
+| Rate limit | Per seat: 60-request burst, refilled at 2 per second. Covers views, commands, undo, chat and export, but not WebSocket pushes or pings. Kept in memory, so it resets when the object restarts. |
+| Chat | 500 characters per message; views carry the newest 100 |
 | Undo depth | 20 commands |
 | Hello timeout | 30 seconds (checked by an alarm, so up to about a minute) |
 
 ## Storage
 
-Each game's SQLite database (`ctx.storage.sql`) has four tables:
+Each game's SQLite database (`ctx.storage.sql`) has five tables:
 
 | Table | What it holds |
 | --- | --- |
@@ -186,6 +201,7 @@ Each game's SQLite database (`ctx.storage.sql`) has four tables:
 | `seats` | Seat id, role, player id and name, token hash, creator flag, first join time. |
 | `snapshots` | Game state JSON per version, split into 500,000-character chunks (SQLite values max 2 MB). |
 | `commands` | Append-only audit trail: every command, automatic step, undo, create and import. |
+| `chat` | Table-talk messages: id, time, player id and name, text. |
 
 - **Snapshots** are kept for the current version and for the versions undo can still return to;
   older ones are deleted.
@@ -245,19 +261,19 @@ curl -s localhost:8800/api/games/<gameId>/view -H 'Authorization: Bearer <token 
 
 ## Known gaps
 
-- **Who is asked leaks a card.** The engine offers some steps only to the holder of a particular
-  face-down blackmail card: Company Fraud, Scandal, Envoy to the Mughals, Hiring Preference, Man
-  on the Inside, and the Connections.
-  - The projection hides the step, prompt and option list, but the pending decision's `actor` (and
-    the time it takes) still shows who is deciding.
-  - A few log lines do the same, e.g. "Ann kept their blackmail card." after Company Fraud.
-  - Fixing this needs an engine change, such as offering every player the step.
-- **Military Oversight nepotism** asks one yes/no question for all the other families with
-  officers in the Army. Online, the first such family answers for all of them; the rules ask each.
+- **A pause can still show that someone holds a card.** The engine offers some steps only to the
+  holder of a particular face-down blackmail card: Company Fraud, Scandal, Envoy to the Mughals,
+  Hiring Preference, Man on the Inside, and the Connections.
+  - Online, others no longer see who is deciding (actor `hidden:player`) or what, and the log
+    doesn't say who declined.
+  - The pause itself, at a moment when only one card could be played (say, the start of
+    Revenue), still tells the table that somebody holds it. Removing that would mean asking every
+    player at every such moment.
+  - Taking any face-down card from the London Season Display now always ends with a "keep it face
+    down" step, so a Scandal pick looks like any other.
 - **Simultaneous decisions** (`actor: "simultaneous"`) would show their options to every seat. The
   engine has none yet; secret firm strategies will need per-seat options.
-- **Chat** (`POST /api/games/:id/chat` in the plan) isn't built.
 - **The rate limiter** is in memory and resets when the object restarts. Create and import are
-  limited only by Turnstile.
+  limited only by Turnstile. Fine for a group of friends; persist the buckets if it ever matters.
 - **Views send the whole state,** log included, on every change: tens of KB early on, a few
   hundred KB late in a long game. Log deltas would cut this if it matters.
