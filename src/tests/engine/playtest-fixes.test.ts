@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { GameState } from "../../engine";
+import {
+  YELLOW as CO_YELLOW,
+  choose as coChoose,
+  enterOperation,
+  operationGame,
+  withDice,
+  OFFICES_BEFORE_PRESIDENCIES,
+} from "../fixtures/company-operation";
+import { withAssociatedRegion } from "../fixtures/builders";
 import { createNewGame, chairmanHolder } from "../../engine";
 import { resolveNewCompanyShares, startFamilyPhase } from "../../engine/phases/family";
 import { startHiringPhase } from "../../engine/phases/hiring";
@@ -172,5 +181,24 @@ describe("Joseph Sedley (card #15)", () => {
     state = startHiringPhase(withHiringQueue(state, ["chairman"]));
     expect(state.pendingDecision.step).not.toBe("hiring.emptyCourtChairman");
     expect(chairmanHolder(state)).toBeUndefined();
+  });
+});
+
+describe("Governor administer (p.24)", () => {
+  it("a catastrophic Administer also adds an unrest to the region before the Governor is removed", () => {
+    let state = operationGame("catastrophe-unrest");
+    state = withOffice(state, "president-madras", RED, { treasury: 0 });
+    state = withAssociatedRegion(state, "madras", "Madras");
+    state = withOffice(state, "governor-madras", CO_YELLOW);
+    state = enterOperation(state, [...OFFICES_BEFORE_PRESIDENCIES, "president-bombay"]);
+    state = coChoose(state, { action: "governor", officeId: "governor-madras" });
+    const before = state.india.regions.madras.unrest;
+    const result = withDice(
+      state,
+      (seeded) => coChoose(seeded, { action: "administer" }),
+      (next) => next.company.offices["governor-madras"].vacant,
+    );
+    expect(result.india.regions.madras.unrest).toBe(before + 1);
+    expect(result.log.at(-1)?.summary).toContain("catastroph");
   });
 });

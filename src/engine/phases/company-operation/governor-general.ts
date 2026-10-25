@@ -184,6 +184,8 @@ export const governorGeneralStep: OperationStep = (state, command) => {
       }
       if (check.outcome === "catastrophe") {
         const holder = officeHolder(state, OFFICE_ID);
+        // "If the check did not succeed, place 1 unrest in each Company-controlled region": a catastrophe is a failure too.
+        next = addUnrestEverywhere(next, isLawInEffect(next, "zamindar-taxes") ? 2 : 1);
         return {
           state: finishOffice(vacateAfterCatastrophe(next, OFFICE_ID), OFFICE_ID),
           summary: `${head} ${playerName(state, holder)}'s Governor General returns to supply.`,

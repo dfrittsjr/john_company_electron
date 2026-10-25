@@ -151,6 +151,9 @@ export function governorStep(
       }
       if (check.outcome === "catastrophe") {
         const holder = officeHolder(state, activity.officeId);
+        // "If the check did not succeed, add an unrest to the region" (p.24): a catastrophe is a failure too.
+        const catastropheUnrest = isLawInEffect(next, "zamindar-taxes") ? 2 : 1;
+        next = addUnrest(next, regionId, catastropheUnrest);
         next = vacateAfterCatastrophe(next, activity.officeId);
         const progress = presidencyProgress(next, presidency);
         next = withPresidencyProgress(next, {
