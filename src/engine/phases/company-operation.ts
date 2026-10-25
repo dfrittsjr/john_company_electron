@@ -21,6 +21,36 @@ import { createCommandLogEntry, wrongPhase } from "./shared";
 // Company Operation (rulebook pp.17-26): each office acts in red-ribbon order. The office modules in
 // ./company-operation/ build decisions and apply commands; this file wires them to the dispatcher.
 
+/**
+ * Refresh step (p.36): "Any active local alliances are exhausted." Bought alliances return to the
+ * bottom of their Army box, ready to be bought again next turn.
+ * TODO(LS): call from the Upkeep and Refresh step.
+ */
+export function exhaustActiveLocalAlliances(state: GameState): GameState {
+  return {
+    ...state,
+    company: {
+      ...state.company,
+      armies: Object.fromEntries(
+        Object.entries(state.company.armies).map(([armyId, army]) => [
+          armyId,
+          {
+            ...army,
+            localAlliances: Object.fromEntries(
+              Object.keys(army.localAlliances ?? {}).map((allianceId) => [allianceId, "exhausted" as const]),
+            ),
+          },
+        ]),
+      ) as GameState["company"]["armies"],
+    },
+  };
+}
+
+/** Refresh step (p.36): "Return all extra ships to the supply." TODO(LS): call from Upkeep and Refresh. */
+export function returnExtraShips(state: GameState): GameState {
+  return { ...state, company: { ...state.company, ships: state.company.ships.filter((ship) => ship.kind !== "extra") } };
+}
+
 /** The decision that starts or continues Company Operation; Hiring calls this when it ends. */
 export function createNextCompanyOperationDecision(state: GameState): PendingDecision {
   return decideOperation({ ...state, phase: "companyOperation" });
