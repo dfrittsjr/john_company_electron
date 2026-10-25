@@ -7,9 +7,12 @@
 //   npm run harness -- do <file> <type> [payloadJSON] --actor id   any command, including anytime commands
 //   npm run harness -- state <file> [dot.path]                print part of the game state as JSON
 //   npm run harness -- log <file> [--last 20]
-//   npm run harness -- random <file> [--steps 500] [--seed s] [--anytime 20]
-//       random legal moves until the game ends or breaks; --anytime N also mixes in random anytime
-//       commands (gifts, deals, promise calls, blackmail) on about N% of moves
+//   npm run harness -- random <file> [--steps 500] [--seed s] [--anytime 20] [--policy random|greedy]
+//       legal moves until the game ends or breaks; --anytime N also mixes in random anytime
+//       commands (gifts, deals, promise calls, blackmail) on about N% of moves. --policy greedy
+//       prefers productive moves (trade with full dice, little debt, no envoys) so games last longer.
+//       --fund N is a test aid, not a rule: it adds £N to the Company Balance at the start of each
+//       Revenue phase so the Company survives long enough to exercise the later turns.
 
 import { readFileSync, writeFileSync } from "node:fs";
 import {
@@ -162,6 +165,78 @@ function pick<T>(rng: RngState, items: T[], label: string): { item: T; rng: RngS
   return { item: items[roll.value - 1], rng: roll.rng };
 }
 
+/**
+ * A simple greedy player: score each offered option by its label and keep the best ones (ties are
+ * broken at random by the caller). It only needs to keep the Company alive long enough to reach the
+ * later turns; it is not a strategy.
+ */
+function greedyScore(state: GameState, label: string): number {
+  const amount = Number(label.match(/(\d+)/)?.[1] ?? 0);
+  const rules: Array<[RegExp, number]> = [
+    [/^Trade$/, 40],
+    // About four dice is a good chance of success; treasuries carry over to the next turn.
+    [/^Spend .* and roll/, 20 + (amount <= 4 ? amount : 8 - amount)],
+    [/^Place a .* writer on|^Fill .* filled-order token/, 15],
+    [/^Fit the shipyard/, 15],
+    [/^Buy a Company ship/, 12],
+    [/^Give all .* to Presidency/, 12],
+    [/^Give all .* to Manager of Shipping/, 10],
+    [/^Stop sending envoys/, 20],
+    [/^Finish as Director of Trade/, 5],
+    [/^Administer/, 5],
+    [/^Enlist Writer/, 8],
+    [/^Seek Share/, 6],
+    [/^Purchase Workshop/, 4],
+    [/^Extra writer/, 5],
+    [/^Pay No Dividends/, 10],
+    [/^Keep the card$/, 5],
+    [/^Play Company Fraud|^Play Scandal|^Play Mercantile|^Play Diplomatic/, -10],
+    [/^Discard Royal Protection/, 10],
+    [/^Retire to the .*prize/, 10 - amount / 2],
+    [/^Pass$|^Pass this round|^Finish voting|^Stop voting|^Resolve/, 5],
+    [/^Return a piece/, 1],
+    [/^Check again/, -10],
+    [/^Special Envoy/, -50],
+    [/^Cancel this Trade/, -50],
+    [/^Deploy against|^Go on to Deploy/, -20],
+
+    [/^Ask the Court/, -10],
+    [/^Call another round/, -10],
+    [/^Lease an extra ship/, 9],
+    [/^Rotate .* for|^Spend .* vote/, -5],
+    [/^Do not retire/, -5],
+  ];
+  if (/^Advance Company Debt/.test(label)) return state.company.debt < 3 ? 8 : -5;
+  // Declare another region only when the sea zone has ships to spare for its orders.
+  if (/^Also declare/.test(label)) {
+    const current = state.companyOperation.current;
+    const zone = current?.office === "presidency" ? { Bombay: "west-indian", Madras: "south-indian", Bengal: "east-indian" }[current.presidency] : undefined;
+    return state.company.ships.filter((ship) => ship.location === zone).length >= 3 ? 3 : -5;
+  }
+  // Allocate in small steps: Shipping until it can add a ship, then spread across the Presidencies,
+  // favouring those with more ships (more orders per Trade) and less cash already.
+  if (/^Give all .* to Manager of Shipping/.test(label)) return 3;
+  if (/^Give .* to Manager of Shipping/.test(label)) {
+    return (state.company.offices["manager-of-shipping"]?.treasury ?? 0) < 10 ? 14 : 2;
+  }
+  const presidency = label.match(/^Give (all )?.* to Presidency of (\w+)/);
+  if (presidency) {
+    const zone = { Bombay: "west-indian", Madras: "south-indian", Bengal: "east-indian" }[presidency[2]];
+    const ships = state.company.ships.filter((ship) => ship.location === zone).length;
+    const treasury = state.company.offices[`president-${presidency[2].toLowerCase()}`]?.treasury ?? 0;
+    return (presidency[1] ? 9 : 12) + ships - Math.floor(treasury / 4);
+  }
+  if (/^Give .* to Director of Trade/.test(label)) return 1;
+  for (const [pattern, score] of rules) if (pattern.test(label)) return score;
+  return 0;
+}
+
+function greedyChoices(state: GameState, legal: GameState["pendingDecision"]["legalCommands"]) {
+  const scored = legal.map((command) => ({ command, score: greedyScore(state, command.label) }));
+  const best = Math.max(...scored.map((entry) => entry.score));
+  return scored.filter((entry) => entry.score === best).map((entry) => entry.command);
+}
+
 function checkInvariants(state: GameState): string[] {
   const problems: string[] = [];
   for (const playerId of Object.keys(state.players)) {
@@ -273,11 +348,16 @@ function main(): void {
           console.log(`Stopped after ${step} moves: no legal commands (${current.pendingDecision.step}).`);
           break;
         }
-        let choice = legal[0];
-        if (legal.length > 1) {
-          const roll = rollDie(rng, legal.length, "harness.random");
+        const fund = Number(flags.fund ?? 0);
+        if (fund > 0 && current.pendingDecision.step === "revenue.confirm") {
+          current = { ...current, company: { ...current.company, balance: current.company.balance + fund } };
+        }
+        const candidates = flags.policy === "greedy" ? greedyChoices(current, legal) : legal;
+        let choice = candidates[0];
+        if (candidates.length > 1) {
+          const roll = rollDie(rng, candidates.length, "harness.random");
           rng = roll.rng;
-          choice = legal[roll.value - 1];
+          choice = candidates[roll.value - 1];
         }
         try {
           current = apply(current, choice.type, choice.payload ?? {}, defaultActor(current));
