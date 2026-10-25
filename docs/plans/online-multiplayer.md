@@ -38,15 +38,21 @@ GameRoom Durable Object  (one per game)
 
 ## Identity and seats
 
-**Recommended: invite links with seat tokens, and no accounts.**
+**Decided: invite links with seat tokens, and no accounts.**
 - **Creating a game** returns a host link plus one private link per seat ("Join as Ann").
 - **Seat tokens:** each link carries a random 128-bit token. The browser stores it in localStorage;
   the server stores only a SHA-256 hash.
 - **Who acts:** the server takes the acting player from the token and never trusts the client's
   `actorId`.
-- **Spectators:** an optional read-only link shows the public view.
-- **Optional:** put Cloudflare Access (email one-time code, free up to 50 users) in front of the whole
-  site, so only your friends can open it. Seats can later be tied to Access emails.
+- **Spectators (decided: yes):** a read-only spectator link shows the public view, the same view a
+  seat gets minus any private information and legal commands.
+- **Bot check (decided: Turnstile, no login).** Cloudflare Turnstile in non-interactive mode runs a
+  check with no input when someone creates a game or joins through a link. The Worker verifies the
+  token server-side (Turnstile's siteverify endpoint, with a secret stored as a Worker secret)
+  before issuing a seat. It stops scripts from creating games or abusing links. It doesn't restrict
+  who may play; the invite links do that. Turnstile is free and works on a `workers.dev` address.
+  A full-page challenge, by contrast, needs a custom domain on Cloudflare. Cloudflare Access (email
+  login) is not used.
 
 ## API
 
@@ -98,12 +104,13 @@ GameRoom Durable Object  (one per game)
 
 ## Notifications
 
-Async play needs a nudge when it's your turn:
-- **Discord webhook** (recommended, since your group already uses Discord). The host pastes a
-  channel webhook URL when creating the game. The server posts "Ann, your turn: hire the Manager of
-  Shipping → link" whenever the acting player changes.
-- **Browser notifications** while the tab is open.
-- **Email later**, if wanted, through a mail provider.
+**Decided: no Discord or email notifications yet.** For now:
+- **Browser notifications** and a tab-title change ("(Your turn) John Company") while the game is
+  open in a tab.
+- **A "games waiting for you" list** on the landing page, read from the seat tokens in this browser.
+
+Later, if wanted, a Discord channel webhook per game could post "Ann, your turn…" whenever the acting
+player changes.
 
 ## Storage and free-tier fit
 
@@ -142,17 +149,18 @@ Async play needs a nudge when it's your turn:
 | M1 | Worker script and GameRoom skeleton: create, join, fetch view (polling) | An online game exists and can be viewed | M |
 | M2 | Commands, seat authorisation, `projectForSeat` | Playable online by refreshing; secrets stay on the server | M |
 | M3 | WebSockets with hibernation, live updates, reconnect | Live play | M |
-| M4 | Lobby pages, seat links, waiting banner, Discord notifications | Friends can start and follow games easily | M |
+| M4 | Lobby pages, seat and spectator links, Turnstile, waiting banner, browser notifications | Friends can start and follow games easily | M |
 | M5 | Import/export `.joco`, online undo, chat | Move existing games online; safety nets | S-M |
 | M6 | Rate limits, tests, docs, deploy | Ready for your group | S |
 
 M1-M3 can run in parallel with the Deregulation work, since they touch different code. The firm
 strategy step (secret choices) is easiest to finish once M2's views exist.
 
-## Decisions for you
+## Decisions (made 2026-10-25)
 
-1. **Identity:** seat links (recommended) or Cloudflare Access emails?
-2. **Privacy:** put Cloudflare Access in front of the site, or rely on unguessable links?
-3. **Notifications:** a Discord webhook per game?
-4. **Spectators:** allow a read-only link?
-5. **File mode:** keep Save & pass alongside online play (recommended, as an offline fallback)?
+1. **Identity:** invite links with per-seat tokens. No accounts.
+2. **Bot check:** Cloudflare Turnstile, non-interactive, on game creation and on joining. No
+   Cloudflare Access login.
+3. **Notifications:** none beyond the browser for now; a Discord webhook may come later.
+4. **Spectators:** yes, with a read-only spectator link.
+5. **File mode:** kept alongside online play as an offline fallback, with `.joco` import and export.
