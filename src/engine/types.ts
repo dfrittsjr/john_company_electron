@@ -10,7 +10,7 @@ import type { ParliamentState } from "./phases/parliament.state";
 import type { ScenarioId as DataScenarioId } from "../data/types";
 
 // Version 2: one canonical location per family piece, scenario-driven setup, Standing as a track index.
-export const GAME_SCHEMA_VERSION = 2;
+export const GAME_SCHEMA_VERSION = 3;
 
 export type GameMode = "hotseat" | "soloCrown" | "twoPlayerCrown";
 export type ScenarioId = DataScenarioId;
