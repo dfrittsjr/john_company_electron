@@ -1,11 +1,28 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  // Static site only for now: `astro build` writes ./dist and the Worker serves it.
-  // A Worker script (e.g. a Durable Object per game) can be added later with "main".
+  // One Worker: `astro build` writes the static site to ./dist, and src/worker/index.ts answers
+  // /api/*, with one GameRoom Durable Object per online game. See docs/online/server.md.
   "name": "john-company",
+  "main": "src/worker/index.ts",
   "compatibility_date": "2026-10-01",
   "assets": {
     "directory": "./dist",
-    "not_found_handling": "404-page"
-  }
+    "binding": "ASSETS",
+    "not_found_handling": "404-page",
+    // Only the API reaches the Worker script; every other path is served as a static asset.
+    "run_worker_first": ["/api/*"]
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "GAME_ROOM", "class_name": "GameRoom" }]
+  },
+  // Migrations run once per tag on deploy. SQLite-backed classes are the ones the free plan allows.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GameRoom"] }],
+  "vars": {
+    // Cloudflare's documented always-pass test site key (visible widget). Replace it with the
+    // site key of your Turnstile widget before deploying; the matching secret is the Worker
+    // secret TURNSTILE_SECRET (`npx wrangler secret put TURNSTILE_SECRET`), and locally
+    // .dev.vars (copy .dev.vars.example).
+    "TURNSTILE_SITE_KEY": "1x00000000000000000000AA"
+  },
+  "observability": { "enabled": true }
 }

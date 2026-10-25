@@ -11,7 +11,7 @@
     "preview": "astro preview --host 127.0.0.1",
     "cf:preview": "astro build && wrangler dev",
     "deploy": "astro build && wrangler deploy",
-    "typecheck": "astro check && tsc --noEmit",
+    "typecheck": "astro check && tsc --noEmit && tsc --noEmit -p tsconfig.worker.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -20,7 +20,9 @@
     "test:save": "vitest run src/tests/save",
     "test:crown": "vitest run src/tests/crown",
     "verify": "npm run typecheck && npm run test",
-    "harness": "tsx scripts/harness.ts"
+    "harness": "tsx scripts/harness.ts",
+    "cf:types": "wrangler types src/worker/worker-configuration.d.ts --strict-vars=false",
+    "cf:dev": "astro build && wrangler dev"
   },
   "keywords": [
     "boardgame",

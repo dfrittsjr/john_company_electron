@@ -5,6 +5,9 @@ export * from "./types";
 export * from "./selectors";
 export * from "./command-handler";
 export { undoBlockReason } from "./undo";
+export * from "./hidden";
+export * from "./automatic";
+export * from "./projection";
 export {
   applyTransfer,
   enterpriseVoteGuarantors,
@@ -34,7 +37,7 @@ export {
   registerBlackmailResume,
   startBlackmailPlay,
 } from "./phases/negotiation-blackmail";
-export { legalElephantPositions } from "./phases/events-in-india/india";
+export { legalElephantPositions, topOfStackRegion } from "./phases/events-in-india/india";
 export { createOffice, returnOfficeToBox, vacateOffice, vacateOfficeWithoutRetirement } from "./offices";
 export type {
   NegotiationState,
