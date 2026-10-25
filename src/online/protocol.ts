@@ -180,7 +180,8 @@ export type ServerErrorCode =
  * - face-down blackmail in the London Season Display is HIDDEN_BLACKMAIL_CARD_ID for everyone but
  *   the player choosing from it; blackmail in the London Season discards is too;
  * - a decision offered only because its actor holds a face-down card shows everyone else step
- *   HIDDEN_DECISION_STEP and a neutral prompt.
+ *   HIDDEN_DECISION_STEP, actor HIDDEN_PLAYER_ID and a neutral prompt;
+ * - a log entry for a declined face-down card shows everyone else a neutral summary and no actor.
  * A multi-option "system" decision is shown with `actor` set to the seat that answers it.
  */
 export {
@@ -190,6 +191,7 @@ export {
   HIDDEN_ID_PREFIX,
   HIDDEN_LAW_ID,
   HIDDEN_LONDON_SEASON_CARD_ID,
+  HIDDEN_PLAYER_ID,
   hiddenBlackmailInstanceId,
   hiddenEventTileRegion,
   isHiddenId,

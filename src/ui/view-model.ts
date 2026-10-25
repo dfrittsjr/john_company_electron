@@ -2,7 +2,7 @@
 
 import { blackmailCards, enterpriseDecks, offices, prestigeCards } from "../data";
 import type { ActorId, GameLogEntry, GameState, LegalCommand, PlayerId } from "../engine";
-import { HIDDEN_BLACKMAIL_CARD_ID, HIDDEN_EVENT_TILE_ID, HIDDEN_LAW_ID, isHiddenId } from "../online/protocol";
+import { HIDDEN_BLACKMAIL_CARD_ID, HIDDEN_EVENT_TILE_ID, HIDDEN_LAW_ID, HIDDEN_PLAYER_ID, isHiddenId } from "../online/protocol";
 
 /** Six family colours that stay distinct on the parchment board; text labels back them up. */
 export const FAMILY_PALETTE = ["#2563a8", "#c9971a", "#c2417d", "#2e7d4f", "#7a4fa0", "#3b3b3b"];
@@ -39,6 +39,7 @@ export function playerColors(state: GameState): Record<PlayerId, string> {
 
 export function playerName(state: GameState, playerId: string | undefined): string {
   if (!playerId) return "nobody";
+  if (playerId === HIDDEN_PLAYER_ID) return "a player";
   return state.players[playerId]?.name ?? playerId;
 }
 

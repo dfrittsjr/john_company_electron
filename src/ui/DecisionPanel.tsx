@@ -1,5 +1,6 @@
 import type { GameState, LegalCommand } from "../engine";
 import { ruleSectionForPhase } from "../data/rules-text";
+import { HIDDEN_PLAYER_ID } from "../online/protocol";
 import { commandTargets, groupLegalCommands, phaseLabel, playerColors, playerName } from "./view-model";
 
 type Props = {
@@ -26,7 +27,13 @@ export function DecisionPanel({ game, hidden, onReveal, onRun, onHover, filter, 
   const decision = game.pendingDecision;
   const actor = decision.actor;
   const actorName =
-    actor === "system" ? "Anyone (automatic step)" : actor === "simultaneous" ? "Everyone" : playerName(game, actor);
+    actor === "system"
+      ? "Anyone (automatic step)"
+      : actor === "simultaneous"
+        ? "Everyone"
+        : actor === HIDDEN_PLAYER_ID
+          ? "A private decision"
+          : playerName(game, actor);
   const color = actor !== "system" && actor !== "simultaneous" ? playerColors(game)[actor] : undefined;
 
   const visible = filter

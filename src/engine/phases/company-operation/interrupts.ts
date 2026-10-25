@@ -151,9 +151,14 @@ export const interruptStep: OperationStep = (state, cmd) => {
         }
       }
       const next = withCo(state, { interrupt: undefined });
-      const summary = `${playerName(state, interrupt.holder)} did not play ${cardName}.`;
       const resolved = resolveCheck(next, interrupt.check);
-      return { state: resolved.state, summary: `${summary} ${resolved.summary}`, details: resolved.details, rngRolls: resolved.rolls };
+      return {
+        state: resolved.state,
+        summary: resolved.summary,
+        privateNote: `${playerName(state, interrupt.holder)} did not play ${cardName}.`,
+        details: resolved.details,
+        rngRolls: resolved.rolls,
+      };
     }
     case "approveAlliance":
     case "refuseAlliance": {

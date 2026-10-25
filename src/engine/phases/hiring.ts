@@ -31,7 +31,7 @@ import {
   registerInFlowBlackmail,
   startBlackmailPlay,
 } from "./negotiation-blackmail";
-import { createCommandLogEntry } from "./shared";
+import { createCommandLogEntry, PRIVATE_DECISION_SUMMARY } from "./shared";
 
 // Hiring (rulebook pp.14-17). Vacant offices are hired in ascending order of the number on the
 // back of each office card. The Chairman is elected by Company-share support; every other office
@@ -860,6 +860,7 @@ function resolveHiringPreference(state: GameState, command: GameCommand, play: b
       now,
       type: "hiring.hiringPreferencePassed",
       summary: `${player.name} did not play a blackmail card for ${officeLabel(officeId)}.`,
+      publicSummary: PRIVATE_DECISION_SUMMARY,
     });
     const next: GameState = { ...state, updatedAt: now, log: [...state.log, logEntry], hiring: offered };
 

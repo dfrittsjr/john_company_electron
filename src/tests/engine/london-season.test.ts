@@ -109,6 +109,10 @@ describe("London Season (pp.11-12)", () => {
     state = choose(state, "Take Lord Highgate");
     expect(state.pendingDecision.actor).toBe(YELLOW);
     state = choose(state, "Take face-down blackmail: Company Fraud");
+    // Every face-down card taken gets the keep-or-play step, so a Scandal doesn't stand out.
+    expect(state.pendingDecision).toEqual(expect.objectContaining({ step: "londonSeason.resolveScandal", actor: YELLOW }));
+    expect(state.pendingDecision.legalCommands.map((legal) => legal.label)).toEqual(["Keep Company Fraud face down"]);
+    state = choose(state, "Keep Company Fraud face down");
 
     // "The remaining card is discarded and three new cards are placed in the London Season Display."
     expect(state.phase).toBe("family");

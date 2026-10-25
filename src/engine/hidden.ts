@@ -16,6 +16,8 @@ export const HIDDEN_BLACKMAIL_CARD_ID = "hidden:blackmail";
 export const HIDDEN_EVENT_TILE_ID = "hidden:event-tile";
 /** A card in any other face-down draw pile (generic decks, the Crown's AI deck). */
 export const HIDDEN_CARD_ID = "hidden:card";
+/** Whoever is making a decision offered only because they hold a face-down card. */
+export const HIDDEN_PLAYER_ID = "hidden:player";
 
 const EVENT_TILE_REGION_SEPARATOR = "@";
 

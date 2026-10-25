@@ -38,7 +38,10 @@ export type RestrictionProgress = {
   spouseCardId: string;
 };
 
-/** A Scandal blackmail just taken from the display, which may be played at once. */
+/**
+ * A face-down blackmail card just taken. A Scandal may be played at once (p.12); any other card is
+ * just kept, through the same step, so the table can't tell which kind was taken.
+ */
 export type ScandalProgress = {
   playerId: PlayerId;
   cardInstanceId: CardInstanceId;

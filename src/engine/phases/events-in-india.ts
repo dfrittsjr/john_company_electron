@@ -7,7 +7,7 @@ import { ENVOY_TO_THE_MUGHALS, NESTED_TILE_PREFIX, advance, beginEventsInIndia, 
 import type { TileWorkItem } from "./events-in-india.state";
 import { facedownBlackmailInstance, registerBlackmailResume, startBlackmailPlay } from "./negotiation-blackmail";
 import type { GovernorLossRecord } from "./events-in-india.state";
-import { wrongPhase } from "./shared";
+import { PRIVATE_DECISION_SUMMARY, wrongPhase } from "./shared";
 
 // VII. Events in India (rulebook pp.28-33). The phase runs automatically, pausing only for player
 // choices: Envoy to the Mughals before the storm die, the order of Rebellions within a
@@ -33,7 +33,8 @@ export function chooseEnvoyToTheMughals(state: GameState, command: GameCommand):
   const choice = command.payload as EnvoyChoice;
   markEnvoyOffered(ctx, playerId);
   if (!choice.play) {
-    log(ctx, "eventsInIndia.envoyDeclined", `${playerName(ctx, playerId)} does not play Envoy to the Mughals.`);
+    const entry = log(ctx, "eventsInIndia.envoyDeclined", `${playerName(ctx, playerId)} does not play Envoy to the Mughals.`);
+    entry.publicSummary = PRIVATE_DECISION_SUMMARY;
     return finish(ctx);
   }
 

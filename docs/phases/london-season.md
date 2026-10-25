@@ -37,6 +37,8 @@ Files: `src/engine/phases/london-season.ts`, `london-season.state.ts`, `retireme
     Sedley: Company shares) become a decision: discard or remove them, or trade them first and
     check again.
   - A Scandal blackmail may be played at once to vacate an eligible office without retirement.
+    Every face-down card taken goes through the same keep-or-play step (just "Keep it face down"
+    for other cards), so a pause after the pick doesn't tell the table it was a Scandal.
 - End of season: discard the rest of the display, refill to three, return pensioners to supply.
 
 ### Upkeep and Refresh (p.36)

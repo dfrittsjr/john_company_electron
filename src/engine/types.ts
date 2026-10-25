@@ -110,6 +110,12 @@ export type GameLogEntry = {
   details?: unknown;
   commandId?: string;
   rngRolls?: RngRollRecord[];
+  /**
+   * Set when `summary` would show who holds a face-down card ("Ann kept their blackmail card.").
+   * Only `actor` should read `summary`; online views give everyone else this text, with no actor
+   * (src/engine/projection.ts).
+   */
+  publicSummary?: string;
 };
 
 export type PieceStack = {

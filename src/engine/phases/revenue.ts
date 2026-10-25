@@ -217,6 +217,8 @@ function complete(
   command: GameCommand,
   collector: Collector,
   logType: string,
+  /** A declined face-down card, told only to its holder (createCommandLogEntry). */
+  privateNote?: string,
 ): ApplyCommandResult {
   const progressed = progressRevenue(after, collector);
   const now = command.clientTimestamp;
@@ -234,6 +236,7 @@ function complete(
       failed: progressed.state.company.failed,
     },
     rngRolls: collector.rolls.length > 0 ? collector.rolls : undefined,
+    privateNote,
   });
 
   return {
@@ -307,8 +310,7 @@ const companyFraud: CommandHandler = (state, command) => {
     );
     return { ok: true, state: played, logEntry: played.log[played.log.length - 1] };
   }
-  collector.notes.push(`${playerName(state, playerId)} kept their blackmail card.`);
-  return complete(state, next, command, collector, "revenue.companyFraud");
+  return complete(state, next, command, collector, "revenue.companyFraud", `${playerName(state, playerId)} kept their blackmail card.`);
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -482,8 +484,8 @@ const playScandal: CommandHandler = (state, command) => {
   const progress = state.parliament.revenue!;
 
   if (!payload.cardInstanceId) {
-    collector.notes.push(`${playerName(state, playerId)} played no Scandal.`);
-    return complete(state, patchRevenue(state, { scandalCandidates: progress.scandalCandidates.slice(1) }), command, collector, "revenue.scandal");
+    const next = patchRevenue(state, { scandalCandidates: progress.scandalCandidates.slice(1) });
+    return complete(state, next, command, collector, "revenue.scandal", `${playerName(state, playerId)} played no Scandal.`);
   }
 
   // Played through the shared blackmail path so Man on the Inside may cancel it (p.12). The same

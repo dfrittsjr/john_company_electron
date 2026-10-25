@@ -344,11 +344,9 @@ function takeCard(state: GameState, playerId: PlayerId, cardId: string): GameSta
   if (!prestige) {
     const instance: CardInstance = { id: `blackmail-${cardId}`, cardId, facedown: true };
     const next = updatePlayer(state, playerId, { blackmailCards: [...player.blackmailCards, instance] });
-    // Scandal blackmails may be played "when taken from the display".
-    if (blackmailById.get(cardId)?.timing === "whenTakenOrAnytimeAfterRevenuePhase") {
-      return { ...next, londonSeason: { ...next.londonSeason, scandal: { playerId, cardInstanceId: instance.id, cardId } } };
-    }
-    return next;
+    // Scandal blackmails may be played "when taken from the display". Every face-down card taken
+    // gets the same follow-up step, so a pause after the pick doesn't tell the table it was a Scandal.
+    return { ...next, londonSeason: { ...next.londonSeason, scandal: { playerId, cardInstanceId: instance.id, cardId } } };
   }
 
   let next = updatePlayer(state, playerId, {
@@ -537,7 +535,9 @@ function resolveRestriction(state: GameState, command: GameCommand): ApplyComman
 function scandalDecision(state: GameState): PendingDecision {
   const scandal = state.londonSeason.scandal!;
   const name = blackmailById.get(scandal.cardId)?.name ?? scandal.cardId;
-  const legalCommands: LegalCommand[] = blackmailOptionsForCard(state, scandal.playerId, scandal.cardId).map((option) => ({
+  const playableNow = blackmailById.get(scandal.cardId)?.timing === "whenTakenOrAnytimeAfterRevenuePhase";
+  const options = playableNow ? blackmailOptionsForCard(state, scandal.playerId, scandal.cardId) : [];
+  const legalCommands: LegalCommand[] = options.map((option) => ({
     type: "londonSeason.resolveScandal",
     label: `Play ${name}: ${option.label}`,
     payload: { action: "play", params: option.params },
@@ -554,7 +554,9 @@ function scandalDecision(state: GameState): PendingDecision {
     step: "londonSeason.resolveScandal",
     actor: scandal.playerId,
     visibility: "private",
-    prompt: `${state.players[scandal.playerId].name}: play ${name} now, or keep it for later?`,
+    prompt: playableNow
+      ? `${state.players[scandal.playerId].name}: play ${name} now, or keep it for later?`
+      : `${state.players[scandal.playerId].name}: you took ${name}. Keep it face down until you play it.`,
     legalCommands,
     canSave: true,
   };
@@ -588,7 +590,7 @@ function resolveScandal(state: GameState, command: GameCommand): ApplyCommandRes
 
   return finishCommand(state, command, command.clientTimestamp, "londonSeason.scandalResolved", {
     state: continueLondonSeason(next),
-    summary: `${state.players[scandal.playerId].name} kept a blackmail card.`,
+    summary: `${state.players[scandal.playerId].name} kept the blackmail card face down.`,
     details: { playerId: scandal.playerId, ...payload },
   });
 }

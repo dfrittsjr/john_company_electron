@@ -91,6 +91,7 @@ function operationCommand(step: OperationStep): CommandHandler {
       summary: result.summary,
       details: result.details,
       rngRolls: result.rngRolls,
+      privateNote: result.privateNote,
     });
     const logged: GameState = { ...result.state, updatedAt: now, log: [...result.state.log, logEntry] };
     // A Negotiation interrupt (e.g. Man on the Inside answering a blackmail) or an office being hired

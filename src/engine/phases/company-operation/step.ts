@@ -8,6 +8,8 @@ export type StepResult = {
   summary: string;
   details?: unknown;
   rngRolls?: RngRollRecord[];
+  /** Leads the summary for the actor only (a declined face-down card); see createCommandLogEntry. */
+  privateNote?: string;
 };
 
 export type OperationStep = (state: GameState, command: GameCommand) => StepResult;

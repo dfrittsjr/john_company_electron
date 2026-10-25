@@ -7,6 +7,7 @@ import {
   HIDDEN_ID_PREFIX,
   HIDDEN_LAW_ID,
   HIDDEN_LONDON_SEASON_CARD_ID,
+  HIDDEN_PLAYER_ID,
   hiddenBlackmailInstanceId,
   hiddenTopEventTileId,
 } from "./hidden";
@@ -22,8 +23,9 @@ export type ProjectionViewer = { kind: "seat"; playerId: PlayerId } | { kind: "s
 
 /**
  * Decisions that are only offered because the actor holds a particular face-down blackmail card.
- * Other viewers see that the actor is deciding something private, but not which step it is, so
- * the step id, decision id and prompt don't name the card.
+ * Other viewers see that someone is deciding something private, but not who (HIDDEN_PLAYER_ID) or
+ * which step it is, so the step id, decision id and prompt don't name the card. That a pause
+ * happens at all is unavoidable without asking every player at every such moment.
  */
 export const CARD_REVEALING_STEPS: ReadonlySet<string> = new Set([
   "companyOperation.connection",
@@ -66,7 +68,10 @@ function isFaceDown(card: CardInstance): boolean {
  * - lists that would show who holds a face-down card (Company Fraud and Scandal candidates, Envoy
  *   and Hiring Preference offers) cut down to the viewer;
  * - legal commands only for the player who must decide (spectators get none); decisions offered
- *   because of a face-down card (CARD_REVEALING_STEPS) show others a neutral step and prompt.
+ *   because of a face-down card (CARD_REVEALING_STEPS) show others a neutral step and prompt, and
+ *   no actor;
+ * - log entries for a declined face-down card (those with a publicSummary) show others that text,
+ *   and the command's other entries no actor.
  */
 export function projectForViewer(state: GameState, viewer: ProjectionViewer): GameState {
   const me = viewerPlayerId(state, viewer);
@@ -76,7 +81,7 @@ export function projectForViewer(state: GameState, viewer: ProjectionViewer): Ga
 
   // Randomness: nobody may predict dice or reconstruct a shuffle.
   view.rng = { algorithm: view.rng.algorithm, seed: "", counter: view.rng.counter, internalState: [0, 0, 0, 0] };
-  view.log = view.log.map(scrubLogEntry);
+  view.log = hidePrivateLogEntries(view.log.map(scrubLogEntry), me);
 
   hideDrawPiles(view);
   hidePrivateRecords(view, me);
@@ -108,6 +113,19 @@ function scrubLogEntry(entry: GameLogEntry): GameLogEntry {
     .filter((roll) => !roll.label.startsWith("shuffle"))
     .map((roll) => ({ ...roll, seed: "" }));
   return { ...entry, rngRolls: rolls.length > 0 ? rolls : undefined };
+}
+
+function hidePrivateLogEntries(log: GameLogEntry[], me: PlayerId | undefined): GameLogEntry[] {
+  const hiddenFromMe = (entry: GameLogEntry) => entry.publicSummary !== undefined && entry.actor !== me;
+  const privateCommands = new Set(log.filter((entry) => hiddenFromMe(entry) && entry.commandId).map((entry) => entry.commandId));
+  return log.map((entry) => {
+    const { publicSummary, ...rest } = entry;
+    if (publicSummary !== undefined && entry.actor !== me) {
+      return { ...rest, actor: undefined, summary: publicSummary, details: undefined };
+    }
+    if (entry.commandId && privateCommands.has(entry.commandId)) return { ...rest, actor: undefined };
+    return rest;
+  });
 }
 
 function placeholders(count: number, id: string): string[] {
@@ -179,13 +197,13 @@ function projectDecision(
   const projected: PendingDecision = { ...decision, legalCommands: [] };
   if (!CARD_REVEALING_STEPS.has(decision.step) || decision.actor === me) return projected;
 
-  const name = typeof decision.actor === "string" ? (view.players[decision.actor]?.name ?? decision.actor) : "a player";
   return {
     ...projected,
     id: `${HIDDEN_ID_PREFIX}decision@${view.log.length}`,
     step: HIDDEN_DECISION_STEP,
+    actor: HIDDEN_PLAYER_ID,
     visibility: "private",
-    prompt: `Waiting for ${name} to make a private decision.`,
+    prompt: "A player is making a private decision.",
   };
 }
 

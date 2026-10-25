@@ -13,6 +13,7 @@ import {
   HIDDEN_EVENT_TILE_ID,
   HIDDEN_LAW_ID,
   HIDDEN_LONDON_SEASON_CARD_ID,
+  HIDDEN_PLAYER_ID,
   applyCommand,
   createNewGame,
   hiddenBlackmailInstanceId,
@@ -23,6 +24,8 @@ import {
   type PlayerId,
   type ProjectionViewer,
 } from "../../engine";
+import { withOffice } from "../fixtures/builders";
+import { applyCommandOrThrow } from "../fixtures/game";
 import { act, BLUE, negotiationGame, RED, withBlackmail, YELLOW } from "../fixtures/negotiation";
 
 const NOW = "2026-10-25T12:00:00.000Z";
@@ -344,11 +347,22 @@ describe("projectForViewer", () => {
     expect(red.parliament.revenue?.fraudCandidates).toEqual([RED]);
 
     const blue = projectForViewer(state, { kind: "seat", playerId: BLUE });
-    expect(blue.pendingDecision).toMatchObject({ actor: RED, step: HIDDEN_DECISION_STEP, legalCommands: [] });
+    expect(blue.pendingDecision).toMatchObject({ actor: HIDDEN_PLAYER_ID, step: HIDDEN_DECISION_STEP, legalCommands: [] });
     expect(blue.pendingDecision.prompt).not.toMatch(/fraud/i);
     expect(blue.pendingDecision.id).not.toMatch(/fraud/i);
     expect(blue.parliament.revenue?.fraudCandidates).toEqual([]);
     expect(mentions(blue, "company-fraud")).toBe(false);
+
+    // Keeping the card: only Red reads that they kept it; the others see who acted on nothing.
+    const kept = applyCommandOrThrow(withOffice(state, "manager-of-shipping", RED), { id: "keep-fraud", actorId: RED, type: "revenue.companyFraud", payload: { play: false } });
+    const entries = (game: GameState) => game.log.slice(state.log.length);
+    expect(entries(projectForViewer(kept, { kind: "seat", playerId: RED })).map((entry) => entry.summary).join(" ")).toMatch(/kept their blackmail card/);
+    for (const viewer of [{ kind: "seat", playerId: BLUE } as const, { kind: "spectator" } as const]) {
+      const others = entries(projectForViewer(kept, viewer));
+      expect(others.length).toBeGreaterThan(0);
+      expect(others.every((entry) => entry.actor === undefined && entry.publicSummary === undefined)).toBe(true);
+      expect(others.map((entry) => entry.summary).join(" ")).not.toMatch(/kept|blackmail|Red/i);
+    }
   });
 
   it("hands a multi-option system decision to the Chairman title holder", () => {

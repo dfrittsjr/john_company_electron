@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { GameView } from "../../online/protocol";
+import { HIDDEN_PLAYER_ID, type GameView } from "../../online/protocol";
 import { GameScreen } from "../GameScreen";
 import { saveTextFile } from "../platform/files";
 import { suggestedSaveName } from "../save-names";
@@ -44,6 +44,7 @@ export function isMyDecision(view: GameView): boolean {
 function waitingText(view: GameView): string {
   const decision = view.state.pendingDecision;
   const actor = decision.actor;
+  if (actor === HIDDEN_PLAYER_ID) return "Waiting for a player's private decision.";
   let who: string;
   if (actor === "system") who = "the table";
   else if (actor === "simultaneous") who = "the other players";
