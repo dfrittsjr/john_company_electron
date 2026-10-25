@@ -1,0 +1,50 @@
+---
+import SiteLayout from "../layouts/SiteLayout.astro";
+import { RULES_ATTRIBUTION, rulesSections } from "../data/rules-text";
+---
+
+<SiteLayout title="Rules">
+  <h1>Rules reference</h1>
+  <p>
+    The rules of <em>John Company: Second Edition</em>, as written in the rulebook. The same text is
+    available inside a game from the <strong>Rules</strong> button.
+  </p>
+  <nav class="rules-contents" aria-label="Rules contents">
+    <h2>Contents</h2>
+    <ol>
+      {
+        rulesSections.map((section) => (
+          <li class={section.parentId ? "rules-contents-child" : undefined}>
+            <a href={`#${section.id}`}>{section.title}</a>
+            {section.notInApp ? <span class="rules-badge"> (not yet in this app)</span> : null}
+          </li>
+        ))
+      }
+    </ol>
+  </nav>
+  {
+    rulesSections.map((section) => (
+      <section class="rules-section" id={section.id}>
+        {section.parentId ? <h3>{section.title}</h3> : <h2>{section.title}</h2>}
+        <p class="rules-pages">
+          Rulebook page{section.pages.includes("-") ? "s" : ""} {section.pages}
+          {section.notInApp ? <span class="rules-badge"> Not yet in this app</span> : null}
+        </p>
+        {section.blocks.map((block) =>
+          block.kind === "h3" ? (
+            <h4>{block.text}</h4>
+          ) : block.kind === "ul" ? (
+            <ul class={(block.items ?? []).every((item) => /^\d+\.\s/.test(item)) ? "rules-numbered" : undefined}>
+              {(block.items ?? []).map((item) => (
+                <li>{item}</li>
+              ))}
+            </ul>
+          ) : (
+            <p>{block.text}</p>
+          ),
+        )}
+      </section>
+    ))
+  }
+  <p class="rules-attribution">{RULES_ATTRIBUTION}</p>
+</SiteLayout>

@@ -1,4 +1,5 @@
 import type { GameState, LegalCommand } from "../engine";
+import { ruleSectionForPhase } from "../data/rules-text";
 import { commandTargets, groupLegalCommands, phaseLabel, playerColors, playerName } from "./view-model";
 
 type Props = {
@@ -13,11 +14,13 @@ type Props = {
   filter: string | null;
   onClearFilter: () => void;
   error: string | null;
+  /** Opens the rules reference at a section. Without it the rules link is not shown. */
+  onOpenRules?: (sectionId: string) => void;
 };
 
 const COMPACT_GROUP_SIZE = 7;
 
-export function DecisionPanel({ game, hidden, onReveal, onRun, onHover, filter, onClearFilter, error }: Props) {
+export function DecisionPanel({ game, hidden, onReveal, onRun, onHover, filter, onClearFilter, error, onOpenRules }: Props) {
   const decision = game.pendingDecision;
   const actor = decision.actor;
   const actorName =
@@ -28,6 +31,7 @@ export function DecisionPanel({ game, hidden, onReveal, onRun, onHover, filter, 
     ? decision.legalCommands.filter((command) => commandTargets(command).includes(filter))
     : decision.legalCommands;
   const groups = groupLegalCommands(visible);
+  const phaseRules = ruleSectionForPhase(game.phase);
   const originalIndex = new Map(decision.legalCommands.map((command, index) => [command, index]));
 
   return (
@@ -40,6 +44,13 @@ export function DecisionPanel({ game, hidden, onReveal, onRun, onHover, filter, 
         {actorName}
       </h2>
       <p className="decision-prompt">{decision.prompt}</p>
+      {onOpenRules && phaseRules ? (
+        <p className="rules-link-row">
+          <button type="button" className="link-button" onClick={() => onOpenRules(phaseRules.id)}>
+            Rules for this phase
+          </button>
+        </p>
+      ) : null}
 
       {hidden ? (
         <div className="privacy-curtain">

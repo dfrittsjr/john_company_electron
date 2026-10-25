@@ -39,3 +39,6 @@ Chrome and Edge ask where to save. Firefox and Safari put the file in your downl
 This site enforces the rules as they are implemented so far, but it is not a substitute for the
 rulebook. Use the rulebook from the official print-and-play kit for anything the game does not
 explain yet.
+
+The rulebook's text is also on the [Rules](/rules/) page, and during a game the **Rules** button
+opens it in a panel. The decision panel's **Rules for this phase** link jumps to the current phase.
