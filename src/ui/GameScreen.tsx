@@ -11,6 +11,7 @@ import { NegotiationPanel } from "./NegotiationPanel";
 import { ParliamentPanel } from "./ParliamentPanel";
 import { PlayerDashboards } from "./PlayerDashboards";
 import { RulesPanel } from "./RulesPanel";
+import { deregulationAvailable, deregulationStatus } from "./firm-view";
 import { commandTargets, humanize, phaseLabel, playerName } from "./view-model";
 
 export type GameScreenProps = {
@@ -159,6 +160,12 @@ export function GameScreen({
             <dt>Balance</dt>
             <dd>£{game.company.balance}</dd>
           </div>
+          {deregulationAvailable(game) || game.parliament.deregulated ? (
+            <div>
+              <dt title="Deregulation: see the Laws tab">Deregulation</dt>
+              <dd>{deregulationStatus(game).summary}</dd>
+            </div>
+          ) : null}
           <div>
             <dt>Prime Minister</dt>
             <dd>{playerName(game, game.parliament.primeMinister)}</dd>

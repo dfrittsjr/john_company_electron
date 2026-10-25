@@ -17,6 +17,20 @@ export const ONLINE_PAGE_PATH = "/online/";
 // ---------------------------------------------------------------------------------------------
 // HTTP: every response is JSON. Authenticated routes take `Authorization: Bearer <token>`.
 
+/**
+ * Scenarios the app can play today, with the text the new-game screens show. 1758 and 1813 need
+ * their own setups and stay unavailable. Both the hotseat screen, the online form and the server
+ * read this list.
+ */
+export const PLAYABLE_SCENARIOS: ReadonlyArray<{ id: ScenarioId; name: string; description: string }> = [
+  { id: "1710", name: "1710", description: "Early Company start with the broadest room for expansion. Five turns." },
+  {
+    id: "long-1710",
+    name: "Long 1710",
+    description: "As 1710, with Deregulation (the Vote to Deregulate, firms) and up to 8 turns. Takes about twice as long.",
+  },
+];
+
 /** POST /api/games: create a game. Requires a Cloudflare Turnstile token. */
 export type CreateGameRequest = {
   scenario: ScenarioId;

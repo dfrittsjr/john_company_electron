@@ -285,6 +285,18 @@
   stroke-width: 6;
 }
 
+.filled-order-firm {
+  fill: rgba(220, 235, 250, 0.95);
+  stroke: #1f4e8c;
+  stroke-dasharray: 14 8;
+}
+
+.filled-order-both {
+  fill: rgba(235, 225, 250, 0.95);
+  stroke: #5b2f8c;
+  stroke-dasharray: 14 8;
+}
+
 .governor-overlay {
   fill: #c21f2b;
   stroke: #fffaf0;
@@ -633,6 +645,50 @@
 .dashboard-line {
   margin: 2px 0;
   line-height: 1.35;
+}
+
+.firm-charter {
+  margin: 6px 0;
+  border: 1px solid #b89b6a;
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: #f4ead6;
+}
+
+.firm-name {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+}
+
+.firm-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 4px 10px;
+  margin: 0 0 4px;
+}
+
+.firm-facts dt {
+  color: #6b5d4d;
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.firm-facts dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.deregulation-panel {
+  margin-bottom: 10px;
+}
+
+.deregulation-panel h3 {
+  margin: 0 0 4px;
+}
+
+.deregulation-status {
+  font-weight: 800;
 }
 
 .final-scoring-backdrop {

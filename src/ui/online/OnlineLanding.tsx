@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { CreateGameResponse, StoredSeat } from "../../online/protocol";
-import { ONLINE_PAGE_PATH } from "../../online/protocol";
+import { ONLINE_PAGE_PATH, PLAYABLE_SCENARIOS } from "../../online/protocol";
+import type { ScenarioId } from "../../data";
 import { openTextFile } from "../platform/files";
 import { FAMILY_PALETTE } from "../view-model";
 import { createGame, describeError, fetchView, importGame } from "./api";
@@ -86,6 +87,7 @@ export function LinksScreen({ result, onDone }: { result: CreateGameResponse; on
 }
 
 function StartOnline({ onCreated }: { onCreated: (result: CreateGameResponse) => void }) {
+  const [scenario, setScenario] = useState<ScenarioId>("1710");
   const [count, setCount] = useState(4);
   const [names, setNames] = useState<string[]>(["", "", "", "", "", ""]);
   const [token, setToken] = useState<string | null>(null);
@@ -99,7 +101,7 @@ function StartOnline({ onCreated }: { onCreated: (result: CreateGameResponse) =>
     setError(null);
     try {
       const result = await createGame({
-        scenario: "1710",
+        scenario,
         players: names.slice(0, count).map((name, index) => ({
           name: name.trim() || `Player ${index + 1}`,
           color: FAMILY_PALETTE[index],
@@ -120,9 +122,14 @@ function StartOnline({ onCreated }: { onCreated: (result: CreateGameResponse) =>
       <h2 id="start-online-heading">Start an online game</h2>
       <label className="field">
         <span>Scenario</span>
-        <select value="1710" disabled aria-label="Scenario">
-          <option value="1710">1710</option>
+        <select value={scenario} onChange={(event) => setScenario(event.target.value as ScenarioId)} aria-label="Scenario">
+          {PLAYABLE_SCENARIOS.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.name}
+            </option>
+          ))}
         </select>
+        <small className="status-note">{PLAYABLE_SCENARIOS.find((option) => option.id === scenario)?.description}</small>
       </label>
       <label className="field">
         <span>Players</span>

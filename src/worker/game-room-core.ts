@@ -18,11 +18,11 @@ import {
   type GameState,
   type PlayerId,
 } from "../engine";
-import { scenarios } from "../data";
 import type { ScenarioId } from "../data/types";
 import {
   ONLINE_LIMITS,
   ONLINE_PAGE_PATH,
+  PLAYABLE_SCENARIOS,
   type ChatMessage,
   type ChatResponse,
   type CommandRequest,
@@ -226,7 +226,7 @@ export function viewerOf(seat: SeatRecord): Viewer {
 // ---------------------------------------------------------------------------------------------
 // Input checks
 
-const SCENARIO_IDS = new Set<string>(scenarios.map((scenario) => scenario.id));
+const SCENARIO_IDS = new Set<string>(PLAYABLE_SCENARIOS.map((scenario) => scenario.id));
 const NAMED_COLORS = new Set(["red", "blue", "yellow", "green", "purple", "black", "white", "pink", "orange", "brown", "grey", "gray", "teal"]);
 const HEX_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
 /** The family palette the hotseat setup uses (src/ui/view-model.ts FAMILY_PALETTE). */

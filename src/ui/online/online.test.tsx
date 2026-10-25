@@ -106,6 +106,23 @@ describe("online landing", () => {
     expect(screen.getAllByLabelText(/private link/)).toHaveLength(4);
   });
 
+  test("Long 1710 can be chosen and the game starts as Long 1710", async () => {
+    open("/online/");
+    const scenario = screen.getByLabelText("Scenario") as HTMLSelectElement;
+    expect(Array.from(scenario.options).map((option) => option.value)).toEqual(["1710", "long-1710"]);
+    fireEvent.change(scenario, { target: { value: "long-1710" } });
+    expect(screen.getByText(/Deregulation/)).toBeTruthy();
+    const create = screen.getByRole("button", { name: "Create game" }) as HTMLButtonElement;
+    await waitFor(() => expect(create.disabled).toBe(false));
+    fireEvent.click(create);
+    await screen.findByRole("heading", { name: "Your game is ready" });
+    const link = new URL((screen.getByLabelText("Player 1 private link") as HTMLInputElement).value);
+    cleanup();
+    open(link.pathname + link.search + link.hash);
+    await screen.findByText("John Company · long-1710");
+    expect(screen.getByText("Deregulation")).toBeTruthy();
+  });
+
   test("importing a save shows the same links screen", async () => {
     const { serializeSave } = await import("../../save");
     files.content = serializeSave(familyGame(), { saveId: "s", now: "2026-06-13T12:30:00.000Z" });

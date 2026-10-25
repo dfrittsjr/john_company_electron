@@ -49,7 +49,6 @@ describe("rules text", () => {
       if (section.parentId) expect(ids.has(section.parentId), section.id).toBe(true);
     }
     expect(rulesSections.filter((section) => section.notInApp).map((section) => section.id)).toEqual([
-      "deregulation",
       "one-or-two",
     ]);
   });

@@ -16,6 +16,7 @@ import {
   type ScenarioId,
   type ValidationIssue,
 } from "../data";
+import { PLAYABLE_SCENARIOS } from "../online/protocol";
 import { deserializeGameState, serializeSave } from "../save";
 import "./game-screen.css";
 import { GameScreen } from "./GameScreen";
@@ -39,32 +40,13 @@ type SetupState = {
   players: PlayerSetup[];
 };
 
-const scenarioOptions: Array<{
-  id: ScenarioId;
-  name: string;
-  description: string;
-}> = [
-  {
-    id: "1710",
-    name: "1710",
-    description: "Early Company start with the broadest room for expansion.",
-  },
-  {
-    id: "1758",
-    name: "1758",
-    description: "Mid-game Company power with Deregulation pressure.",
-  },
-  {
-    id: "1813",
-    name: "1813",
-    description: "Free trade era with firms from the beginning.",
-  },
-  {
-    id: "long-1710",
-    name: "Long 1710",
-    description: "Extended campaign across the full arc of the Company.",
-  },
+const scenarioOptions = [
+  ...PLAYABLE_SCENARIOS,
+  { id: "1758" as ScenarioId, name: "1758", description: "Not available yet: this scenario's setup is not built." },
+  { id: "1813" as ScenarioId, name: "1813", description: "Not available yet: this scenario's setup is not built." },
 ];
+
+const playableIds = new Set<ScenarioId>(PLAYABLE_SCENARIOS.map((scenario) => scenario.id));
 
 
 function createPlayers(count: number): PlayerSetup[] {
@@ -206,7 +188,7 @@ export function App() {
   );
   const validationErrorSummaries = summarizeValidationIssues(validationErrors);
   const validationWarningSummaries = summarizeValidationIssues(validationWarnings);
-  const startDisabled = !newGameValidation.valid;
+  const startDisabled = !newGameValidation.valid || !playableIds.has(setup.scenario);
 
   function updatePlayerCount(playerCount: number) {
     setSetup((current) => ({
@@ -224,7 +206,7 @@ export function App() {
   }
 
   function startGame() {
-    if (!newGameValidation.valid) return;
+    if (!newGameValidation.valid || !playableIds.has(setup.scenario)) return;
 
     const nextGame = createNewGame({
       mode,
@@ -433,11 +415,12 @@ export function App() {
             <h2>Scenario</h2>
             <div className="scenario-list">
               {scenarioOptions.map((scenario) => (
-                <label key={scenario.id} className="scenario-option">
+                <label key={scenario.id} className={playableIds.has(scenario.id) ? "scenario-option" : "scenario-option scenario-option-disabled"}>
                   <input
                     type="radio"
                     name="scenario"
                     checked={setup.scenario === scenario.id}
+                    disabled={!playableIds.has(scenario.id)}
                     onChange={() => setSetup((current) => ({ ...current, scenario: scenario.id }))}
                   />
                   <span>
@@ -509,7 +492,7 @@ export function App() {
                 <option value="random">Random</option>
               </select>
               <p className="status-note">
-                Random setup is implemented for hotseat 1710. Draft setup remains on the rules
+                Random setup is implemented for 1710 and Long 1710. Draft setup remains on the rules
                 backlog.
               </p>
             </label>
