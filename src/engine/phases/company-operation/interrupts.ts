@@ -1,7 +1,7 @@
 import { rollCheck } from "../../checks";
 import { PRESIDENCY_IDS, commanderOf, officeHolder, presidentOf } from "../../selectors";
 import type { ArmyId, GameState, LegalCommand, PendingDecision, PlayerId, RngRollRecord } from "../../types";
-import { appendLog } from "../negotiation";
+import { appendLog, registerDecisionRefresher } from "../negotiation";
 import {
   facedownBlackmailInstance,
   registerBlackmailResume,
@@ -281,3 +281,17 @@ function appointByOversight(state: GameState, armyId: ArmyId, playerId: PlayerId
     summary: `Military Oversight: ${playerName(state, playerId)} is now Commander of the Army of ${armyId}.`,
   };
 }
+
+// After Man on the Inside cancels a Connection, the restored reaction must not offer the played card again.
+registerDecisionRefresher("companyOperation.connection", (state) => {
+  const interrupt = coState(state).interrupt;
+  const decision = state.pendingDecision;
+  if (!interrupt || interrupt.kind !== "connection") return decision;
+  if (facedownBlackmailInstance(state, interrupt.holder, interrupt.cardId)) return decision;
+  return {
+    ...decision,
+    legalCommands: decision.legalCommands.filter(
+      (legal) => (legal.payload as InterruptPayload).action !== "playConnection",
+    ),
+  };
+});

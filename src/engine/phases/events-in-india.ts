@@ -2,6 +2,7 @@ import type { CommandHandler } from "../command-handler";
 import type { ApplyCommandResult, GameCommand, GameState, PlayerId } from "../types";
 import { applyDefenceChoice, chooseNextRebellion, type DefenceChoice } from "./events-in-india/attacks";
 import { createContext, log, playerName, type ResolutionContext } from "./events-in-india/context";
+import { registerDecisionRefresher } from "./negotiation";
 import { ENVOY_TO_THE_MUGHALS, NESTED_TILE_PREFIX, advance, beginEventsInIndia, markEnvoyOffered, type EnvoyChoice } from "./events-in-india/resolve";
 import type { TileWorkItem } from "./events-in-india.state";
 import { facedownBlackmailInstance, registerBlackmailResume, startBlackmailPlay } from "./negotiation-blackmail";
@@ -205,3 +206,18 @@ export const eventsInIndiaCommandHandlers: Record<string, CommandHandler> = {
   "eventsInIndia.chooseAttack": chooseCompanyAttack,
   "eventsInIndia.defend": defendCompanyRegion,
 };
+
+// A restored Envoy offer (after Man on the Inside cancelled it) must not offer the played card again.
+registerDecisionRefresher("eventsInIndia.envoyToTheMughals", (state) => {
+  const decision = state.pendingDecision;
+  const holder = decision.actor;
+  const hasCard =
+    holder !== "system" &&
+    holder !== "simultaneous" &&
+    state.players[holder]?.blackmailCards.some((card) => card.cardId === ENVOY_TO_THE_MUGHALS && card.facedown !== false);
+  if (hasCard) return decision;
+  return {
+    ...decision,
+    legalCommands: decision.legalCommands.filter((legal) => (legal.payload as { play?: boolean }).play === false),
+  };
+});

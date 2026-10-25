@@ -21,7 +21,7 @@ import type {
 import type { RevenueProgress } from "./parliament.state";
 import { newCollector, nextDecisionId, playerName, primeMinisterOrder, updatePlayer, type Collector } from "./parliament/common";
 import { discardPassedLaw, isLawPassed } from "./parliament/laws";
-import { appendLog } from "./negotiation";
+import { appendLog, registerDecisionRefresher } from "./negotiation";
 import {
   blackmailCardName,
   blackmailOptionsForCard,
@@ -463,6 +463,13 @@ function scandalDecision(state: GameState, playerId: PlayerId, options: LegalCom
     canSave: true,
   };
 }
+
+// A restored Scandal offer must drop a card that was already played (cancelled by Man on the Inside).
+registerDecisionRefresher("revenue.playScandal", (state) => {
+  const decision = state.pendingDecision;
+  if (decision.actor === "system" || decision.actor === "simultaneous") return decision;
+  return scandalDecision(state, decision.actor, scandalCommands(state, decision.actor));
+});
 
 const playScandal: CommandHandler = (state, command) => {
   if (state.phase !== "revenue" || state.pendingDecision.step !== "revenue.playScandal") {

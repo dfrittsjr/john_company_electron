@@ -157,16 +157,21 @@ function pruneUnplayableOptions(state: GameState): GameState {
   }
 
   const playable = decision.legalCommands.filter((legal, index) => {
-    const result = commandDryRun!(state, {
-      id: `dry-run-${index}`,
-      gameId: state.gameId,
-      actorId: decision.actor,
-      decisionId: decision.id,
-      type: legal.type,
-      payload: legal.payload ?? {},
-      clientTimestamp: state.updatedAt,
-    });
-    return result.ok;
+    try {
+      const result = commandDryRun!(state, {
+        id: `dry-run-${index}`,
+        gameId: state.gameId,
+        actorId: decision.actor,
+        decisionId: decision.id,
+        type: legal.type,
+        payload: legal.payload ?? {},
+        clientTimestamp: state.updatedAt,
+      });
+      return result.ok;
+    } catch {
+      // A throw means the option cannot be played now (e.g. its card was already used).
+      return false;
+    }
   });
 
   return playable.length === 0 || playable.length === decision.legalCommands.length
