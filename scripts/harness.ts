@@ -7,7 +7,9 @@
 //   npm run harness -- do <file> <type> [payloadJSON] --actor id   any command, including anytime commands
 //   npm run harness -- state <file> [dot.path]                print part of the game state as JSON
 //   npm run harness -- log <file> [--last 20]
-//   npm run harness -- random <file> [--steps 500] [--seed s]  random legal moves until the game ends or breaks
+//   npm run harness -- random <file> [--steps 500] [--seed s] [--anytime 20]
+//       random legal moves until the game ends or breaks; --anytime N also mixes in random anytime
+//       commands (gifts, deals, promise calls, blackmail) on about N% of moves
 
 import { readFileSync, writeFileSync } from "node:fs";
 import {
@@ -24,6 +26,8 @@ import {
   type GameState,
 } from "../src/engine";
 import { createRngState, rollDie } from "../src/engine/rng";
+import { blackmailPlayChoices, promiseCallOptions, promiseCardsHeldBy } from "../src/engine";
+import type { RngState } from "../src/engine";
 import { deserializeSave, serializeSave } from "../src/save";
 import type { ScenarioId } from "../src/data/types";
 
@@ -120,6 +124,44 @@ function newLogLines(before: GameState, after: GameState): string {
     .join("\n");
 }
 
+type AnytimeMove = { actor: string; type: string; payload: unknown };
+
+/** Candidate anytime commands for random play: small gifts, deals, promise calls and blackmail. */
+function anytimeMoves(state: GameState): AnytimeMove[] {
+  const moves: AnytimeMove[] = [];
+  if (state.phase === "finalScoring") return moves;
+  const players = state.seatingOrder.filter((playerId) => !state.players[playerId].isCrown);
+  for (const actor of players) {
+    const others = players.filter((playerId) => playerId !== actor);
+    for (const to of others) {
+      if (state.players[actor].cash > 0) {
+        moves.push({ actor, type: "negotiation.give", payload: { to, items: [{ kind: "cash", amount: 1 }] } });
+        if (state.negotiation.interrupts.length === 0) {
+          moves.push({ actor, type: "negotiation.proposeTrade", payload: { to, give: [{ kind: "cash", amount: 1 }], receive: [] } });
+        }
+      }
+      for (const card of promiseCardsHeldBy(state, actor).slice(0, 2)) {
+        moves.push({ actor, type: "negotiation.give", payload: { to, items: [{ kind: "promise", promiseId: card.id }] } });
+      }
+    }
+    for (const option of promiseCallOptions(state, actor)) {
+      moves.push({ actor, type: "negotiation.callInPromises", payload: { calls: [{ promiseId: option.promiseId, option: option.option }] } });
+    }
+    for (const choice of blackmailPlayChoices(state, actor)) {
+      for (const option of choice.options) {
+        moves.push({ actor, type: "negotiation.playBlackmail", payload: { cardInstanceId: choice.cardInstanceId, params: option.params } });
+      }
+    }
+  }
+  return moves;
+}
+
+function pick<T>(rng: RngState, items: T[], label: string): { item: T; rng: RngState } {
+  if (items.length === 1) return { item: items[0], rng };
+  const roll = rollDie(rng, items.length, label);
+  return { item: items[roll.value - 1], rng: roll.rng };
+}
+
 function checkInvariants(state: GameState): string[] {
   const problems: string[] = [];
   for (const playerId of Object.keys(state.players)) {
@@ -199,9 +241,33 @@ function main(): void {
     }
     case "random": {
       const steps = Number(flags.steps ?? 500);
+      const anytimePercent = Number(flags.anytime ?? 0);
       let rng = createRngState(flags.seed ?? "harness-random");
       let current = state;
       for (let step = 0; step < steps; step += 1) {
+        if (anytimePercent > 0) {
+          const roll = rollDie(rng, 100, "harness.anytime");
+          rng = roll.rng;
+          const moves = roll.value <= anytimePercent ? anytimeMoves(current) : [];
+          if (moves.length > 0) {
+            const picked = pick(rng, moves, "harness.anytime.move");
+            rng = picked.rng;
+            try {
+              current = apply(current, picked.item.type, picked.item.payload, picked.item.actor);
+            } catch (error) {
+              console.log(`Anytime move ${step} (${picked.item.type}) was rejected although it was offered:`);
+              console.log(JSON.stringify(picked.item));
+              console.log(String(error));
+              break;
+            }
+            const problems = checkInvariants(current);
+            if (problems.length > 0) {
+              console.log(`Invariant broken after anytime move ${step} (${picked.item.type}):\n  ${problems.join("\n  ")}`);
+              break;
+            }
+            continue;
+          }
+        }
         const legal = current.pendingDecision.legalCommands;
         if (legal.length === 0) {
           console.log(`Stopped after ${step} moves: no legal commands (${current.pendingDecision.step}).`);

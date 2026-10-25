@@ -329,7 +329,12 @@ export function NegotiationPanel({ game, revealedPlayer, onReveal, onCommand }: 
             <button
               type="button"
               onClick={proposeDeal}
-              title={`${game.players[counterpart].name} must accept before anything moves.`}
+              disabled={game.negotiation.interrupts.length > 0}
+              title={
+                game.negotiation.interrupts.length > 0
+                  ? "Another player's response is pending."
+                  : `${game.players[counterpart].name} must accept before anything moves.`
+              }
             >
               Propose deal
             </button>

@@ -226,6 +226,17 @@ describe("deals that need the other player's consent", () => {
     expect(state.log.at(-1)?.type).toBe("negotiation.tradeRefused");
   });
 
+  test("a deal that is no longer possible when accepted fails without moving anything", () => {
+    let state = negotiationGame("parliament", { [RED]: 2 });
+    state = act(state, RED, "negotiation.proposeTrade", { to: BLUE, give: [{ kind: "cash", amount: 2 }], receive: [] });
+    state = give(state, RED, YELLOW, [{ kind: "cash", amount: 2 }]);
+    state = act(state, BLUE, "negotiation.respondToConsent", { requestId: state.negotiation.interrupts[0].id, accept: true });
+
+    expect(state.players[BLUE].cash).toBe(10);
+    expect(state.players[YELLOW].cash).toBe(12);
+    expect(state.log.at(-1)).toMatchObject({ type: "negotiation.tradeFailed", summary: "The deal could not be completed: Red has only £0." });
+  });
+
   test("requestConsent asks each player in turn and stops at the first refusal", () => {
     const seen: Array<{ accepted: boolean; answers: Record<string, boolean> }> = [];
     registerConsentResolver("test.consent", (state, request, accepted) => {
