@@ -24,7 +24,7 @@ import {
   registerInFlowBlackmail,
   startBlackmailPlay,
 } from "./negotiation-blackmail";
-import { finishFinalScoringAfterRetirements } from "./final-scoring";
+import { finishFinalScoringAfterRetirements, finishFinalSpecial } from "./final-scoring";
 import {
   advanceRetirements,
   applyRetirementCommand,
@@ -625,13 +625,20 @@ function finishLondonSeason(state: GameState): GameState {
 
 /** After any retirement choice: the next retirement decision, or the end of the step. */
 function continueRetirements(state: GameState): GameState {
-  if (state.londonSeason.retirement?.context === "finalScoring") {
+  return continueRetirementsWithRolls(state).state;
+}
+
+/** As continueRetirements, also returning dice rolled when the opening special retirement hands over to the rest of Final Scoring. */
+function continueRetirementsWithRolls(state: GameState): { state: GameState; rolls: RngRollRecord[] } {
+  const context = state.londonSeason.retirement?.context;
+  if (context === "finalScoring" || context === "finalSpecial") {
     const advanced = advanceRetirements(state);
-    return advanced.decision
-      ? { ...advanced.state, pendingDecision: advanced.decision }
-      : finishFinalScoringAfterRetirements(advanced.state);
+    if (advanced.decision) return { state: { ...advanced.state, pendingDecision: advanced.decision }, rolls: [] };
+    if (context === "finalScoring") return { state: finishFinalScoringAfterRetirements(advanced.state), rolls: [] };
+    const rest = finishFinalSpecial(advanced.state);
+    return { state: rest.decision ? { ...rest.state, pendingDecision: rest.decision } : rest.state, rolls: rest.rolls };
   }
-  return continueLondonSeason(state);
+  return { state: continueLondonSeason(state), rolls: [] };
 }
 
 const LETTERS_RESUME = "retirement.lettersOfIntroduction";
@@ -673,10 +680,11 @@ function retirementCommand(state: GameState, command: GameCommand): ApplyCommand
 
   const applied = applyRetirementCommand(state, command);
   if (!applied.ok) return applied;
-  const next = continueRetirements(applied.state);
+  const continued = continueRetirementsWithRolls(applied.state);
 
   return finishCommand(state, command, command.clientTimestamp, "retirement.resolved", {
-    state: next,
+    state: continued.state,
+    rolls: continued.rolls,
     summary: applied.summary,
     details: applied.details,
   });

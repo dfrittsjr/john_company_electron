@@ -188,10 +188,22 @@ function refreshBoard(state: GameState): { state: GameState; details: Record<str
   const refreshed = exhaustActiveLocalAlliances(returnExtraShips(state));
   const orders = cleanFilledOrders(refreshed);
   const armies = refreshArmies(orders.state);
+  const firms = clearFirmRecords(armies.state);
 
   return {
-    state: armies.state,
+    state: firms,
     details: { ...orders.details, ...armies.details, returnedExtraShips: extraShips },
+  };
+}
+
+/** Refresh (Deregulation): this turn's firm trade, trade bid and strategy secrets are cleared (pp.40-41). */
+function clearFirmRecords(state: GameState): GameState {
+  const hasFirmRecords = (state.firms ?? []).some((firm) => firm.trade !== undefined || firm.tradeBid !== undefined);
+  if (!hasFirmRecords && Object.keys(state.hidden.firmStrategySecrets ?? {}).length === 0) return state;
+  return {
+    ...state,
+    firms: state.firms?.map(({ trade: _trade, tradeBid: _tradeBid, ...firm }) => firm),
+    hidden: { ...state.hidden, firmStrategySecrets: {} },
   };
 }
 
