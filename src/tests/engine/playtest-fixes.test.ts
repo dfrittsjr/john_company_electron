@@ -21,7 +21,8 @@ import { withCash } from "../fixtures/builders";
 import { applyCommandOrThrow } from "../fixtures/game";
 import { withOffice } from "../fixtures/builders";
 import { createHotseatGame } from "../fixtures/game";
-import { choose, hasCommand, parliamentState, withBlackmail } from "../fixtures/parliament";
+import { promiseCallOptions } from "../../engine";
+import { choose, hasCommand, parliamentState, withBlackmail, withEnterprises } from "../fixtures/parliament";
 
 // Fixes from playtest reports. Each test names the rulebook page or card it checks.
 
@@ -200,5 +201,41 @@ describe("Governor administer (p.24)", () => {
     );
     expect(result.india.regions.madras.unrest).toBe(before + 1);
     expect(result.log.at(-1)?.summary).toContain("catastroph");
+  });
+});
+
+describe("Vote with my enterprises timing (card back: afterLawProposedBeforeVotes)", () => {
+  it("can be called in only after the law and policy are proposed and before any vote is cast", () => {
+    let state = parliamentState({ drawPile: ["calico-acts"], cash: { [BLUE]: 3, [YELLOW]: 1 } });
+    state = withEnterprises(state, BLUE, [{ type: "workshop", cardId: "workshop-1" }]);
+    const promiseId = "promise-player-blue-vote-with-my-enterprises";
+    state = {
+      ...state,
+      negotiation: {
+        ...state.negotiation,
+        promiseCards: state.negotiation.promiseCards.map((card) => (card.id === promiseId ? { ...card, holder: YELLOW } : card)),
+      },
+    };
+    const callable = (s: GameState) => promiseCallOptions(s, YELLOW).some((option) => option.promiseId === promiseId);
+
+    expect(callable(state)).toBe(false); // before Parliament meets
+    state = choose(state, "parliament.confirm");
+    expect(callable(state)).toBe(false); // law not chosen yet
+    state = choose(state, "parliament.selectLaw");
+    expect(callable(state)).toBe(false); // policy not chosen yet
+    state = choose(state, "parliament.choosePolicy");
+    expect(state.pendingDecision.step).toBe("parliament.vote");
+    expect(callable(state)).toBe(true);
+
+    // Once any vote has been cast it is too late.
+    for (let guard = 0; guard < 10 && state.pendingDecision.step === "parliament.vote"; guard += 1) {
+      const actor = state.pendingDecision.actor;
+      if (actor === BLUE) {
+        state = choose(state, "parliament.castVotes", (payload) => payload.direction === "against" && payload.votes === 3);
+        break;
+      }
+      state = choose(state, "parliament.passVote");
+    }
+    expect(callable(state)).toBe(false);
   });
 });

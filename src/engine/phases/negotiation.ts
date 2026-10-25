@@ -936,6 +936,17 @@ const GRANT_PHASE: Partial<Record<PromiseCardId, GameState["phase"]>> = {
   "take-my-card-from-london-season-display": "londonSeason",
 };
 
+/** Timing `afterLawProposedBeforeVotes`: the law and policy are proposed and no vote has been cast yet. */
+function beforeVotesAreCast(state: GameState): boolean {
+  const session = state.parliament.session;
+  if (!session || session.lawId === undefined || session.policySpace === undefined) return false;
+  if (session.stage === "chooseLaw" || session.stage === "chooseFromDiscard" || session.stage === "choosePolicy" || session.stage === "chooseImpeachmentTarget") {
+    return false;
+  }
+  if (session.stage === "resolving") return false;
+  return !Object.values(session.votes).some((tally) => tally.for + tally.against > 0);
+}
+
 export type PromiseCallOption = {
   promiseId: string;
   label: string;
@@ -953,6 +964,8 @@ export function promiseCallOptions(state: GameState, holder: PlayerId): PromiseC
     const guarantor = playerName(state, card.guarantor);
     const requiredPhase = GRANT_PHASE[card.type];
     if (requiredPhase && state.phase !== requiredPhase) continue;
+    // "Vote with my enterprises" is called in after a law and policy are proposed and before any vote.
+    if (card.type === "vote-with-my-enterprises" && !beforeVotesAreCast(state)) continue;
 
     switch (card.type) {
       case "take-up-to-2-from-me":

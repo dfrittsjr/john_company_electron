@@ -328,6 +328,15 @@ describe("promise cards (p.8 and card backs)", () => {
     expect(promiseCallOptions(state, YELLOW)).toEqual([]);
 
     state = atPhase(state, "parliament");
+    // Called in after a law and policy are proposed, before any vote (card back timing).
+    expect(promiseCallOptions(state, YELLOW)).toEqual([]);
+    state = {
+      ...state,
+      parliament: {
+        ...state.parliament,
+        session: { stage: "voting", lawId: "calico-acts", policySpace: 0, votes: {} } as unknown as NonNullable<typeof state.parliament.session>,
+      },
+    };
     state = act(state, YELLOW, "negotiation.callInPromises", { calls: [{ promiseId: card, option: {} }] });
     expect(enterpriseVoteGuarantors(state, YELLOW)).toEqual([RED]);
     expect(holderOf(state, card)).toBe(RED);
