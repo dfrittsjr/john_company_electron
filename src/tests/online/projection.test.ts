@@ -296,6 +296,32 @@ describe("projectForViewer", () => {
     }
   });
 
+  it("keeps discarded blackmail unidentified, in the discards and in the log", () => {
+    const base = startedGame();
+    const state: GameState = {
+      ...base,
+      londonSeason: { ...base.londonSeason, discard: [...base.londonSeason.discard, "joseph-sedley", "company-fraud"] },
+      log: [
+        ...base.log,
+        {
+          id: "log-discard",
+          sequence: base.log.length + 1,
+          timestamp: NOW,
+          turn: base.turn,
+          phase: base.phase,
+          type: "londonSeason.restrictionResolved",
+          summary: "Ann discarded a face-down blackmail card.",
+          details: { playerId: ANN, action: "discard", kind: "blackmail", id: "blackmail-company-fraud" },
+        },
+      ],
+    };
+    for (const viewer of viewers(SEATS)) {
+      const view = projectForViewer(state, viewer);
+      expect(view.londonSeason.discard.slice(-2)).toEqual(["joseph-sedley", HIDDEN_BLACKMAIL_CARD_ID]);
+      expect(mentions(view, "company-fraud")).toBe(false);
+    }
+  });
+
   it("does not name the step when a decision exists only because of a face-down card", () => {
     let state = withBlackmail(negotiationGame("revenue"), RED, "company-fraud", { instanceId: "blackmail-company-fraud" });
     state = {

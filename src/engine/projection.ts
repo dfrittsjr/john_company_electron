@@ -59,7 +59,8 @@ function isFaceDown(card: CardInstance): boolean {
  *   deck) as placeholders, so only their sizes show; the top event tile keeps its region side;
  * - other players' face-down blackmail as placeholder ids, wherever those ids appear (log details,
  *   transfers, deals); face-down blackmail in the London Season Display likewise, except for the
- *   player choosing from the display, who may look (p.11);
+ *   player choosing from the display, who may look (p.11); blackmail in the London Season
+ *   discards likewise, since it goes there unseen;
  * - only the viewer's own `hidden.privateCards`, no unrevealed firm strategies, no Crown deck or
  *   Crown blackmail, no Crown decision profile;
  * - lists that would show who holds a face-down card (Company Fraud and Scandal candidates, Envoy
@@ -206,6 +207,13 @@ function secretIdMap(state: GameState, me: PlayerId | undefined, choosingFromDis
     for (const cardId of state.londonSeason.display) {
       if (BLACKMAIL_CARD_IDS.has(cardId)) secrets.set(cardId, HIDDEN_BLACKMAIL_CARD_ID);
     }
+  }
+  // Blackmail goes to the London Season discards unseen (the engine logs it as "a face-down
+  // blackmail card"), so its identity stays hidden there too, with its instance id.
+  for (const cardId of state.londonSeason.discard) {
+    if (!BLACKMAIL_CARD_IDS.has(cardId)) continue;
+    secrets.set(cardId, HIDDEN_BLACKMAIL_CARD_ID);
+    secrets.set(`blackmail-${cardId}`, HIDDEN_BLACKMAIL_CARD_ID);
   }
   return secrets;
 }

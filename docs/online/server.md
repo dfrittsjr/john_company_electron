@@ -60,6 +60,7 @@ projected view. Placeholders all start with `hidden:` (`isHiddenId`).
 | Events in India stack | Same length; the top tile is `hidden:event-tile@<region>` (its painted side is public, p.28), the rest `hidden:event-tile`. `topOfStackRegion(view)` still works. |
 | Another player's face-down blackmail | `cardId: "hidden:blackmail"`, `id: "hidden:blackmail@<owner>#<n>"`, everywhere the card's ids appear (log details, transfers, deals, interrupts). |
 | Face-down blackmail in the London Season Display | `hidden:blackmail`, except for the player choosing from the display (they may look, p.11). |
+| Blackmail in the London Season discards | `hidden:blackmail`, with its instance id hidden in the log too. It goes there unseen, and the engine already logs it as "a face-down blackmail card". |
 | `hidden.privateCards` | Only the viewer's own. |
 | Firm strategy secrets | Others' unrevealed entries keep only `firmId` and `committedBy`. |
 | Crown internals | `hidden.crownDeck`, `hidden.crownBlackmail` and `crown.currentDecisionProfile` removed. |

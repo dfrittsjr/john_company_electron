@@ -178,7 +178,7 @@ export type ServerErrorCode =
  *   id from hiddenBlackmailInstanceId(owner, index). Send that id back as is (for example to ask
  *   for the card in a deal); the server maps it to the real card;
  * - face-down blackmail in the London Season Display is HIDDEN_BLACKMAIL_CARD_ID for everyone but
- *   the player choosing from it;
+ *   the player choosing from it; blackmail in the London Season discards is too;
  * - a decision offered only because its actor holds a face-down card shows everyone else step
  *   HIDDEN_DECISION_STEP and a neutral prompt.
  * A multi-option "system" decision is shown with `actor` set to the seat that answers it.
