@@ -24,7 +24,7 @@ import { createNextCompanyOperationDecision } from "./company-operation";
 import { takeFamilyPiece } from "./family";
 import { hiringResumeHandler } from "./hiring-resume";
 import type { ChairmanElectionState, HireOfficePayload, HireSource, HiringState } from "./hiring.state";
-import { nepotismConsentGuarantors } from "./negotiation";
+import { appendLog, nepotismConsentGuarantors } from "./negotiation";
 import {
   facedownBlackmailInstance,
   registerBlackmailResume,
@@ -117,15 +117,13 @@ function presentOfficeHire(state: GameState, officeId: OfficeId): GameState {
   const commands = candidateCommands(state, officeId);
   const hirer = determineOfficeHirer(state, officeId);
   if (!hirer || commands.length === 0) {
-    return withDecision(
+    // No dead actions (p.17): nobody has a choice, so leave the office vacant and carry on.
+    return autoSkipVacancy(
       state,
-      createSkipHiringVacancyDecision(
-        state,
-        officeId,
-        hirer
-          ? `No eligible candidate can fill ${officeLabel(officeId)}; it stays vacant this turn.`
-          : `The office that hires ${officeLabel(officeId)} is vacant; it stays vacant this turn.`,
-      ),
+      officeId,
+      hirer
+        ? `No eligible candidate can fill ${officeLabel(officeId)}; it stays vacant this turn.`
+        : `The office that hires ${officeLabel(officeId)} is vacant; it stays vacant this turn.`,
     );
   }
 
@@ -156,6 +154,22 @@ function presentOfficeHire(state: GameState, officeId: OfficeId): GameState {
 
 function withDecision(state: GameState, pendingDecision: PendingDecision): GameState {
   return { ...state, phase: pendingDecision.phase, pendingDecision };
+}
+
+/** Leave a vacancy that nobody can fill vacant for the turn, with a log entry, and move on (p.14, p.17). */
+function autoSkipVacancy(state: GameState, officeId: OfficeId, reason: string): GameState {
+  const skipped: GameState = {
+    ...state,
+    hiring: { ...state.hiring, skippedThisTurn: [...state.hiring.skippedThisTurn, officeId] },
+  };
+  const logged = appendLog(skipped, {
+    actor: "system",
+    type: "hiring.vacancySkipped",
+    summary: `${officeLabel(officeId)} remained vacant: ${reason}`,
+    details: { officeId, reason, automatic: true },
+    timestamp: state.updatedAt,
+  });
+  return afterOfficeResolved(logged, officeId);
 }
 
 function createSkipHiringVacancyDecision(state: GameState, officeId: OfficeId, prompt: string): PendingDecision {
@@ -363,9 +377,10 @@ function presentEmptyCourt(state: GameState, formerChairman: PlayerId | undefine
             .map(([prizeId]) => prizeId);
 
   if (!player || sources.length === 0) {
-    return withDecision(
+    return autoSkipVacancy(
       state,
-      createSkipHiringVacancyDecision(state, "chairman", "The Court is empty and the former Chairman has no family member to place: there is no Chairman."),
+      "chairman",
+      "The Court is empty and the former Chairman has no family member to place: there is no Chairman.",
     );
   }
 

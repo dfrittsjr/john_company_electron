@@ -65,7 +65,7 @@ handler each that both the anytime panel and the in-phase offers use.
   its Presidency, so Refresh returns writers correctly without them.
 - **Region Loss** returns the eliminated Governor's card to the unused stack, not Vacant Offices
   (rulebook p.29, step 3). Catastrophic failure sends the office to Vacant Offices (p.17).
-- **`player.windows`** is a convenience counter of enterprise window icons. Rules (tie-breaks, window
-  tax) count icons from holdings with `playerWindowIcons`.
+- **Window icons** are never stored: tie-breaks and window tax count them from holdings with
+  `playerWindowIcons`. (The old `player.windows` counter was removed.)
 - A prestige enterprise returned for unpaid tax goes to the London Season discards.
 - Stock Broker permission stays Family's own yes/no decision rather than Negotiation's consent queue.

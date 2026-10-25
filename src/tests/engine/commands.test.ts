@@ -39,6 +39,16 @@ import {
 } from "../fixtures/game";
 import { resolveParliament } from "../fixtures/parliament";
 
+function expectAutoSkipped(state: GameState, officeId: string, reasonText?: string): void {
+  expect(state.company.offices[officeId].vacant).toBe(true);
+  expect(state.pendingDecision.step).not.toBe("hiring.skipVacancy");
+  const entry = state.log.find(
+    (candidate) => candidate.type === "hiring.vacancySkipped" && (candidate.details as { officeId?: string })?.officeId === officeId,
+  );
+  expect(entry?.summary).toContain(`remained vacant`);
+  if (reasonText) expect(entry?.summary).toContain(reasonText);
+}
+
 describe("command application", () => {
   it("reports unknown command types explicitly", () => {
     const state = createHotseatGame({
@@ -678,18 +688,8 @@ describe("command application", () => {
       "chairman-election-empty-court",
     );
 
-    expect(state.phase).toBe("hiring");
-    expect(state.pendingDecision.step).toBe("hiring.skipVacancy");
-    expect(state.pendingDecision.prompt).toBe(
-      "The Court is empty and the former Chairman has no family member to place: there is no Chairman.",
-    );
-    expect(state.pendingDecision.legalCommands[0]).toEqual(
-      expect.objectContaining({
-        type: "hiring.skipVacancy",
-        label: "Skip Chairman",
-        payload: { officeId: "chairman" },
-      }),
-    );
+    // No dead actions (p.17): the vacancy is skipped automatically with a log entry.
+    expectAutoSkipped(state, "chairman", "there is no Chairman");
   });
 
   it("hires a non-nepotism writer into a Chairman-hired office", () => {
@@ -1057,13 +1057,7 @@ describe("command application", () => {
       "hire-president-no-director",
     );
 
-    expect(state.pendingDecision.step).toBe("hiring.skipVacancy");
-    expect(state.pendingDecision.legalCommands[0]).toEqual(
-      expect.objectContaining({
-        type: "hiring.skipVacancy",
-        payload: { officeId: "president-madras" },
-      }),
-    );
+    expectAutoSkipped(state, "president-madras");
   });
 
   it("requests nepotism consent for President self-hires", () => {
@@ -1115,10 +1109,7 @@ describe("command application", () => {
       "hire-president-wrong-governor",
     );
 
-    expect(state.pendingDecision.step).toBe("hiring.skipVacancy");
-    expect(state.pendingDecision.legalCommands[0]?.payload).toEqual({
-      officeId: "president-bombay",
-    });
+    expectAutoSkipped(state, "president-bombay");
   });
 
   it("lets a President hire a writer from their Presidency as Governor", () => {
@@ -1300,10 +1291,7 @@ describe("command application", () => {
       "hire-governor-no-president",
     );
 
-    expect(state.pendingDecision.step).toBe("hiring.skipVacancy");
-    expect(state.pendingDecision.legalCommands[0]?.payload).toEqual({
-      officeId: "governor-punjab",
-    });
+    expectAutoSkipped(state, "governor-punjab");
   });
 
   it("does not offer writers still sitting on orders as Governor candidates", () => {
@@ -1323,7 +1311,7 @@ describe("command application", () => {
       "hire-governor-order-writer",
     );
 
-    expect(state.pendingDecision.step).toBe("hiring.skipVacancy");
+    expectAutoSkipped(state, "governor-bombay");
   });
 
   it("resolves lower-numbered vacancies before Chairman-hired writer offices", () => {
@@ -1403,7 +1391,7 @@ describe("command application", () => {
       actorId: "player-red",
     });
 
-    expect(state.phase).toBe("hiring");
+    expect(state.phase).toBe("companyOperation");
     expect(state.company.offices["director-of-trade"]).toEqual(
       expect.objectContaining({
         holder: "player-blue",
@@ -1421,10 +1409,8 @@ describe("command application", () => {
     expect(playerOffices(state, "player-blue")).toContain("director-of-trade");
     expect(playerOffices(state, "player-blue")).not.toContain("manager-of-shipping");
     expect(state.company.vacantOffices).toEqual(["manager-of-shipping"]);
-    expect(state.pendingDecision.step).toBe("hiring.skipVacancy");
-    expect(state.pendingDecision.legalCommands[0]?.payload).toEqual({
-      officeId: "manager-of-shipping",
-    });
+    // The vacated Manager of Shipping has no hirer or candidates left: skipped automatically.
+    expectAutoSkipped(state, "manager-of-shipping");
   });
 
   it("hires a writer into Director of Trade when no officeholder can be promoted", () => {
@@ -1751,25 +1737,12 @@ describe("command application", () => {
 
     state = advanceThroughFamilyFromSetup(state, "hiring-skip-vacancy");
 
-    expect(state.phase).toBe("hiring");
-    expect(state.pendingDecision.step).toBe("hiring.skipVacancy");
-    expect(state.pendingDecision.legalCommands[0]).toEqual(
-      expect.objectContaining({
-        type: "hiring.skipVacancy",
-        payload: { officeId: "director-of-trade" },
-      }),
-    );
-
-    state = applyFirstLegalCommand(state, {
-      commandId: "command-skip-director",
-      actorId: "system",
-    });
-
+    // No candidate and no hirer: skipped automatically, with a log entry (p.17 "no dead actions").
     expect(state.phase).toBe("companyOperation");
     expect(state.company.offices["director-of-trade"].vacant).toBe(true);
     expect(state.company.vacantOffices).toEqual(["director-of-trade"]);
     expect(state.hiring.skippedThisTurn).toEqual(["director-of-trade"]);
-    expect(state.log.at(-1)?.summary).toBe("Director of Trade remained vacant.");
+    expectAutoSkipped(state, "director-of-trade");
   });
 
   it("starts Company Operation at the first occupied red-ribbon office", () => {
@@ -2325,6 +2298,8 @@ describe("command application", () => {
       holder: "player-blue",
       fatigue: 4,
     });
+    // Enough cash to afford a prize, so the retirement prompt is offered (p.17: no dead actions).
+    state = withCash(state, { "player-blue": 10 });
 
     expectSaveRoundTripPreservesPendingDecision(state);
     const counterBefore = state.rng.counter;
@@ -2384,6 +2359,7 @@ describe("command application", () => {
       holder: "player-red",
       fatigue: 3,
     });
+    state = withCash(state, { "player-red": 10 });
 
     state = applyFirstLegalCommand(state, {
       commandId: "command-london-season-chairman-retirement",

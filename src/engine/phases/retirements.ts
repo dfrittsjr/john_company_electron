@@ -14,7 +14,7 @@ import type {
   RngRollRecord,
 } from "../types";
 import type { DiscountKey, RetirementContext, RetirementProgress } from "./london-season.state";
-import { registerDecisionRefresher } from "./negotiation";
+import { appendLog, registerDecisionRefresher } from "./negotiation";
 
 // Attrition and pensioner retirements, shared by the London Season (p.11) and the final
 // retirement in Final Scoring (p.9).
@@ -147,20 +147,47 @@ export function advanceRetirements(state: GameState): { state: GameState; decisi
   if (!progress) return { state };
 
   let current = progress.current;
+  let next = state;
   while (current < progress.order.length) {
     const playerId = progress.order[current];
-    if ((state.players[playerId]?.familyMembers.pensioners ?? 0) > 0) break;
+    const player = next.players[playerId];
+    if ((player?.familyMembers.pensioners ?? 0) > 0) {
+      // No dead actions (p.17): with no affordable prize (after discounts) and no Letters of
+      // Introduction to play, the only choice would be "do not retire", so skip the prompt.
+      const withProgress = { ...next, londonSeason: { ...next.londonSeason, retirement: { ...progress, current } } };
+      if (!hasRetirementChoice(withProgress, progress, playerId)) {
+        next = appendLog(next, {
+          actor: "system",
+          type: "retirement.skipped",
+          summary: `${player.name} cannot afford any prize for ${player.familyMembers.pensioners === 1 ? "their pensioner" : `their ${player.familyMembers.pensioners} pensioners`}, so no retirement is offered.`,
+          details: { playerId, cash: player.cash, pensioners: player.familyMembers.pensioners },
+          timestamp: state.updatedAt,
+        });
+        current += 1;
+        continue;
+      }
+      break;
+    }
     current += 1;
   }
 
   const nextState: GameState =
-    current === progress.current
+    current === progress.current && next === state
       ? state
-      : { ...state, londonSeason: { ...state.londonSeason, retirement: { ...progress, current } } };
+      : { ...next, londonSeason: { ...next.londonSeason, retirement: { ...progress, current } } };
 
   if (current >= progress.order.length) return { state: nextState };
 
   return { state: nextState, decision: retirementDecision(nextState, progress.order[current]) };
+}
+
+function hasRetirementChoice(state: GameState, progress: RetirementProgress, playerId: PlayerId): boolean {
+  if (retirementOptions(state, progress, playerId).length > 0) return true;
+  const player = state.players[playerId];
+  return (
+    !progress.lettersOfIntroduction.includes(playerId) &&
+    player.blackmailCards.some((card) => card.cardId === LETTERS_OF_INTRODUCTION && card.facedown !== false)
+  );
 }
 
 // Cash can change hands mid-retirement (p.8): rebuild the affordable prizes after a transfer.

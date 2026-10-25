@@ -426,7 +426,8 @@ describe("Hiring phase (pp.14-17)", () => {
     expect(state.company.offices["manager-of-shipping"]).toEqual(expect.objectContaining({ vacant: true, fatigue: 0 }));
     // The Shipping card joins the Vacant Offices box and is hired next, in its own order.
     expect(state.company.vacantOffices).toContain("manager-of-shipping");
-    expect(state.pendingDecision.prompt).toContain("Manager of Shipping");
+    // Nobody can fill it this turn, so it is skipped automatically with a log entry (p.17).
+    expect(state.log.some((entry) => entry.type === "hiring.vacancySkipped" && entry.summary.includes("Manager of Shipping"))).toBe(true);
   });
 
   it("collects nepotism consent from each other player in turn and survives save/load between them", () => {
@@ -499,8 +500,10 @@ describe("Hiring phase (pp.14-17)", () => {
     let state = hiring(withHiringQueue(withOffice(baseGame("skip-next-turn"), "manager-of-shipping", undefined), [
       "manager-of-shipping",
     ]));
-    state = choose(state, "Skip Manager of Shipping");
+    // With no Chairman to hire it the office is skipped automatically and stays vacant (p.14, p.17).
+    expect(state.pendingDecision.step).not.toBe("hiring.skipVacancy");
     expect(state.company.vacantOffices).toEqual(["manager-of-shipping"]);
+    expect(state.log.some((entry) => entry.type === "hiring.vacancySkipped")).toBe(true);
 
     // Next turn there is a Chairman and a writer, so the office is hired.
     state = withWriters(withOffice(state, "chairman", BLUE, { inHiringQueue: false }), YELLOW, "Bombay", 1);

@@ -423,13 +423,15 @@ describe("Hiring order uses the office card backs (p.14)", () => {
       payload: {},
     });
 
-    const skipped: string[] = [];
-    for (let index = 0; index < 10 && state.phase !== "companyOperation"; index += 1) {
-      const command = state.pendingDecision.legalCommands[0];
-      if (command?.type === "hiring.skipVacancy") skipped.push((command.payload as { officeId: string }).officeId);
+    for (let index = 0; index < 20 && state.phase !== "companyOperation"; index += 1) {
       state = applyFirstLegalCommand(state, { commandId: `command-hiring-order-${index}` });
     }
 
+    // Nobody can hire any of them, so each is skipped automatically, in card-back order.
+    const skipped = state.log
+      .filter((entry) => entry.type === "hiring.vacancySkipped")
+      .map((entry) => (entry.details as { officeId: string }).officeId);
+    expect(state.phase).toBe("companyOperation");
     expect(skipped).toEqual(["governor-general", "governor-bombay", "governor-mysore"]);
   });
 });

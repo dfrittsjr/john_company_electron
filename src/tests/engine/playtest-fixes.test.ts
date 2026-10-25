@@ -106,7 +106,7 @@ describe("Tenure Limits (law #37)", () => {
   }
 
   it("the Chairman always retires in Attrition even on a low roll", () => {
-    const state = applyCommandOrThrow(londonSeason(["tenure-limits"]), { id: "tenure-1", actorId: "system", type: "londonSeason.confirm", payload: {} });
+    const state = applyCommandOrThrow(withCash(londonSeason(["tenure-limits"]), { [RED]: 10 }), { id: "tenure-1", actorId: "system", type: "londonSeason.confirm", payload: {} });
     expect(state.company.offices.chairman.vacant).toBe(true);
     expect(state.players[RED].familyMembers.pensioners).toBeGreaterThanOrEqual(1);
   });
@@ -318,5 +318,39 @@ describe("player.windows is gone", () => {
     } as unknown as GameState;
     const loaded = deserializeSave(serializeSave(legacy, { saveId: "legacy-windows" })).state;
     expect(loaded.players[RED].cash).toBe(state.players[RED].cash);
+  });
+});
+
+describe("No dead single-option prompts (p.17)", () => {
+  function retirementStart(cash: number): GameState {
+    let state = createHotseatGame({ seed: "dead-prompts" });
+    state = atConfirmation({ ...state, turn: 2 }, "londonSeason", "londonSeason.confirm");
+    state = withPensioners(state, RED, 1);
+    state = withCash(state, { [RED]: cash });
+    state = withDisplay(state, ["shipbuilders", "foundry", "social-magazine"], ["labour-newspaper"]);
+    return applyCommandOrThrow(state, { id: "dead-1", actorId: "system", type: "londonSeason.confirm", payload: {} });
+  }
+
+  it("skips a pensioner whose owner cannot afford any prize, and logs it", () => {
+    const state = retirementStart(0);
+    expect(state.log.some((entry) => entry.type === "retirement.skipped" && entry.summary.includes("Red"))).toBe(true);
+    expect(state.pendingDecision.step).not.toBe("retirement.retirePensioner");
+  });
+
+  it("still offers the prompt when a prize is affordable (a real choice)", () => {
+    const state = retirementStart(5);
+    expect(state.pendingDecision.step).toBe("retirement.retirePensioner");
+    expect(state.pendingDecision.actor).toBe(RED);
+    expect(state.log.some((entry) => entry.type === "retirement.skipped")).toBe(false);
+  });
+
+  it("skips a vacancy with no hirer or candidates with a log entry instead of a one-button decision", () => {
+    let state = createHotseatGame({ seed: "dead-vacancy" });
+    state = withOffice(state, "director-of-trade", undefined);
+    state = startHiringPhase(withHiringQueue(state, ["director-of-trade"]));
+    expect(state.pendingDecision.step).not.toBe("hiring.skipVacancy");
+    expect(state.phase).toBe("companyOperation");
+    expect(state.log.some((entry) => entry.type === "hiring.vacancySkipped")).toBe(true);
+    expect(state.company.offices["director-of-trade"].vacant).toBe(true);
   });
 });
