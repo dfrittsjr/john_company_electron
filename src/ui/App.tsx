@@ -1,13 +1,15 @@
-import { useState } from "react";
-import boardImage from "../../board_image-1.png";
+import { useEffect, useState } from "react";
 import {
   applyCommand,
   createNewGame,
+  standingLabel,
+  undoBlockReason,
   type GameCommand,
   type GameState,
   type LegalCommand,
 } from "../engine";
 import {
+  policyDial,
   validateNewGameStaticData,
   type CrownDifficulty,
   type PlayMode,
@@ -15,6 +17,13 @@ import {
   type ValidationIssue,
 } from "../data";
 import { deserializeGameState, serializeSave } from "../save";
+import "./game-screen.css";
+import { GameScreen } from "./GameScreen";
+import { HandoffBanner } from "./HandoffBanner";
+import { copyText, openTextFile, saveTextFile, TEXT_FILE_TYPE } from "./platform/files";
+import { installFlexGapFallback } from "./platform/flex-gap-fallback";
+import { nextActorName, suggestedSaveName, suggestedSummaryName } from "./save-names";
+import { FAMILY_PALETTE, commandTargets, handoffTarget, humanize, phaseLabel, playerName } from "./view-model";
 
 type PlayerSetup = {
   id: string;
@@ -57,13 +66,12 @@ const scenarioOptions: Array<{
   },
 ];
 
-const playerColors = ["#8d1d34", "#b88a1d", "#b9483f", "#6f5aa7", "#2f6f73", "#4f6732"];
 
 function createPlayers(count: number): PlayerSetup[] {
   return Array.from({ length: count }, (_, index) => ({
     id: `player-${index + 1}`,
     name: `Player ${index + 1}`,
-    color: playerColors[index],
+    color: FAMILY_PALETTE[index],
   }));
 }
 
@@ -150,6 +158,33 @@ export function App() {
   const [game, setGame] = useState<GameState | null>(null);
   const [commandError, setCommandError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  // The player who has confirmed they hold the device; private cards and decisions show only to them.
+  const [revealedPlayer, setRevealedPlayer] = useState<string | null>(null);
+  // The player who should receive the save after the last move, when it is someone else.
+  const [handoff, setHandoff] = useState<string | null>(null);
+  const [boardResetKey, setBoardResetKey] = useState(0);
+  // Earlier states of this browser session, oldest first. Cleared whenever the game is saved,
+  // loaded, or created, so a file that has been passed on can never be taken back.
+  const [history, setHistory] = useState<GameState[]>([]);
+  const [undoStatus, setUndoStatus] = useState<string | null>(null);
+
+  useEffect(() => installFlexGapFallback(), []);
+
+  const previous = history.at(-1);
+  const undoBlocked = !previous ? "Nothing to undo." : game ? undoBlockReason(previous, game) : "Nothing to undo.";
+
+  function undo() {
+    if (!game || !previous || undoBlocked) return;
+
+    setUndoStatus(`Undid: ${game.log.at(-1)?.summary ?? "the last action"}`);
+    setGame(previous);
+    setHistory((current) => current.slice(0, -1));
+    setCommandError(null);
+    // The restored decision may belong to someone else: hide private information again.
+    setHandoff(null);
+    setRevealedPlayer(null);
+  }
+
   const [setup, setSetup] = useState<SetupState>({
     scenario: "1710",
     playerCount: 4,
@@ -205,12 +240,17 @@ export function App() {
     });
 
     setGame(nextGame);
+    setHistory([]);
+    setUndoStatus(null);
     setCommandError(null);
     setSaveStatus(null);
+    setHandoff(null);
+    setRevealedPlayer(null);
+    setBoardResetKey((key) => key + 1);
     setScreen("board");
   }
 
-  function executeLegalCommand(legalCommand: LegalCommand) {
+  function runCommand(actorId: string, type: string, payload: unknown) {
     if (!game) return;
 
     if (game.pendingDecision.actor === "simultaneous") {
@@ -218,45 +258,60 @@ export function App() {
       return;
     }
 
-    const command: GameCommand = {
+    applyAndHandOff({
       id: `cmd-${Date.now()}`,
       gameId: game.gameId,
-      actorId: game.pendingDecision.actor,
+      actorId,
       decisionId: game.pendingDecision.id,
-      type: legalCommand.type,
-      payload: legalCommand.payload ?? {},
+      type,
+      payload,
       clientTimestamp: new Date().toISOString(),
-    };
+    });
+  }
+
+  function applyAndHandOff(command: GameCommand) {
+    if (!game) return;
     const result = applyCommand(game, command);
 
-    if (result.ok) {
-      setGame(result.state);
-      setCommandError(null);
-    } else {
+    if (!result.ok) {
       setCommandError(result.errors.map((error) => error.message).join(" "));
+      return;
+    }
+
+    const next = handoffTarget(result.state, command.actorId);
+    setHistory((current) => [...current, game]);
+    setUndoStatus(null);
+    setGame(result.state);
+    setCommandError(null);
+    if (next) {
+      // Someone else decides next: hide private information until they reveal it.
+      setHandoff(next);
+      setRevealedPlayer(null);
+    } else {
+      setHandoff(null);
     }
   }
 
   async function saveGame() {
     if (!game) return;
 
-    if (!window.joco?.saveGame) {
-      setSaveStatus("Save dialogs are only available in the Electron app.");
-      return;
-    }
-
     const now = new Date().toISOString();
     const content = serializeSave(game, {
       saveId: `save-${Date.now()}`,
       now,
     });
-    const result = await window.joco.saveGame(
-      content,
-      `${game.scenario}-turn-${game.turn}-${game.phase}.joco`,
-    );
+    const result = await saveTextFile(content, suggestedSaveName(game));
+    const handoff = `Send it to ${nextActorName(game)}.`;
 
-    if (result.status === "success") {
-      setSaveStatus(`Saved ${result.filePath}`);
+    if (result.status === "saved" || result.status === "downloaded") {
+      // The file is on its way to the next player: it can no longer be taken back.
+      setHistory([]);
+      setUndoStatus(null);
+    }
+    if (result.status === "saved") {
+      setSaveStatus(`Saved ${result.fileName}. ${handoff}`);
+    } else if (result.status === "downloaded") {
+      setSaveStatus(`Downloaded ${result.fileName} to your downloads folder. ${handoff}`);
     } else if (result.status === "cancel") {
       setSaveStatus("Save canceled.");
     } else {
@@ -265,12 +320,7 @@ export function App() {
   }
 
   async function loadGame() {
-    if (!window.joco?.loadGame) {
-      setSaveStatus("Load dialogs are only available in the Electron app.");
-      return;
-    }
-
-    const result = await window.joco.loadGame();
+    const result = await openTextFile();
     if (result.status === "cancel") {
       setSaveStatus("Load canceled.");
       return;
@@ -283,8 +333,13 @@ export function App() {
     try {
       const loadedGame = deserializeGameState(result.content);
       setGame(loadedGame);
+      setHistory([]);
+      setUndoStatus(null);
+      setBoardResetKey((key) => key + 1);
       setCommandError(null);
-      setSaveStatus(`Loaded ${result.filePath}`);
+      setRevealedPlayer(null);
+      setHandoff(null);
+      setSaveStatus(`Loaded ${result.fileName}`);
       setScreen("board");
     } catch (error) {
       setSaveStatus(error instanceof Error ? error.message : "Failed to load save file.");
@@ -295,16 +350,26 @@ export function App() {
     if (!game) return;
 
     const summary = buildSaveSummary(game);
-    if (!window.joco?.copyText) {
-      setSaveStatus(summary);
-      return;
-    }
-
-    const result = await window.joco.copyText(summary);
+    const result = await copyText(summary);
     if (result.status === "success") {
       setSaveStatus("Save summary copied.");
+    } else {
+      setSaveStatus(`${result.message}\n${summary}`);
+    }
+  }
+
+  async function downloadSaveSummary() {
+    if (!game) return;
+
+    const result = await saveTextFile(
+      buildSaveSummary(game),
+      suggestedSummaryName(game),
+      TEXT_FILE_TYPE,
+    );
+    if (result.status === "saved" || result.status === "downloaded") {
+      setSaveStatus(`Saved summary ${result.fileName}.`);
     } else if (result.status === "cancel") {
-      setSaveStatus("Copy canceled.");
+      setSaveStatus("Summary save canceled.");
     } else {
       setSaveStatus(result.message);
     }
@@ -314,22 +379,25 @@ export function App() {
     return (
       <main className="start-screen">
         <section className="start-panel" aria-labelledby="title">
-          <p className="eyebrow">Local desktop implementation</p>
+          <p className="eyebrow">Unofficial browser edition</p>
           <h1 id="title">John Company: Second Edition</h1>
           <p>
-            A rules-enforced hotseat and async adaptation with Crown support planned from the engine
-            outward.
+            A rules-enforced adaptation for hotseat play or for passing a save file between
+            friends.
           </p>
           <div className="start-actions">
             <button type="button" onClick={() => setScreen("setup")}>
               New Game
             </button>
             <button type="button" onClick={loadGame}>
-              Load Game
+              Load Save
             </button>
-            <button type="button" disabled title="Rules reference arrives after data entry">
-              Rules Reference
-            </button>
+            <a className="button-link" href="/how-to-play/">
+              How to Play
+            </a>
+            <a className="button-link" href="/credits/">
+              Credits
+            </a>
           </div>
           {saveStatus ? <p className="status-note start-status">{saveStatus}</p> : null}
         </section>
@@ -507,135 +575,50 @@ export function App() {
     return null;
   }
 
-  const pendingActor = actorLabel(game);
-  const playerRows = game.seatingOrder.map((playerId) => game.players[playerId]);
-
   return (
-    <main className="game-screen">
-      <header className="game-header">
-        <div>
-          <p className="eyebrow">John Company</p>
-          <h1>{game.scenario}</h1>
-        </div>
-        <dl className="track-strip">
-          <div>
-            <dt>Mode</dt>
-            <dd>{game.mode}</dd>
-          </div>
-          <div>
-            <dt>Turn</dt>
-            <dd>{game.turn}</dd>
-          </div>
-          <div>
-            <dt>Phase</dt>
-            <dd>{game.phase}</dd>
-          </div>
-          <div>
-            <dt>Standing</dt>
-            <dd>{game.company.standing}</dd>
-          </div>
-          <div>
-            <dt>Balance</dt>
-            <dd>GBP {game.company.balance}</dd>
-          </div>
-          <div>
-            <dt>Debt</dt>
-            <dd>{game.company.debt}</dd>
-          </div>
-        </dl>
-        <button type="button" onClick={() => setScreen("setup")}>
-          Setup
-        </button>
-      </header>
-
-      <section className="game-layout">
-        <aside className="side-panel">
-          <h2>Pending Decision</h2>
-          <p>{game.pendingDecision.prompt}</p>
-          <dl className="decision-meta">
-            <div>
-              <dt>Actor</dt>
-              <dd>{pendingActor}</dd>
-            </div>
-            <div>
-              <dt>Step</dt>
-              <dd>{game.pendingDecision.step}</dd>
-            </div>
-          </dl>
-          <div className="legal-command-list">
-            {game.pendingDecision.legalCommands.length > 0 ? (
-              game.pendingDecision.legalCommands.map((legalCommand, index) => (
-                <button
-                  key={`${legalCommand.type}-${index}`}
-                  type="button"
-                  onClick={() => executeLegalCommand(legalCommand)}
-                  title={legalCommand.description}
-                >
-                  {legalCommand.label}
-                </button>
-              ))
-            ) : (
-              <p className="status-note">No legal commands are implemented for this step yet.</p>
-            )}
-          </div>
-          {commandError ? <p className="error-note">{commandError}</p> : null}
-          <div className="save-actions">
-            <button type="button" onClick={saveGame}>
-              Save Game
-            </button>
-            <button type="button" onClick={loadGame}>
-              Load Game
-            </button>
-            <button type="button" onClick={copySaveSummary}>
-              Copy Save Summary
-            </button>
-          </div>
-          {saveStatus ? <p className="status-note">{saveStatus}</p> : null}
-
-          {game.crown ? (
-            <div className="crown-summary">
-              <h3>Crown</h3>
-              <p>Difficulty: {game.crown.difficulty}</p>
-              <p>Climate: {game.crown.climate}</p>
-              <p>Faceup AI card: {game.crown.faceupAiCard}</p>
-              <p>Crown cubes: {game.crown.promiseCubes.crownSupply}</p>
-              {game.crown.playerButton ? (
-                <p>Player Button: {game.players[game.crown.playerButton.holder]?.name}</p>
-              ) : null}
-            </div>
+    <GameScreen
+      key={boardResetKey}
+      game={game}
+      mode="local"
+      runCommand={runCommand}
+      commandError={commandError}
+      revealedPlayer={revealedPlayer}
+      onRevealPlayer={setRevealedPlayer}
+      undo={{ run: undo, blockedReason: undoBlocked ?? null }}
+      boardResetKey={boardResetKey}
+      onMenu={() => setScreen("start")}
+      onSaveFinal={saveGame}
+      headerActions={
+        <>
+          <button type="button" onClick={saveGame} title="Save a .joco file named for whoever acts next, then send it to them.">
+            Save &amp; pass
+          </button>
+          <button type="button" onClick={loadGame}>
+            Load
+          </button>
+          <button type="button" onClick={copySaveSummary}>
+            Copy summary
+          </button>
+          <button type="button" onClick={downloadSaveSummary}>
+            Summary file
+          </button>
+        </>
+      }
+      banner={
+        handoff && game.players[handoff] ? (
+          <HandoffBanner game={game} target={handoff} onSave={saveGame} onDismiss={() => setHandoff(null)} />
+        ) : null
+      }
+      notices={
+        <>
+          {saveStatus ? <p className="status-strip">{saveStatus}</p> : null}
+          {undoStatus ? (
+            <p className="status-strip" role="status">
+              {undoStatus}
+            </p>
           ) : null}
-        </aside>
-
-        <section className="board-stage" aria-label="Game board">
-          <div className="board-frame">
-            <img src={boardImage} alt="John Company game board" />
-            <div className="board-overlay standing">Standing</div>
-            <div className="board-overlay offices">Offices</div>
-            <div className="board-overlay india">India</div>
-          </div>
-        </section>
-
-        <aside className="side-panel">
-          <h2>Players</h2>
-          <div className="dashboard-list">
-            {playerRows.map((player) => (
-              <div key={player.id} className="dashboard-row">
-                <span className="swatch" style={{ backgroundColor: player.color }} />
-                <strong>{player.name}</strong>
-                <small>
-                  GBP {player.cash} / family supply {player.familyMembers.supply}
-                </small>
-              </div>
-            ))}
-          </div>
-          <h2>Log</h2>
-          <ol className="log-list">
-            {game.log.map((entry) => (
-              <li key={entry.id}>{entry.summary}</li>
-            ))}
-          </ol>
-        </aside>
-      </section>
-    </main>
+        </>
+      }
+    />
   );
 }

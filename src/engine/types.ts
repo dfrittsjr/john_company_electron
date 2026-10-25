@@ -1,7 +1,19 @@
-export const GAME_SCHEMA_VERSION = 1;
+import type { CompanyOperationState } from "./phases/company-operation.state";
+import type { EventsInIndiaState } from "./phases/events-in-india.state";
+import type { FamilyState } from "./phases/family.state";
+import type { FinalScoringState } from "./phases/final-scoring.state";
+import type { HiringState } from "./phases/hiring.state";
+import type { LondonSeasonState } from "./phases/london-season.state";
+import type { NegotiationState } from "./phases/negotiation.state";
+import type { ParliamentState } from "./phases/parliament.state";
+
+import type { ScenarioId as DataScenarioId } from "../data/types";
+
+// Version 2: one canonical location per family piece, scenario-driven setup, Standing as a track index.
+export const GAME_SCHEMA_VERSION = 3;
 
 export type GameMode = "hotseat" | "soloCrown" | "twoPlayerCrown";
-export type ScenarioId = "1710" | "1758" | "1813" | "Long 1710" | "long-1710";
+export type ScenarioId = DataScenarioId;
 
 export type PhaseId =
   | "setup"
@@ -98,6 +110,12 @@ export type GameLogEntry = {
   details?: unknown;
   commandId?: string;
   rngRolls?: RngRollRecord[];
+  /**
+   * Set when `summary` would show who holds a face-down card ("Ann kept their blackmail card.").
+   * Only `actor` should read `summary`; online views give everyone else this text, with no actor
+   * (src/engine/projection.ts).
+   */
+  publicSummary?: string;
 };
 
 export type PieceStack = {
@@ -117,12 +135,11 @@ export type CardInstance = {
   facedown?: boolean;
 };
 
-export type PromiseCardInstance = {
-  id: string;
-  owner: PlayerId;
-  guarantor: PlayerId;
-};
-
+/**
+ * Family pieces stored on the player are those whose only location is a per-family box.
+ * Pieces in shared locations (offices, Court, Stock Exchange, Writers boxes, orders, Armies,
+ * firm shares) live in those locations only; use src/engine/selectors.ts for per-player views.
+ */
 export type PlayerState = {
   id: PlayerId;
   name: string;
@@ -134,26 +151,16 @@ export type PlayerState = {
     supply: number;
     pensioners: number;
     prizes: Record<PrizeId, number>;
-    courtShares: number;
-    chairmanShare: boolean;
-    stockExchange: string[];
-    writers: Record<PresidencyId, number>;
     officersInTraining: number;
-    officers: Record<ArmyId, PieceStack>;
-    commanders: Record<ArmyId, boolean>;
-    offices: OfficeId[];
-    firmShares: Record<FirmId, number>;
     debtorPrison: number;
   };
   opportunityMarker: FamilyActionId | "supply" | "removed";
   enterprises: EnterpriseInstance[];
   prestigeCards: CardInstance[];
+  /** Face-down cards are unplayed and transferable; face-up cards have been played (p.12). */
   blackmailCards: CardInstance[];
-  promiseCardsOwned: PromiseCardInstance[];
-  promiseCardsGuaranteedToOthers: PromiseCardInstance[];
   trophies: number;
   passedLawTokens: number;
-  windows: number;
 };
 
 export type DeckState<CardId extends string = string> = {
@@ -164,6 +171,7 @@ export type DeckState<CardId extends string = string> = {
 
 export type OfficeState = {
   id: OfficeId;
+  /** The family whose piece sits on this office. The Chairman's piece also counts as a Company share. */
   holder?: PlayerId;
   familyMemberId?: string;
   treasury: number;
@@ -184,11 +192,18 @@ export type StockExchangeSlot = {
   share?: ShareInstance;
 };
 
+export type SeaZoneId = "west-indian" | "south-indian" | "east-indian";
+
+/**
+ * Ship locations: "shipyard" (unfitted, player ships only), a sea zone, "china",
+ * or `firm:<firmId>`. A player ship's owner is whoever owns the shipyard card it belongs to.
+ */
 export type ShipState = {
   id: string;
-  owner: "company" | PlayerId | FirmId;
-  location: string;
-  exhausted: boolean;
+  kind: "player" | "company" | "extra";
+  shipyardCardId?: string;
+  location: "shipyard" | SeaZoneId | "china" | `firm:${string}`;
+  fatigued: boolean;
 };
 
 export type ArmyState = {
@@ -196,36 +211,41 @@ export type ArmyState = {
   officers: Record<PlayerId, PieceStack>;
   regiments: PieceStack;
   commander?: PlayerId;
-};
-
-export type ChinaOfficeState = {
-  holder?: PlayerId;
-  treasury: number;
+  /**
+   * Local alliances in this Army box (p.21), by alliance id. "ready" (top half) once a Commander
+   * buys it this turn; "exhausted" (bottom half) when unbought or used. Refresh exhausts ready ones.
+   */
+  localAlliances?: Record<string, "ready" | "exhausted">;
 };
 
 export type CompanyState = {
+  /** Index into companyTracks.standing; 0 is the failure space. Expectations derive from it. */
   standing: number;
   debt: number;
   balance: number;
-  expectations: number;
   shareValue: number;
   failed: boolean;
   powerTrack: Record<PowerTargetId, number>;
   offices: Record<OfficeId, OfficeState>;
   vacantOffices: OfficeId[];
   unusedOffices: OfficeId[];
+  /** Company shares in the Court box. The Chairman's piece is an additional share. */
   court: ShareInstance[];
   stockExchange: StockExchangeSlot[];
   ships: ShipState[];
-  extraShips: ShipState[];
   armies: Record<ArmyId, ArmyState>;
-  chinaOffice?: ChinaOfficeState;
   governorGeneralInPlay: boolean;
+  /**
+   * The family holding the Chairman marker. It stays with the former Chairman while the office
+   * is vacant, who then leads retirements and Family turns and runs the next election (pp.11-15).
+   */
+  chairmanMarker?: PlayerId;
 };
 
 export type OrderState = {
   id: string;
   value: number;
+  deregulationValue: number;
   isHomePortFor?: PresidencyId;
   closed: boolean;
   filledThisTurnBy: ("company" | FirmId)[];
@@ -240,47 +260,49 @@ export type OrderState = {
 export type RegionState = {
   id: RegionId;
   name: string;
-  presidency: PresidencyId;
+  /** Fixed for the three Presidency home regions only. */
+  homePresidency?: PresidencyId;
   adjacent: RegionId[];
   orders: OrderState[];
   towerLevels: number;
   hasDome: boolean;
+  /** Empire flag on this region's dome; the capital carries the starred flag. */
   empireFlag?: EmpireFlagId;
   isCapital: boolean;
   companyControlled: boolean;
+  /** Set when a Presidency's Army conquers the region (p.23); cleared on Region Loss (p.29). */
   associatedPresidency?: PresidencyId;
-  governorOffice?: OfficeId;
+  governorOffice: OfficeId;
   unrest: number;
   lootToken: {
     available: boolean;
-    value: number;
+    /** Printed loot modifier; null until the punchboard tokens are transcribed. */
+    value: number | null;
     face: "loot" | "control";
   };
   exportIcons: number;
   partialCompanyShip: boolean;
 };
 
+/** Presidents, Commanders, treasuries and Governors live in company.offices / company.armies. */
 export type PresidencyState = {
   id: PresidencyId;
-  president?: PlayerId;
   army: ArmyId;
-  commander?: PlayerId;
-  treasury: number;
+  /** The Presidency's Writers box. */
   writers: Record<PlayerId, number>;
-  seaZone: string;
-  governors: OfficeId[];
-  associatedRegions: RegionId[];
+  seaZone: SeaZoneId;
 };
 
 export type ElephantState = {
   regionId?: RegionId;
+  /** The region the Elephant faces across a border; omitted when it stands in the region's centre. */
+  facing?: RegionId;
 };
 
 export type IndiaState = {
   regions: Record<RegionId, RegionState>;
   presidencies: Record<PresidencyId, PresidencyState>;
   elephant: ElephantState;
-  eventDiscards: EventTileId[];
   regionsLostThisTurn: number;
 };
 
@@ -289,22 +311,14 @@ export type LawInstance = {
   lawId: string;
 };
 
-export type ParliamentState = {
-  primeMinister?: PlayerId;
-  policyDialPosition: PolicySpaceId;
-  selectedLaw?: LawInstance;
-  voteMarker: number;
-  currentVotingRound: number;
-  oppositionLeader?: PlayerId;
-  votesByPlayer: Record<PlayerId, { for: number; against: number }>;
-  passedLaws: LawInstance[];
-  deregulated: boolean;
-};
+/** Parliament (and Revenue) state is owned by phases/parliament.state.ts. */
+export type { ParliamentState } from "./phases/parliament.state";
 
 export type FirmState = {
   id: FirmId;
   owner: PlayerId;
   treasury: number;
+  /** Firm shares are family pieces; this is their only location. */
   shares: Record<PlayerId, number>;
 };
 
@@ -369,6 +383,7 @@ export type GameState = {
   mode: GameMode;
   scenario: ScenarioId;
   turn: number;
+  startTurn: number;
   finalTurn: number;
   phase: PhaseId;
   pendingDecision: PendingDecision;
@@ -377,6 +392,13 @@ export type GameState = {
   company: CompanyState;
   india: IndiaState;
   parliament: ParliamentState;
+  londonSeason: LondonSeasonState;
+  companyOperation: CompanyOperationState;
+  eventsInIndia: EventsInIndiaState;
+  finalScoring: FinalScoringState;
+  negotiation: NegotiationState;
+  family: FamilyState;
+  hiring: HiringState;
   decks: Record<string, DeckState>;
   firms?: FirmState[];
   crown?: CrownState;

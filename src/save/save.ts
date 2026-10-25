@@ -1,4 +1,4 @@
-import type { GameState } from "../engine";
+import { GAME_SCHEMA_VERSION, type GameState } from "../engine";
 import { checksumJson, stableStringify } from "./checksum";
 import {
   DEFAULT_APP_VERSION,
@@ -137,6 +137,18 @@ export function validateSaveEnvelope(envelope: SaveEnvelope): SaveValidationErro
 
   if (errors.length > 0) {
     return errors;
+  }
+
+  if (envelope.state.schemaVersion !== GAME_SCHEMA_VERSION) {
+    return [
+      {
+        code: "UNSUPPORTED_GAME_SCHEMA",
+        message: `This save was made by an older version of the game (state version ${String(
+          envelope.state.schemaVersion,
+        )}; this app needs version ${GAME_SCHEMA_VERSION}) and can't be loaded. Please start a new game.`,
+        field: "state.schemaVersion",
+      },
+    ];
   }
 
   const stateChecksum = checksumGameState(envelope.state);

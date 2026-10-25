@@ -1,16 +1,19 @@
 {
-  "name": "john-company-desktop",
+  "name": "john-company",
   "version": "0.1.0",
-  "description": "An Electron-based desktop adaptation of John Company: Second Edition.",
-  "main": "main.cjs",
+  "private": true,
+  "description": "An unofficial browser adaptation of John Company: Second Edition, served as Cloudflare Worker static assets.",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on tcp:5173 && cross-env JOCO_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
+    "dev": "astro dev --host 127.0.0.1",
     "start": "npm run dev",
-    "build": "tsc --noEmit && vite build",
-    "preview": "vite preview --host 127.0.0.1",
-    "electron": "electron .",
-    "typecheck": "tsc --noEmit",
+    "pretypecheck": "npm run cf:types",
+    "prebuild": "npm run cf:types",
+    "build": "npm run typecheck && astro build",
+    "preview": "astro preview --host 127.0.0.1",
+    "cf:preview": "astro build && wrangler dev",
+    "deploy": "npm run build && wrangler deploy",
+    "typecheck": "astro check && tsc --noEmit && tsc --noEmit -p tsconfig.worker.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -18,39 +21,42 @@
     "test:rules": "vitest run src/tests/rules src/tests/engine",
     "test:save": "vitest run src/tests/save",
     "test:crown": "vitest run src/tests/crown",
-    "verify": "npm run typecheck && npm run test"
+    "verify": "npm run typecheck && npm run test",
+    "harness": "tsx scripts/harness.ts",
+    "cf:types": "wrangler types src/worker/worker-configuration.d.ts --strict-vars=false",
+    "cf:dev": "astro build && wrangler dev"
   },
   "keywords": [
     "boardgame",
     "john-company",
-    "electron"
+    "astro",
+    "cloudflare-workers"
   ],
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@vitejs/plugin-react": "^4.3.1",
+    "@astrojs/react": "^7.1.1",
+    "astro": "^7.4.2",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "vite": "^5.4.0",
-    "zod": "^3.23.8",
-    "zustand": "^4.5.4"
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "@testing-library/jest-dom": "^6.4.8",
+    "@astrojs/check": "^0.9.12",
     "@testing-library/react": "^16.0.0",
     "@types/node": "^22.5.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
-    "@vitest/coverage-v8": "^2.0.5",
-    "concurrently": "^8.2.2",
-    "cross-env": "^7.0.3",
-    "electron": "^31.7.7",
+    "@vitejs/plugin-react": "^6.1.2",
+    "@vitest/coverage-v8": "^5.0.5",
     "jsdom": "^24.1.1",
-    "typescript": "^5.5.4",
-    "vitest": "^2.0.5",
-    "wait-on": "^7.2.0"
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5",
+    "wrangler": "^4.152.0"
   },
   "allowScripts": {
-    "electron@31.7.7": true
+    "esbuild@0.28.2": true,
+    "workerd@1.20261019.1": true
   }
 }

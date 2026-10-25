@@ -30,7 +30,7 @@ export const crownSetupDistributions: CrownSetupDistribution[] = [
     crownSetupCards: 8,
     promiseCubesWithCrown: 6,
     promiseCubesPerHuman: 6,
-    source: "docs/crown-ai-design.md",
+    source: "printnplay/Rulebooks/John Company Rules.pdf",
   },
   {
     mode: "soloCrown",
@@ -39,7 +39,7 @@ export const crownSetupDistributions: CrownSetupDistribution[] = [
     crownSetupCards: 8,
     promiseCubesWithCrown: 6,
     promiseCubesPerHuman: 6,
-    source: "docs/crown-ai-design.md",
+    source: "printnplay/Rulebooks/John Company Rules.pdf",
   },
   {
     mode: "twoPlayerCrown",
@@ -48,35 +48,35 @@ export const crownSetupDistributions: CrownSetupDistribution[] = [
     crownSetupCards: 4,
     promiseCubesWithCrown: 4,
     promiseCubesPerHuman: 4,
-    source: "docs/crown-ai-design.md",
+    source: "printnplay/Rulebooks/John Company Rules.pdf",
   },
 ];
 
 export const crownDifficultySettings: CrownDifficultySetting[] = [
   {
     id: "easy",
-    source: "docs/crown-ai-design.md",
+    source: "printnplay/Rulebooks/John Company Rules.pdf",
     promiseCardCubeTradesAllowed: true,
     additionalCrownPromiseCubes: 0,
     extraSetupCards: 0,
   },
   {
     id: "normal",
-    source: "docs/crown-ai-design.md",
+    source: "printnplay/Rulebooks/John Company Rules.pdf",
     promiseCardCubeTradesAllowed: false,
     additionalCrownPromiseCubes: 0,
     extraSetupCards: 0,
   },
   {
     id: "hard",
-    source: "docs/crown-ai-design.md",
+    source: "printnplay/Rulebooks/John Company Rules.pdf",
     promiseCardCubeTradesAllowed: false,
     additionalCrownPromiseCubes: 4,
     extraSetupCards: 0,
   },
   {
     id: "expert",
-    source: "docs/crown-ai-design.md",
+    source: "printnplay/Rulebooks/John Company Rules.pdf",
     promiseCardCubeTradesAllowed: false,
     additionalCrownPromiseCubes: 4,
     extraSetupCards: 3,

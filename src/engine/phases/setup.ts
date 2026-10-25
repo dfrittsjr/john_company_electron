@@ -1,3 +1,4 @@
+import type { CommandHandler } from "../command-handler";
 import { enterpriseDecks, setupCardDecks } from "../../data";
 import type { EnterpriseType, SetupCardDefinition, SetupCardEffect } from "../../data";
 import { shuffle } from "../rng";
@@ -5,25 +6,24 @@ import type {
   ApplyCommandResult,
   GameCommand,
   GameState,
-  PendingDecision,
   PlayerId,
   PlayerState,
   PresidencyId,
 } from "../types";
-import { createFamilyActionCommands } from "./family";
+import { availableEnterpriseCard, startFamilyPhase } from "./family";
+import { buildLondonSeasonDisplay, drawSetupBlackmail } from "./london-season";
 import { createCommandLogEntry } from "./shared";
 
 export function confirmStart(state: GameState, command: GameCommand): ApplyCommandResult {
   const now = command.clientTimestamp;
   const setupDistribution = parseSetupDistribution(state, command.payload);
   const setupResult =
-    setupDistribution === "random" && state.mode === "hotseat" && state.scenario === "1710"
+    setupDistribution === "random" && state.mode === "hotseat" && setupDeckIdForScenario(state) === "1710"
       ? applyRandomHotseat1710SetupCards(state)
       : { state, details: undefined };
-  const setupState = setupResult.state;
-  const nextActor = setupState.seatingOrder.find((playerId) => !setupState.players[playerId].isCrown);
-
-  if (!nextActor) {
+  // Setup step 12: build the London Season Display after setup cards have taken their blackmail.
+  const setupState = buildLondonSeasonDisplay(setupResult.state);
+  if (!setupState.seatingOrder.some((playerId) => !setupState.players[playerId].isCrown)) {
     return {
       ok: false,
       errors: [
@@ -35,16 +35,6 @@ export function confirmStart(state: GameState, command: GameCommand): ApplyComma
     };
   }
 
-  const pendingDecision: PendingDecision = {
-    id: "decision-family-choose-action-turn-1",
-    phase: "family",
-    step: "family.chooseAction",
-    actor: nextActor,
-    visibility: "private",
-    prompt: "Choose a family action.",
-    legalCommands: createFamilyActionCommands(setupState, nextActor),
-    canSave: true,
-  };
   const logEntry = createCommandLogEntry({
     state: setupState,
     command,
@@ -57,17 +47,21 @@ export function confirmStart(state: GameState, command: GameCommand): ApplyComma
     details: setupResult.details,
   });
 
+  // The London Season is skipped on the first turn (p.11), so play starts with Family.
   return {
     ok: true,
     logEntry,
-    state: {
+    state: startFamilyPhase({
       ...setupState,
       updatedAt: now,
-      phase: "family",
-      pendingDecision,
       log: [...setupState.log, logEntry],
-    },
+    }),
   };
+}
+
+// Long 1710 "begins identically to the 1710 scenario" (p.4), so it deals the 1710 setup cards.
+function setupDeckIdForScenario(state: GameState): string {
+  return state.scenario === "long-1710" ? "1710" : state.scenario;
 }
 
 function parseSetupDistribution(state: GameState, payload: unknown): "starter" | "random" {
@@ -178,7 +172,7 @@ function applySetupCardEffect(
     case "primeMinister":
       return { ...state, parliament: { ...state.parliament, primeMinister: playerId } };
     case "randomBlackmail":
-      return addPlaceholderBlackmail(state, playerId, effect.count, card.id);
+      return drawSetupBlackmail(state, playerId, effect.count);
     case "writer":
       return addWriters(state, playerId, normalizePresidency(effect.presidency), effect.count);
     case "commander":
@@ -209,7 +203,7 @@ function applySetupCardEffect(
 }
 
 function placeOffice(state: GameState, playerId: PlayerId, officeId: string): GameState {
-  const presidency = presidencyForOffice(officeId);
+  const office = state.company.offices[officeId];
   const stateWithOffice: GameState = {
     ...state,
     company: {
@@ -219,43 +213,21 @@ function placeOffice(state: GameState, playerId: PlayerId, officeId: string): Ga
         [officeId]: {
           id: officeId,
           holder: playerId,
-          treasury: state.company.offices[officeId]?.treasury ?? 0,
-          fatigue: state.company.offices[officeId]?.fatigue ?? 0,
+          treasury: office?.treasury ?? 0,
+          fatigue: office?.fatigue ?? 0,
           vacant: false,
           created: true,
           actedThisTurn: false,
         },
       },
       vacantOffices: state.company.vacantOffices.filter((candidate) => candidate !== officeId),
+      unusedOffices: state.company.unusedOffices.filter((candidate) => candidate !== officeId),
+      // The Chairman also takes the Chairman marker (p.15).
+      chairmanMarker: officeId === "chairman" ? playerId : state.company.chairmanMarker,
     },
-    india: presidency
-      ? {
-          ...state.india,
-          presidencies: {
-            ...state.india.presidencies,
-            [presidency]: {
-              ...state.india.presidencies[presidency],
-              president: playerId,
-            },
-          },
-        }
-      : state.india,
   };
 
-  return updatePlayer(
-    stateWithOffice,
-    playerId,
-    (player) => ({
-      ...player,
-      familyMembers: {
-        ...player.familyMembers,
-        supply: player.familyMembers.supply - 1,
-        offices: player.familyMembers.offices.includes(officeId)
-          ? player.familyMembers.offices
-          : [...player.familyMembers.offices, officeId],
-      },
-    }),
-  );
+  return takeFromSupply(stateWithOffice, playerId, 1);
 }
 
 function addCompanyShares(
@@ -270,7 +242,7 @@ function addCompanyShares(
     owner: playerId,
   }));
 
-  return updatePlayer(
+  return takeFromSupply(
     {
       ...state,
       company: {
@@ -279,46 +251,7 @@ function addCompanyShares(
       },
     },
     playerId,
-    (player) => ({
-      ...player,
-      familyMembers: {
-        ...player.familyMembers,
-        supply: player.familyMembers.supply - count,
-        courtShares: player.familyMembers.courtShares + count,
-      },
-    }),
-  );
-}
-
-function addPlaceholderBlackmail(
-  state: GameState,
-  playerId: PlayerId,
-  count: number,
-  sourceCardId: string,
-): GameState {
-  const existingCount = state.players[playerId]?.blackmailCards.length ?? 0;
-  const cards = Array.from({ length: count }, (_, index) => ({
-    id: `setup-blackmail-${sourceCardId}-${existingCount + index + 1}`,
-    cardId: "blackmail-placeholder",
-    facedown: true,
-  }));
-
-  return updatePlayer(
-    {
-      ...state,
-      hidden: {
-        ...state.hidden,
-        privateCards: {
-          ...state.hidden.privateCards,
-          [playerId]: [...(state.hidden.privateCards[playerId] ?? []), ...cards],
-        },
-      },
-    },
-    playerId,
-    (player) => ({
-      ...player,
-      blackmailCards: [...player.blackmailCards, ...cards],
-    }),
+    count,
   );
 }
 
@@ -328,7 +261,9 @@ function addWriters(
   presidency: PresidencyId,
   count: number,
 ): GameState {
-  return updatePlayer(
+  const box = state.india.presidencies[presidency];
+
+  return takeFromSupply(
     {
       ...state,
       india: {
@@ -336,57 +271,31 @@ function addWriters(
         presidencies: {
           ...state.india.presidencies,
           [presidency]: {
-            ...state.india.presidencies[presidency],
-            writers: {
-              ...state.india.presidencies[presidency].writers,
-              [playerId]: (state.india.presidencies[presidency].writers[playerId] ?? 0) + count,
-            },
+            ...box,
+            writers: { ...box.writers, [playerId]: (box.writers[playerId] ?? 0) + count },
           },
         },
       },
     },
     playerId,
-    (player) => ({
-      ...player,
-      familyMembers: {
-        ...player.familyMembers,
-        supply: player.familyMembers.supply - count,
-        writers: {
-          ...player.familyMembers.writers,
-          [presidency]: player.familyMembers.writers[presidency] + count,
-        },
-      },
-    }),
+    count,
   );
 }
 
 function addCommander(state: GameState, playerId: PlayerId, army: PresidencyId): GameState {
-  return updatePlayer(
+  return takeFromSupply(
     {
       ...state,
       company: {
         ...state.company,
         armies: {
           ...state.company.armies,
-          [army]: {
-            ...state.company.armies[army],
-            commander: playerId,
-          },
+          [army]: { ...state.company.armies[army], commander: playerId },
         },
       },
     },
     playerId,
-    (player) => ({
-      ...player,
-      familyMembers: {
-        ...player.familyMembers,
-        supply: player.familyMembers.supply - 1,
-        commanders: {
-          ...player.familyMembers.commanders,
-          [army]: true,
-        },
-      },
-    }),
+    1,
   );
 }
 
@@ -396,7 +305,9 @@ function addOfficers(
   army: PresidencyId,
   count: number,
 ): GameState {
-  return updatePlayer(
+  const current = state.company.armies[army].officers[playerId] ?? { ready: 0, exhausted: 0 };
+
+  return takeFromSupply(
     {
       ...state,
       company: {
@@ -407,31 +318,22 @@ function addOfficers(
             ...state.company.armies[army],
             officers: {
               ...state.company.armies[army].officers,
-              [playerId]: {
-                ready: (state.company.armies[army].officers[playerId]?.ready ?? 0) + count,
-                exhausted: state.company.armies[army].officers[playerId]?.exhausted ?? 0,
-              },
+              [playerId]: { ready: current.ready + count, exhausted: current.exhausted },
             },
           },
         },
       },
     },
     playerId,
-    (player) => ({
-      ...player,
-      familyMembers: {
-        ...player.familyMembers,
-        supply: player.familyMembers.supply - count,
-        officers: {
-          ...player.familyMembers.officers,
-          [army]: {
-            ready: player.familyMembers.officers[army].ready + count,
-            exhausted: player.familyMembers.officers[army].exhausted,
-          },
-        },
-      },
-    }),
+    count,
   );
+}
+
+function takeFromSupply(state: GameState, playerId: PlayerId, count: number): GameState {
+  return updatePlayer(state, playerId, (player) => ({
+    ...player,
+    familyMembers: { ...player.familyMembers, supply: player.familyMembers.supply - count },
+  }));
 }
 
 function addEnterprises(
@@ -446,7 +348,7 @@ function addEnterprises(
   let nextState = state;
 
   for (let index = 0; index < count; index += 1) {
-    const card = nextEnterpriseCard(nextState, type);
+    const card = availableEnterpriseCard(nextState, type);
     if (!card) throw new Error(`No ${type} enterprise cards remain for setup.`);
 
     const instance = {
@@ -459,16 +361,18 @@ function addEnterprises(
       {
         ...nextState,
         company:
-          type === "shipyard" && ship?.status === "placed"
+          type === "shipyard"
             ? {
                 ...nextState.company,
                 ships: [
                   ...nextState.company.ships,
                   {
                     id: `ship-${card.id}`,
-                    owner: playerId,
-                    location: ship.seaZone,
-                    exhausted: false,
+                    kind: "player",
+                    shipyardCardId: card.id,
+                    // "Place the matching ship in the indicated sea zone or place on shipyard if unfitted" (p.5).
+                    location: ship?.status === "placed" ? ship.seaZone : "shipyard",
+                    fatigued: false,
                   },
                 ],
               }
@@ -478,26 +382,12 @@ function addEnterprises(
       (player) => ({
         ...player,
         victoryPoints: player.victoryPoints + card.victoryPoints,
-        windows: player.windows + card.windowTaxIcons,
         enterprises: [...player.enterprises, instance],
       }),
     );
   }
 
   return nextState;
-}
-
-function nextEnterpriseCard(state: GameState, type: EnterpriseType) {
-  const deck = enterpriseDecks.find((candidate) => candidate.type === type);
-  if (!deck) return undefined;
-
-  const ownedCount = Object.values(state.players).reduce(
-    (count, player) =>
-      count + player.enterprises.filter((enterprise) => enterprise.type === type).length,
-    0,
-  );
-
-  return deck.cards[ownedCount];
 }
 
 function updatePlayer(
@@ -530,15 +420,7 @@ function normalizePresidency(value: string): PresidencyId {
   }
 }
 
-function presidencyForOffice(officeId: string): PresidencyId | undefined {
-  switch (officeId) {
-    case "president-bombay":
-      return "Bombay";
-    case "president-madras":
-      return "Madras";
-    case "president-bengal":
-      return "Bengal";
-    default:
-      return undefined;
-  }
-}
+/** Commands this phase answers; composed by the dispatcher in ../commands.ts. */
+export const setupCommandHandlers: Record<string, CommandHandler> = {
+  "setup.confirmStart": confirmStart,
+};

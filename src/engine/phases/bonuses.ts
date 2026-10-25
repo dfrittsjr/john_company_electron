@@ -1,3 +1,5 @@
+import type { CommandHandler } from "../command-handler";
+import { isShipFitted, shipForShipyard } from "../selectors";
 import type { ApplyCommandResult, GameCommand, GameState } from "../types";
 import { createCommandLogEntry, createSystemDecision, wrongPhase } from "./shared";
 
@@ -33,8 +35,6 @@ export function confirmBonuses(state: GameState, command: GameCommand): ApplyCom
     summary: `Bonuses paid £${totalIncome}.`,
     details: {
       incomeByPlayer,
-      assumption:
-        "A shipyard pays if its matching ship is owned by the same player and located at shipyard:<enterprise id>.",
     },
   });
   const nextDecision = createSystemDecision({
@@ -60,36 +60,39 @@ export function confirmBonuses(state: GameState, command: GameCommand): ApplyCom
   };
 }
 
-function calculateBonusIncome(state: GameState): Record<
-  string,
-  {
-    workshops: number;
-    fittedShipyards: number;
-    total: number;
-  }
-> {
-  const incomeByPlayer: Record<string, { workshops: number; fittedShipyards: number; total: number }> = {};
+type BonusIncome = { workshops: number; fittedShipyards: number; prizeFamilyMembers?: number; total: number };
+
+function calculateBonusIncome(state: GameState): Record<string, BonusIncome> {
+  const incomeByPlayer: Record<string, BonusIncome> = {};
+  // Inclosure Acts (law #36): each family member on a prize earns £1 during Bonuses.
+  const inclosureActs = state.parliament.passedLaws.some((law) => law.lawId === "inclosure-acts");
 
   for (const player of Object.values(state.players)) {
     if (player.isCrown) continue;
 
     const workshops = player.enterprises.filter((enterprise) => enterprise.type === "workshop").length;
+    // A shipyard pays £1 if its ship has been fitted, i.e. it is no longer on the shipyard (p.13, p.26).
     const fittedShipyards = player.enterprises.filter(
       (enterprise) =>
         enterprise.type === "shipyard" &&
-        state.company.ships.some(
-          (ship) => ship.owner === player.id && ship.location === `shipyard:${enterprise.id}`,
-        ),
+        enterprise.cardId !== undefined &&
+        isShipFitted(shipForShipyard(state, enterprise.cardId)),
     ).length;
-    const total = workshops + fittedShipyards;
+    const prizeFamilyMembers = inclosureActs
+      ? Object.values(player.familyMembers.prizes).reduce((sum, count) => sum + count, 0)
+      : 0;
+    const total = workshops + fittedShipyards + prizeFamilyMembers;
     if (total <= 0) continue;
 
-    incomeByPlayer[player.id] = {
-      workshops,
-      fittedShipyards,
-      total,
-    };
+    incomeByPlayer[player.id] = inclosureActs
+      ? { workshops, fittedShipyards, prizeFamilyMembers, total }
+      : { workshops, fittedShipyards, total };
   }
 
   return incomeByPlayer;
 }
+
+/** Commands this phase answers; composed by the dispatcher in ../commands.ts. */
+export const bonusesCommandHandlers: Record<string, CommandHandler> = {
+  "bonuses.confirm": confirmBonuses,
+};

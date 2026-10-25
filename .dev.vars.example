@@ -1,0 +1,4 @@
+# Local secrets for `wrangler dev`. Copy to .dev.vars (gitignored): cp .dev.vars.example .dev.vars
+# Cloudflare's documented always-pass Turnstile test secret: every token verifies.
+# In production set the real one with: npx wrangler secret put TURNSTILE_SECRET
+TURNSTILE_SECRET=1x0000000000000000000000000000000AA

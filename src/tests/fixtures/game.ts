@@ -1,5 +1,13 @@
 import { expect } from "vitest";
-import { applyCommand, createNewGame, type ActorId, type GameCommand, type GameState } from "../../engine";
+import {
+  applyCommand,
+  createNewGame,
+  isKnownCommandType,
+  familyPieceTotal,
+  type ActorId,
+  type GameCommand,
+  type GameState,
+} from "../../engine";
 import { deserializeGameState, serializeSave } from "../../save";
 
 export const TEST_NOW = "2026-06-13T12:00:00.000Z";
@@ -10,27 +18,6 @@ export const HOTSEAT_PLAYERS = [
   { id: "player-yellow", name: "Yellow", color: "yellow" },
 ] as const;
 
-const KNOWN_COMMAND_TYPES = new Set([
-  "setup.confirmStart",
-  "londonSeason.confirm",
-  "family.chooseAction",
-  "family.finishAction",
-  "hiring.pass",
-  "hiring.electChairman",
-  "hiring.hireOffice",
-  "hiring.resolveNepotismConsent",
-  "hiring.skipVacancy",
-  "companyOperation.passOffice",
-  "companyOperation.resolveChairman",
-  "bonuses.confirm",
-  "revenue.confirm",
-  "revenue.chooseDividends",
-  "eventsInIndia.confirm",
-  "eventsInIndia.resolveRolledEvents",
-  "parliament.confirm",
-  "upkeep.confirm",
-  "finalScoring.confirm",
-]);
 
 export function createHotseatGame(
   options: {
@@ -50,7 +37,13 @@ export function createHotseatGame(
     players: HOTSEAT_PLAYERS.map((player) => ({ ...player })),
   });
 
-  return options.finalTurn === undefined ? state : { ...state, finalTurn: options.finalTurn };
+  // Starter fixtures skip setup cards, so every starting office is vacant. Leave the Hiring queue
+  // empty so tests opt into the vacancies they exercise (see fixtures/builders.ts).
+  const withoutHiringQueue: GameState = { ...state, company: { ...state.company, vacantOffices: [] } };
+
+  return options.finalTurn === undefined
+    ? withoutHiringQueue
+    : { ...withoutHiringQueue, finalTurn: options.finalTurn };
 }
 
 export function applyFirstLegalCommand(
@@ -145,12 +138,24 @@ export function expectGameInvariants(state: GameState): void {
   }
 
   for (const legalCommand of state.pendingDecision.legalCommands) {
-    expect(KNOWN_COMMAND_TYPES.has(legalCommand.type)).toBe(true);
+    expect(isKnownCommandType(legalCommand.type), `unknown legal command ${legalCommand.type}`).toBe(true);
   }
 
   state.log.forEach((entry, index) => {
     expect(entry.sequence).toBe(index + 1);
   });
+
+  expectFamilyPiecesConserved(state);
+}
+
+/** Every family piece is in exactly one location: 18 per family, 36 for the Crown (p.2, p.43). */
+export function expectFamilyPiecesConserved(state: GameState): void {
+  for (const player of Object.values(state.players)) {
+    expect({ player: player.id, total: familyPieceTotal(state, player.id) }).toEqual({
+      player: player.id,
+      total: player.isCrown ? 36 : 18,
+    });
+  }
 }
 
 export function expectSaveRoundTripPreservesPendingDecision(state: GameState): void {

@@ -1,398 +1,126 @@
-import { offices } from "../../data";
-import type { ApplyCommandResult, GameCommand, GameState, OfficeId, PendingDecision } from "../types";
-import { confirmStarterPhase, createCommandLogEntry, createSystemDecision, wrongPhase } from "./shared";
+import type { CommandHandler } from "../command-handler";
+import type { GameState, PendingDecision } from "../types";
+import { chairmanStep, debtConsentStep } from "./company-operation/chairman";
+import { chinaStep } from "./company-operation/china";
+import { isListedCommand, officeLabel } from "./company-operation/context";
+import { decideOperation, type SkipOfficePayload } from "./company-operation/decide";
+import { CHINA_HIRE_RESUME, directorStep } from "./company-operation/director-of-trade";
+import { registerHiringResume } from "./hiring-resume";
+import { governorGeneralStep } from "./company-operation/governor-general";
+import { interruptStep } from "./company-operation/interrupts";
+import { militaryStep } from "./company-operation/military-affairs";
+import {
+  commanderCommandStep,
+  governorCommandStep,
+  presidencyStep,
+  tradeCommandStep,
+} from "./company-operation/presidency";
+import { shippingStep } from "./company-operation/shipping";
+import { finishOffice, type OperationStep } from "./company-operation/step";
+import { activeInterrupt } from "./negotiation";
+import { createCommandLogEntry, wrongPhase } from "./shared";
 
-type CompanyOperationPassPayload = {
-  officeId: OfficeId;
-};
+// Company Operation (rulebook pp.17-26): each office acts in red-ribbon order. The office modules in
+// ./company-operation/ build decisions and apply commands; this file wires them to the dispatcher.
 
-type ChairmanOperationPayload = {
-  officeId: "chairman";
-  debtTaken: number;
-  allocations: Record<OfficeId, number>;
-};
-
-const DEBT_PROCEEDS = 5;
-
-export function resolveChairmanOperation(
-  state: GameState,
-  command: GameCommand,
-): ApplyCommandResult {
-  if (state.phase !== "companyOperation" || state.pendingDecision.step !== "companyOperation.resolveChairman") {
-    return wrongPhase("Chairman operation can only be resolved during the Chairman Company Operation decision.");
-  }
-
-  const payload = parseChairmanPayload(command.payload);
-  const validationError = payload ? validateChairmanPayload(state, payload) : "Chairman operation payload is invalid.";
-  if (!payload || validationError) {
-    return {
-      ok: false,
-      errors: [
-        {
-          code: "ILLEGAL_COMPANY_OPERATION_CHOICE",
-          message: validationError || "Chairman operation payload is invalid.",
-          field: "payload",
-        },
-      ],
-    };
-  }
-
-  const startingBalance = state.company.balance;
-  const debtProceeds = payload.debtTaken * DEBT_PROCEEDS;
-  const allocatedTotal = Object.values(payload.allocations).reduce((total, amount) => total + amount, 0);
-  const officesAfterAllocation = Object.entries(payload.allocations).reduce(
-    (officesById, [officeId, amount]) => ({
-      ...officesById,
-      [officeId]: {
-        ...officesById[officeId],
-        treasury: officesById[officeId].treasury + amount,
-      },
-    }),
-    state.company.offices,
-  );
-  const stateAfterChairman = markOfficeActed(
-    {
-      ...state,
-      company: {
-        ...state.company,
-        balance: startingBalance + debtProceeds - allocatedTotal,
-        debt: state.company.debt + payload.debtTaken,
-        offices: officesAfterAllocation,
-      },
-    },
-    "chairman",
-  );
-  const now = command.clientTimestamp;
-  const logEntry = createCommandLogEntry({
-    state: stateAfterChairman,
-    command,
-    now,
-    type: "companyOperation.chairmanResolved",
-    summary: `${state.players[command.actorId]?.name ?? command.actorId} resolved Chairman debt and allocation.`,
-    details: {
-      debtTaken: payload.debtTaken,
-      debtProceeds,
-      startingBalance,
-      allocatedTotal,
-      endingBalance: stateAfterChairman.company.balance,
-      allocations: payload.allocations,
-      assumption:
-        "Each debt taken during the Chairman operation adds GBP 5 to Company Balance; allocation may fund created non-Chairman office treasuries.",
-    },
-  });
-  const stateWithLog: GameState = {
-    ...stateAfterChairman,
-    updatedAt: now,
-    log: [...stateAfterChairman.log, logEntry],
-  };
-  const pendingDecision = createNextCompanyOperationDecision(stateWithLog);
-
+/**
+ * Refresh step (p.36): "Any active local alliances are exhausted." Bought alliances return to the
+ * bottom of their Army box, ready to be bought again next turn. Called from Upkeep and Refresh.
+ */
+export function exhaustActiveLocalAlliances(state: GameState): GameState {
   return {
-    ok: true,
-    logEntry,
-    state: {
-      ...stateWithLog,
-      phase: pendingDecision.phase,
-      pendingDecision,
-    },
-  };
-}
-
-export function passCompanyOperation(
-  state: GameState,
-  command: GameCommand,
-): ApplyCommandResult {
-  if (state.phase !== "companyOperation") {
-    return wrongPhase("Company Operation commands can only be chosen during Company Operation.");
-  }
-
-  if (state.pendingDecision.step === "companyOperation.chooseStarterPass") {
-    return confirmStarterPhase({
-      state,
-      command,
-      logType: "companyOperation.passed",
-      summary: "Starter Company Operation confirmed.",
-      detailsNote:
-        "Starter scaffold records the phase; office order and office actions come later.",
-      nextDecision: createSystemDecision({
-        id: `decision-bonuses-confirm-turn-${state.turn}`,
-        phase: "bonuses",
-        step: "bonuses.confirm",
-        prompt: "Confirm starter Bonuses.",
-        commandType: "bonuses.confirm",
-        label: "Confirm Bonuses",
-        description: "Starter scaffold: records that Bonuses were confirmed.",
-      }),
-    });
-  }
-
-  if (
-    state.pendingDecision.step !== "companyOperation.passOffice" &&
-    state.pendingDecision.step !== "companyOperation.skipOffice"
-  ) {
-    return wrongPhase("Company Operation office resolution is not pending.");
-  }
-
-  const payload = parsePassPayload(command.payload);
-  if (!payload || !isLegalPayload(state, payload)) {
-    return {
-      ok: false,
-      errors: [
-        {
-          code: "ILLEGAL_COMPANY_OPERATION_CHOICE",
-          message: "The requested Company Operation office action is not legal for this decision.",
-          field: "payload.officeId",
-        },
-      ],
-    };
-  }
-
-  const now = command.clientTimestamp;
-  const isSkip = state.pendingDecision.step === "companyOperation.skipOffice";
-  const stateAfterOffice = isSkip
-    ? skipOfficeForTurn(state, payload.officeId)
-    : markOfficeActed(state, payload.officeId);
-  const officeName = officeLabel(payload.officeId);
-  const holderId = state.company.offices[payload.officeId]?.holder;
-  const holderName = holderId ? state.players[holderId]?.name : undefined;
-  const logEntry = createCommandLogEntry({
-    state: stateAfterOffice,
-    command,
-    now,
-    type: isSkip ? "companyOperation.officeSkipped" : "companyOperation.officePassed",
-    summary: isSkip
-      ? `${officeName} was vacant during Company Operation.`
-      : `${holderName ?? "Officeholder"} passed ${officeName}.`,
-    details: {
-      officeId: payload.officeId,
-      note: isSkip
-        ? "Vacant and uncreated offices are skipped in red-ribbon order."
-        : "Temporary office fallback; detailed office actions come later.",
-    },
-  });
-  const stateWithLog: GameState = {
-    ...stateAfterOffice,
-    updatedAt: now,
-    log: [...stateAfterOffice.log, logEntry],
-  };
-  const pendingDecision = createNextCompanyOperationDecision(stateWithLog);
-
-  return {
-    ok: true,
-    logEntry,
-    state: {
-      ...stateWithLog,
-      phase: pendingDecision.phase,
-      pendingDecision,
-    },
-  };
-}
-
-export function createNextCompanyOperationDecision(state: GameState): PendingDecision {
-  const officeId = nextUnresolvedOperationOffice(state);
-  if (!officeId) {
-    return createSystemDecision({
-      id: `decision-bonuses-confirm-turn-${state.turn}`,
-      phase: "bonuses",
-      step: "bonuses.confirm",
-      prompt: "Company Operation is complete. Confirm starter Bonuses.",
-      commandType: "bonuses.confirm",
-      label: "Confirm Bonuses",
-      description: "Starter scaffold: records that Bonuses were confirmed.",
-    });
-  }
-
-  const office = state.company.offices[officeId];
-  if (office?.created && !office.vacant && office.holder) {
-    if (officeId === "chairman") {
-      return {
-        id: `decision-company-operation-chairman-turn-${state.turn}`,
-        phase: "companyOperation",
-        step: "companyOperation.resolveChairman",
-        actor: office.holder,
-        visibility: "private",
-        prompt: "Resolve Chairman debt and Company Balance allocation.",
-        legalCommands: [
+    ...state,
+    company: {
+      ...state.company,
+      armies: Object.fromEntries(
+        Object.entries(state.company.armies).map(([armyId, army]) => [
+          armyId,
           {
-            type: "companyOperation.resolveChairman",
-            label: "Resolve Chairman",
-            description: "Take Company debt, then allocate available Company Balance to office treasuries.",
-            payload: {
-              officeId: "chairman",
-              debtTaken: 0,
-              allocations: {},
-            } satisfies ChairmanOperationPayload,
+            ...army,
+            localAlliances: Object.fromEntries(
+              Object.keys(army.localAlliances ?? {}).map((allianceId) => [allianceId, "exhausted" as const]),
+            ),
+          },
+        ]),
+      ) as GameState["company"]["armies"],
+    },
+  };
+}
+
+/** Refresh step (p.36): "Return all extra ships to the supply." Called from Upkeep and Refresh. */
+export function returnExtraShips(state: GameState): GameState {
+  return { ...state, company: { ...state.company, ships: state.company.ships.filter((ship) => ship.kind !== "extra") } };
+}
+
+/** The decision that starts or continues Company Operation; Hiring calls this when it ends. */
+export function createNextCompanyOperationDecision(state: GameState): PendingDecision {
+  return decideOperation({ ...state, phase: "companyOperation" });
+}
+
+const skipOfficeStep: OperationStep = (state, command) => {
+  const { officeId } = command.payload as SkipOfficePayload;
+  return { state: finishOffice(state, officeId), summary: `${officeLabel(officeId)} was vacant during Company Operation.` };
+};
+
+/** Validate, apply, log, and move on to the next decision. */
+function operationCommand(step: OperationStep): CommandHandler {
+  return (state, command) => {
+    if (state.phase !== "companyOperation") {
+      return wrongPhase("Company Operation commands can only be chosen during Company Operation.");
+    }
+    if (!isListedCommand(state, command)) {
+      return {
+        ok: false,
+        errors: [
+          {
+            code: "ILLEGAL_COMPANY_OPERATION_CHOICE",
+            message: "That Company Operation choice is not one of the listed legal commands.",
+            field: "payload",
           },
         ],
-        canSave: true,
       };
     }
 
-    return {
-      id: `decision-company-operation-${officeId}-turn-${state.turn}`,
-      phase: "companyOperation",
-      step: "companyOperation.passOffice",
-      actor: office.holder,
-      visibility: "private",
-      prompt: `Resolve ${officeLabel(officeId)}.`,
-      legalCommands: [
-        {
-          type: "companyOperation.passOffice",
-          label: `Pass ${officeLabel(officeId)}`,
-          description: "Temporary fallback until this office's full action is implemented.",
-          payload: { officeId } satisfies CompanyOperationPassPayload,
-        },
-      ],
-      canSave: true,
-    };
-  }
+    const result = step(state, command);
+    const now = command.clientTimestamp;
+    const logEntry = createCommandLogEntry({
+      state: result.state,
+      command,
+      now,
+      type: command.type,
+      summary: result.summary,
+      details: result.details,
+      rngRolls: result.rngRolls,
+      privateNote: result.privateNote,
+    });
+    const logged: GameState = { ...result.state, updatedAt: now, log: [...result.state.log, logEntry] };
+    // A Negotiation interrupt (e.g. Man on the Inside answering a blackmail) or an office being hired
+    // at once (China, p.25) keeps its own decision.
+    const pendingDecision =
+      activeInterrupt(logged) || logged.hiring.immediate ? logged.pendingDecision : decideOperation(logged);
 
-  return {
-    id: `decision-company-operation-skip-${officeId}-turn-${state.turn}`,
-    phase: "companyOperation",
-    step: "companyOperation.skipOffice",
-    actor: "system",
-    visibility: "public",
-    prompt: `${officeLabel(officeId)} is vacant or not in play.`,
-    legalCommands: [
-      {
-        type: "companyOperation.passOffice",
-        label: `Skip ${officeLabel(officeId)}`,
-        description: "Skip this vacant or uncreated office and continue Company Operation.",
-        payload: { officeId } satisfies CompanyOperationPassPayload,
-      },
-    ],
-    canSave: true,
+    return { ok: true, logEntry, state: { ...logged, phase: pendingDecision.phase, pendingDecision } };
   };
 }
 
-function nextUnresolvedOperationOffice(state: GameState): OfficeId | undefined {
-  return operationOfficeIds().find((officeId) => !state.company.offices[officeId]?.actedThisTurn);
-}
+registerHiringResume(CHINA_HIRE_RESUME, (state) => {
+  const decision = decideOperation(state);
+  return { ...state, phase: decision.phase, pendingDecision: decision };
+});
 
-function operationOfficeIds(): OfficeId[] {
-  return offices
-    .filter((office) => office.operationOrder !== undefined)
-    .slice()
-    .sort((left, right) => (left.operationOrder ?? 0) - (right.operationOrder ?? 0))
-    .map((office) => office.id);
-}
-
-function skipOfficeForTurn(state: GameState, officeId: OfficeId): GameState {
-  const office = state.company.offices[officeId];
-
-  return {
-    ...state,
-    company: {
-      ...state.company,
-      offices: {
-        ...state.company.offices,
-        [officeId]: {
-          id: officeId,
-          treasury: office?.treasury ?? 0,
-          fatigue: office?.fatigue ?? 0,
-          created: office?.created ?? false,
-          vacant: true,
-          actedThisTurn: true,
-        },
-      },
-    },
-  };
-}
-
-function markOfficeActed(state: GameState, officeId: OfficeId): GameState {
-  const office = state.company.offices[officeId];
-  if (!office) return state;
-
-  return {
-    ...state,
-    company: {
-      ...state.company,
-      offices: {
-        ...state.company.offices,
-        [officeId]: {
-          ...office,
-          actedThisTurn: true,
-        },
-      },
-    },
-  };
-}
-
-function officeLabel(officeId: OfficeId): string {
-  return offices.find((office) => office.id === officeId)?.label ?? officeId;
-}
-
-function parsePassPayload(payload: unknown): CompanyOperationPassPayload | undefined {
-  if (!payload || typeof payload !== "object") return undefined;
-  const raw = payload as { officeId?: unknown };
-  if (typeof raw.officeId !== "string") return undefined;
-
-  return { officeId: raw.officeId };
-}
-
-function parseChairmanPayload(payload: unknown): ChairmanOperationPayload | undefined {
-  if (!payload || typeof payload !== "object") return undefined;
-  const raw = payload as {
-    officeId?: unknown;
-    debtTaken?: unknown;
-    allocations?: unknown;
-  };
-  if (raw.officeId !== "chairman") return undefined;
-  if (typeof raw.debtTaken !== "number" || !Number.isInteger(raw.debtTaken) || raw.debtTaken < 0) {
-    return undefined;
-  }
-  const debtTaken = raw.debtTaken;
-  if (!raw.allocations || typeof raw.allocations !== "object" || Array.isArray(raw.allocations)) {
-    return undefined;
-  }
-
-  const allocations: Record<OfficeId, number> = {};
-  for (const [officeId, amount] of Object.entries(raw.allocations)) {
-    if (!Number.isInteger(amount) || amount < 0) return undefined;
-    if (amount > 0) allocations[officeId] = amount;
-  }
-
-  return {
-    officeId: "chairman",
-    debtTaken,
-    allocations,
-  };
-}
-
-function validateChairmanPayload(
-  state: GameState,
-  payload: ChairmanOperationPayload,
-): string | undefined {
-  if (!state.pendingDecision.legalCommands.some((command) => command.type === "companyOperation.resolveChairman")) {
-    return "Chairman operation is not legal for this decision.";
-  }
-
-  const availableBalance =
-    state.company.balance + payload.debtTaken * DEBT_PROCEEDS;
-  const allocatedTotal = Object.values(payload.allocations).reduce((total, amount) => total + amount, 0);
-  if (allocatedTotal > availableBalance) {
-    return "Chairman allocation cannot exceed Company Balance after debt proceeds.";
-  }
-
-  for (const officeId of Object.keys(payload.allocations)) {
-    if (officeId === "chairman") {
-      return "Chairman cannot allocate Company Balance to the Chairman office.";
-    }
-
-    const office = state.company.offices[officeId];
-    if (!office?.created) {
-      return `Chairman allocation target "${officeId}" is not a created office.`;
-    }
-  }
-
-  return undefined;
-}
-
-function isLegalPayload(state: GameState, payload: CompanyOperationPassPayload): boolean {
-  return state.pendingDecision.legalCommands.some(
-    (command) =>
-      command.type === "companyOperation.passOffice" &&
-      JSON.stringify(command.payload ?? {}) === JSON.stringify(payload),
-  );
-}
+/** Commands this phase answers; composed by the dispatcher in ../commands.ts. */
+export const companyOperationCommandHandlers: Record<string, CommandHandler> = {
+  "companyOperation.passOffice": operationCommand(skipOfficeStep),
+  "companyOperation.chairman": operationCommand(chairmanStep),
+  "companyOperation.resolveDebtConsent": operationCommand(debtConsentStep),
+  "companyOperation.directorOfTrade": operationCommand(directorStep),
+  "companyOperation.shipping": operationCommand(shippingStep),
+  "companyOperation.militaryAffairs": operationCommand(militaryStep),
+  "companyOperation.presidency": operationCommand(presidencyStep),
+  "companyOperation.trade": operationCommand(tradeCommandStep),
+  "companyOperation.commander": operationCommand(commanderCommandStep),
+  "companyOperation.governor": operationCommand(governorCommandStep),
+  "companyOperation.china": operationCommand(chinaStep),
+  "companyOperation.governorGeneral": operationCommand(governorGeneralStep),
+  "companyOperation.interrupt": operationCommand(interruptStep),
+};

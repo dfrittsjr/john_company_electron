@@ -44,6 +44,21 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  border: 1px solid #f8f3e8;
+  border-radius: 6px;
+  padding: 0 14px;
+  color: #f8f3e8;
+  text-decoration: none;
+}
+
+.button-link:hover {
+  background: rgba(248, 243, 232, 0.14);
+}
+
 .plain-button {
   color: #2c261f;
   background: transparent;
@@ -61,7 +76,7 @@ button:disabled {
   padding: 40px;
   background:
     linear-gradient(90deg, rgba(30, 25, 19, 0.72), rgba(30, 25, 19, 0.18)),
-    url("../../board_image-1.png") center / cover;
+    url("/images/board.webp") center / cover;
 }
 
 .start-panel {
@@ -175,6 +190,7 @@ button:disabled {
   display: block;
   color: #6c6155;
   line-height: 1.4;
+  white-space: pre-line;
 }
 
 .field {
@@ -257,142 +273,6 @@ input {
   color: #6a4b0e;
 }
 
-.game-screen {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  padding: 16px;
-}
-
-.game-header {
-  margin-bottom: 12px;
-  border-bottom: 1px solid #c2b49f;
-  padding-bottom: 12px;
-}
-
-.track-strip {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(80px, 1fr));
-  gap: 8px;
-  width: min(760px, 100%);
-  margin: 0;
-}
-
-.track-strip div {
-  border: 1px solid #d3c5b1;
-  border-radius: 6px;
-  padding: 8px;
-  background: #fffaf2;
-}
-
-.track-strip dt {
-  color: #6b5d4d;
-  font-size: 11px;
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
-.track-strip dd {
-  margin: 2px 0 0;
-  font-weight: 800;
-}
-
-.decision-meta {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 8px;
-  margin: 12px 0;
-}
-
-.decision-meta div {
-  border: 1px solid #dfd3c2;
-  border-radius: 6px;
-  padding: 8px;
-  background: #fffaf2;
-}
-
-.decision-meta dt {
-  color: #6b5d4d;
-  font-size: 11px;
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
-.decision-meta dd {
-  margin: 2px 0 0;
-}
-
-.legal-command-list {
-  display: grid;
-  gap: 8px;
-  margin: 12px 0;
-}
-
-.save-actions {
-  display: grid;
-  gap: 8px;
-  margin: 12px 0;
-}
-
-.error-note {
-  border: 1px solid #b9483f;
-  border-radius: 6px;
-  padding: 8px;
-  color: #6f1820;
-  background: #f8ded8;
-}
-
-.game-layout {
-  display: grid;
-  grid-template-columns: 300px minmax(0, 1fr) 300px;
-  gap: 14px;
-  min-height: 0;
-}
-
-.board-stage {
-  min-width: 0;
-  overflow: auto;
-  border: 1px solid #b9aa95;
-  border-radius: 8px;
-  background: #d8cbb7;
-}
-
-.board-frame {
-  position: relative;
-  min-width: 900px;
-}
-
-.board-frame img {
-  display: block;
-  width: 100%;
-  height: auto;
-}
-
-.board-overlay {
-  position: absolute;
-  border: 1px solid rgba(141, 29, 52, 0.85);
-  border-radius: 6px;
-  padding: 5px 8px;
-  color: #fffaf2;
-  background: rgba(141, 29, 52, 0.86);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.board-overlay.standing {
-  top: 8%;
-  left: 6%;
-}
-
-.board-overlay.offices {
-  top: 46%;
-  left: 35%;
-}
-
-.board-overlay.india {
-  top: 26%;
-  right: 12%;
-}
-
 .crown-summary {
   margin-top: 18px;
   border-top: 1px solid #dfd3c2;
@@ -405,12 +285,74 @@ input {
 }
 
 @media (max-width: 1120px) {
-  .setup-grid,
-  .game-layout {
+  .setup-grid {
     grid-template-columns: 1fr;
   }
+}
 
-  .track-strip {
-    grid-template-columns: repeat(3, minmax(80px, 1fr));
-  }
+.negotiation-panel {
+  display: grid;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #c9bba1;
+}
+
+.negotiation-panel h3 {
+  margin: 8px 0 0;
+  font-size: 0.95rem;
+}
+
+.negotiation-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.negotiation-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.negotiation-list small {
+  display: block;
+  color: #6b5a44;
+}
+
+.negotiation-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.negotiation-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+}
+
+.negotiation-columns fieldset {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  border: 1px solid #c9bba1;
+  border-radius: 6px;
+}
+
+.negotiation-check {
+  font-size: 0.9rem;
+}
+
+.negotiation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.privacy-curtain {
+  display: grid;
+  gap: 8px;
 }

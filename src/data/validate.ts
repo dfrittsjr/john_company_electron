@@ -5,6 +5,7 @@ import {
   crownDifficultySettings,
   crownSetupDistributions,
 } from "./crown";
+import { companyTracks } from "./company-tracks";
 import { componentManifest } from "./components";
 import { enterpriseDecks } from "./enterprises";
 import { familyActions } from "./family-actions";
@@ -14,6 +15,7 @@ import { scenarios } from "./scenarios";
 import { setupCardDecks } from "./setup-cards";
 import { stockExchangeTrack } from "./stock-exchange";
 import type {
+  CompanyTracksDefinition,
   ComponentManifest,
   CrownStaticData,
   EnterpriseDeckDefinition,
@@ -72,6 +74,7 @@ export const staticData: StaticDataSet = {
   familyActions,
   enterpriseDecks,
   stockExchange: stockExchangeTrack,
+  companyTracks,
   offices,
   map: mapData,
   setupCardDecks,
@@ -132,6 +135,8 @@ const duplicateIds = <T extends { id: string }>(records: T[]): string[] => {
 export const validateScenarioData = (
   scenarioData: ScenarioDefinition[] = scenarios,
   options: ScenarioValidationOptions = {},
+  map: MapDefinition = staticData.map,
+  tracks: CompanyTracksDefinition = staticData.companyTracks,
 ): ValidationResult => {
   const issues: ValidationIssue[] = [];
   const byId = new Map(scenarioData.map((scenario) => [scenario.id, scenario]));
@@ -143,7 +148,7 @@ export const validateScenarioData = (
         code: "scenario.missing",
         path: `scenarios.${id}`,
         message: `Required scenario '${id}' is missing from static data.`,
-        source: "docs/GAME_DESIGN.md",
+        source: "printnplay/Rulebooks/John Company Rules.pdf",
       });
     }
   }
@@ -154,7 +159,7 @@ export const validateScenarioData = (
       code: "scenario.duplicate-id",
       path: `scenarios.${id}`,
       message: `Scenario id '${id}' is defined more than once.`,
-      source: "docs/GAME_DESIGN.md",
+      source: "printnplay/Rulebooks/John Company Rules.pdf",
     });
   }
 
@@ -168,7 +173,7 @@ export const validateScenarioData = (
           code: "scenario.required-field",
           path: `${basePath}.${field}`,
           message: `Scenario '${scenario.id}' is missing required field '${field}'.`,
-          source: "docs/GAME_DESIGN.md",
+          source: "printnplay/Rulebooks/John Company Rules.pdf",
         });
       }
     }
@@ -179,8 +184,28 @@ export const validateScenarioData = (
         code: "scenario.player-counts-missing",
         path: `${basePath}.recommendedPlayerCounts`,
         message: `Scenario '${scenario.id}' must list supported human player counts.`,
-        source: "docs/GAME_DESIGN.md",
+        source: "printnplay/Rulebooks/John Company Rules.pdf",
       });
+    }
+
+    if (
+      !Number.isInteger(scenario.startTurn) ||
+      !Number.isInteger(scenario.finalTurn) ||
+      scenario.startTurn < 1 ||
+      scenario.finalTurn < scenario.startTurn ||
+      scenario.finalTurn > TURN_TRACK_LENGTH
+    ) {
+      issues.push({
+        severity: "error",
+        code: "scenario.invalid-turns",
+        path: `${basePath}.startTurn`,
+        message: `Scenario '${scenario.id}' must start on turn 1-${TURN_TRACK_LENGTH} and end on or after its start turn.`,
+        source: scenario.source,
+      });
+    }
+
+    if (scenario.setup) {
+      issues.push(...validateScenarioSetupReferences(scenario, map, tracks));
     }
 
     if (!scenario.setup || !Array.isArray(scenario.setup.missingSections)) {
@@ -189,7 +214,7 @@ export const validateScenarioData = (
         code: "scenario.setup-metadata-missing",
         path: `${basePath}.setup.missingSections`,
         message: `Scenario '${scenario.id}' must track missing setup sections for data entry.`,
-        source: "docs/data-entry-checklist.md",
+        source: "printnplay/Rulebooks/John Company Rules.pdf",
       });
       continue;
     }
@@ -206,6 +231,148 @@ export const validateScenarioData = (
       }
     }
   }
+
+  return resultFromIssues(issues);
+};
+
+const TURN_TRACK_LENGTH = 8;
+
+const validateScenarioSetupReferences = (
+  scenario: ScenarioDefinition,
+  map: MapDefinition,
+  tracks: CompanyTracksDefinition,
+): ValidationIssue[] => {
+  const issues: ValidationIssue[] = [];
+  const basePath = `scenarios.${scenario.id}.setup`;
+  const { standingSpace, debt } = scenario.setup.companyTracks;
+
+  if (
+    standingSpace !== undefined &&
+    (!tracks.standing[standingSpace] || tracks.standing[standingSpace].companyFails)
+  ) {
+    issues.push({
+      severity: "error",
+      code: "scenario.invalid-standing-space",
+      path: `${basePath}.companyTracks.standingSpace`,
+      message: `Scenario '${scenario.id}' must start Standing on a non-failure space of the Standing track.`,
+      source: scenario.source,
+    });
+  }
+
+  if (debt !== undefined && !tracks.debt.some((space) => space.value === debt)) {
+    issues.push({
+      severity: "error",
+      code: "scenario.invalid-debt",
+      path: `${basePath}.companyTracks.debt`,
+      message: `Scenario '${scenario.id}' starts Debt off the Debt track.`,
+      source: scenario.source,
+    });
+  }
+
+  const mapSetup = scenario.setup.mapSetup;
+  if (!mapSetup) {
+    return issues;
+  }
+
+  const regionById = new Map(map.regions.map((region) => [region.id, region]));
+  for (const region of map.regions) {
+    const regionSetup = mapSetup.regions[region.id];
+    if (!regionSetup) {
+      issues.push({
+        severity: "error",
+        code: "scenario.map-region-missing",
+        path: `${basePath}.mapSetup.regions.${region.id}`,
+        message: `Scenario '${scenario.id}' map setup is missing region '${region.id}'.`,
+        source: scenario.source,
+      });
+      continue;
+    }
+
+    for (const orderId of regionSetup.closedOrderIds) {
+      if (!region.orders.some((order) => order.id === orderId)) {
+        issues.push({
+          severity: "error",
+          code: "scenario.map-closed-order-missing",
+          path: `${basePath}.mapSetup.regions.${region.id}.closedOrderIds`,
+          message: `Scenario '${scenario.id}' closes order '${orderId}', which is not in region '${region.id}'.`,
+          source: scenario.source,
+        });
+      }
+    }
+  }
+
+  const dominatedRegions = new Set<string>();
+  for (const empire of mapSetup.empires) {
+    for (const regionId of [empire.capital, ...empire.dominated]) {
+      if (!regionById.has(regionId) || dominatedRegions.has(regionId)) {
+        issues.push({
+          severity: "error",
+          code: "scenario.map-empire-invalid",
+          path: `${basePath}.mapSetup.empires`,
+          message: `Scenario '${scenario.id}' empire region '${regionId}' is missing or used twice.`,
+          source: scenario.source,
+        });
+      }
+      dominatedRegions.add(regionId);
+    }
+  }
+
+  const elephantRegion = regionById.get(mapSetup.elephant.region);
+  if (
+    !elephantRegion ||
+    (mapSetup.elephant.facing !== undefined &&
+      !elephantRegion.adjacentRegionIds.includes(mapSetup.elephant.facing))
+  ) {
+    issues.push({
+      severity: "error",
+      code: "scenario.map-elephant-invalid",
+      path: `${basePath}.mapSetup.elephant`,
+      message: `Scenario '${scenario.id}' Elephant must stand in a region and face an adjacent region.`,
+      source: scenario.source,
+    });
+  }
+
+  return issues;
+};
+
+export const validateCompanyTracksData = (
+  tracks: CompanyTracksDefinition = staticData.companyTracks,
+): ValidationResult => {
+  const issues: ValidationIssue[] = [];
+
+  tracks.standing.forEach((space, index) => {
+    if (space.index !== index || space.companyFails !== (index === 0)) {
+      issues.push({
+        severity: "error",
+        code: "companyTracks.standing-invalid-space",
+        path: `companyTracks.standing.${index}`,
+        message: "Standing spaces must be in order, with only the leftmost space failing the Company.",
+        source: tracks.source,
+      });
+    }
+  });
+
+  if (tracks.standing.filter((space) => space.deregulationReset).length !== 1) {
+    issues.push({
+      severity: "error",
+      code: "companyTracks.standing-reset-space",
+      path: "companyTracks.standing",
+      message: "Exactly one Standing space must be marked 'S' for Deregulation.",
+      source: tracks.source,
+    });
+  }
+
+  tracks.debt.forEach((space, index) => {
+    if (space.value !== index) {
+      issues.push({
+        severity: "error",
+        code: "companyTracks.debt-invalid-space",
+        path: `companyTracks.debt.${index}`,
+        message: "Debt spaces must count up from 0 in order.",
+        source: tracks.source,
+      });
+    }
+  });
 
   return resultFromIssues(issues);
 };
@@ -483,15 +650,39 @@ export const validateOfficeData = (
       });
     }
 
-    if (office.category === "governor" && (!office.presidency || !office.region)) {
+    if (office.category === "governor" && (!office.region || office.presidency)) {
       issues.push({
         severity: "error",
         code: "office.governor-region-missing",
         path: `offices.${office.id}`,
-        message: `Governor office '${office.id}' must identify its Presidency and region.`,
+        message: `Governor office '${office.id}' must identify its region and no fixed Presidency (regions are associated by conquest).`,
         source: office.source,
       });
     }
+
+    if (!Number.isInteger(office.hiringOrder) || office.hiringOrder < 1 || office.hiringOrder > 16) {
+      issues.push({
+        severity: "error",
+        code: "office.hiring-order",
+        path: `offices.${office.id}.hiringOrder`,
+        message: `Office '${office.id}' must have the hiring number printed on its card back (1-16).`,
+        source: office.source,
+      });
+    }
+  }
+
+  const hiringOrders = officeData
+    .filter((office) => office.id !== "governor-general")
+    .map((office) => office.hiringOrder)
+    .sort((a, b) => a - b);
+  if (hiringOrders.join(",") !== Array.from({ length: 16 }, (_, index) => index + 1).join(",")) {
+    issues.push({
+      severity: "error",
+      code: "office.hiring-order-sequence",
+      path: "offices.hiringOrder",
+      message: "Office hiring numbers must run 1-16 (the Governor General shares 2 with the Director of Trade).",
+      source: "printnplay/Cards/John Company Cards (Bridge, Bridge).pdf",
+    });
   }
 
   return resultFromIssues(issues);
@@ -580,26 +771,46 @@ export const validateMapData = (map: MapDefinition = staticData.map): Validation
       });
     }
 
-    for (const regionId of presidency.associatedRegionIds) {
-      if (!regionById.has(regionId)) {
-        issues.push({
-          severity: "error",
-          code: "map.presidency-region-missing",
-          path: `map.presidencies.${presidency.id}.associatedRegionIds`,
-          message: `Presidency '${presidency.id}' references missing region '${regionId}'.`,
-          source: presidency.source,
-        });
-      }
+    if (regionById.get(presidency.homeRegion)?.homePresidency !== presidency.id) {
+      issues.push({
+        severity: "error",
+        code: "map.presidency-home-region-mismatch",
+        path: `map.presidencies.${presidency.id}.homeRegion`,
+        message: `Home region '${presidency.homeRegion}' must name Presidency '${presidency.id}' as its homePresidency.`,
+        source: presidency.source,
+      });
     }
   }
 
   for (const region of map.regions) {
-    if (!presidencyById.has(region.presidency)) {
+    if (region.homePresidency && !presidencyById.has(region.homePresidency)) {
       issues.push({
         severity: "error",
         code: "map.region-presidency-missing",
-        path: `map.regions.${region.id}.presidency`,
-        message: `Region '${region.id}' references missing Presidency '${region.presidency}'.`,
+        path: `map.regions.${region.id}.homePresidency`,
+        message: `Region '${region.id}' references missing Presidency '${region.homePresidency}'.`,
+        source: region.source,
+      });
+    }
+
+    for (const [shape, facing] of Object.entries(region.borderShapes)) {
+      if (!region.adjacentRegionIds.includes(facing)) {
+        issues.push({
+          severity: "error",
+          code: "map.region-border-shape-not-adjacent",
+          path: `map.regions.${region.id}.borderShapes.${shape}`,
+          message: `Region '${region.id}' ${shape} border must face an adjacent region, not '${facing}'.`,
+          source: region.source,
+        });
+      }
+    }
+
+    if (!Number.isInteger(region.exportIcons) || region.exportIcons < 0) {
+      issues.push({
+        severity: "error",
+        code: "map.region-invalid-export-icons",
+        path: `map.regions.${region.id}.exportIcons`,
+        message: `Region '${region.id}' must have a non-negative whole number of export icons.`,
         source: region.source,
       });
     }
@@ -657,6 +868,16 @@ export const validateMapData = (map: MapDefinition = staticData.map): Validation
           code: "map.order-region-mismatch",
           path: `map.orders.${order.id}.region`,
           message: `Order '${order.id}' does not match its containing region '${region.id}'.`,
+          source: order.source,
+        });
+      }
+
+      if (order.deregulationValue <= 0 || order.deregulationValue > order.value) {
+        issues.push({
+          severity: "error",
+          code: "map.order-invalid-deregulation-value",
+          path: `map.orders.${order.id}.deregulationValue`,
+          message: `Order '${order.id}' must have a positive deregulation value no larger than its value.`,
           source: order.source,
         });
       }
@@ -838,7 +1059,7 @@ export const validateSetupCardData = (
       code: "setup-card.deck-missing",
       path: "setupCardDecks.1710",
       message: "1710 setup card deck is missing.",
-      source: "game_bits/Cards/John Company Cards (MiniEuro, Fronts).pdf",
+      source: "printnplay/Cards/John Company Cards (MiniEuro, Fronts).pdf",
     });
 
     return resultFromIssues(issues);
@@ -946,7 +1167,7 @@ export const validateCrownData = (
       code: "crown.ai-card-count",
       path: "crown.aiCards",
       message: `Crown AI deck must contain exactly ${CROWN_AI_CARD_COUNT} cards; found ${crownData.aiCards.length}.`,
-      source: "docs/crown-ai-design.md",
+      source: "printnplay/Rulebooks/John Company Rules.pdf",
     });
   }
 
@@ -956,7 +1177,7 @@ export const validateCrownData = (
       code: "crown.ai-card-duplicate-id",
       path: `crown.aiCards.${id}`,
       message: `Crown AI card id '${id}' is defined more than once.`,
-      source: "docs/crown-ai-design.md",
+      source: "printnplay/Rulebooks/John Company Rules.pdf",
     });
   }
 
@@ -969,7 +1190,7 @@ export const validateCrownData = (
         code: "crown.ai-card-source-missing",
         path: `${basePath}.source`,
         message: `Crown AI card '${card.id}' must include a source reference.`,
-        source: "docs/crown-ai-design.md",
+        source: "printnplay/Rulebooks/John Company Rules.pdf",
       });
     }
 
@@ -980,7 +1201,7 @@ export const validateCrownData = (
           code: "crown.ai-card-field-missing",
           path: `${basePath}.${fieldPath}`,
           message: `Crown AI card '${card.id}' is missing required field '${fieldPath}'.`,
-          source: "docs/crown-ai-design.md",
+          source: "printnplay/Rulebooks/John Company Rules.pdf",
         });
       }
     }
@@ -994,7 +1215,7 @@ export const validateCrownData = (
         code: "crown.setup-distribution-missing",
         path: `crown.setupDistributions.${mode}`,
         message: `Crown setup distribution for '${mode}' is missing.`,
-        source: "docs/crown-ai-design.md",
+        source: "printnplay/Rulebooks/John Company Rules.pdf",
       });
     }
   }
@@ -1022,7 +1243,7 @@ export const validateCrownData = (
         code: "crown.difficulty-missing",
         path: `crown.difficultySettings.${difficulty}`,
         message: `Crown difficulty '${difficulty}' is missing.`,
-        source: "docs/crown-ai-design.md",
+        source: "printnplay/Rulebooks/John Company Rules.pdf",
       });
     }
   }
@@ -1044,6 +1265,7 @@ export const validateNewGameStaticData = ({
     validateFamilyActionData(data.familyActions),
     validateEnterpriseData(data.enterpriseDecks, data.components),
     validateStockExchangeData(data.stockExchange),
+    validateCompanyTracksData(data.companyTracks),
     validateOfficeData(data.offices),
     validateMapData(data.map),
     validateSetupCardData(data.setupCardDecks),
@@ -1065,7 +1287,7 @@ export const validateNewGameStaticData = ({
       code: "new-game.scenario-missing",
       path: `scenarios.${scenarioId}`,
       message: `Cannot start '${scenarioId}': scenario data is missing.`,
-      source: "docs/GAME_DESIGN.md",
+      source: "printnplay/Rulebooks/John Company Rules.pdf",
     });
   } else if (
     mode === "hotseat" &&
@@ -1086,7 +1308,7 @@ export const validateNewGameStaticData = ({
       code: "new-game.solo-crown-player-count",
       path: "newGame.humanPlayerCount",
       message: "Solo Crown mode requires exactly one human player.",
-      source: "docs/crown-ai-design.md",
+      source: "printnplay/Rulebooks/John Company Rules.pdf",
     });
   }
 
@@ -1096,7 +1318,7 @@ export const validateNewGameStaticData = ({
       code: "new-game.two-player-crown-player-count",
       path: "newGame.humanPlayerCount",
       message: "Two-player Crown mode requires exactly two human players.",
-      source: "docs/crown-ai-design.md",
+      source: "printnplay/Rulebooks/John Company Rules.pdf",
     });
   }
 

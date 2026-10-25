@@ -1,0 +1,27 @@
+---
+import SiteLayout from "../layouts/SiteLayout.astro";
+---
+
+<SiteLayout>
+  <section class="hero" aria-labelledby="home-title">
+    <h1 id="home-title">John Company: Second Edition</h1>
+    <p>
+      An unofficial browser edition of Cole Wehrle's game. Play at one table, or take your turns
+      and pass the save file to whoever acts next.
+    </p>
+    <div class="hero-actions">
+      <a class="button button-primary" href="/play/">Play</a>
+      <a class="button" href="/online/">Play online</a>
+      <a class="button" href="/how-to-play/">How to play</a>
+      <a class="button" href="/rules/">Rules</a>
+      <a class="button" href="/credits/">Credits</a>
+    </div>
+  </section>
+
+  <h2>What works today</h2>
+  <p>
+    The game is still being built. A 1710 game can be set up and stepped through, but many phases
+    are not yet enforced. Expect save files from early versions to stop loading as the rules are
+    filled in.
+  </p>
+</SiteLayout>

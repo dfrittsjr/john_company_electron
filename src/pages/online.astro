@@ -1,0 +1,28 @@
+---
+import { OnlineApp } from "../ui/online/OnlineApp";
+import "../ui/styles.css";
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Play online · John Company</title>
+    <!-- Astro's island loader calls Object.hasOwn, which Safari only added in 15.4. -->
+    <script is:inline>
+      if (!Object.hasOwn) {
+        Object.hasOwn = function (object, key) {
+          return Object.prototype.hasOwnProperty.call(object, key);
+        };
+      }
+    </script>
+  </head>
+  <body>
+    <OnlineApp client:only="react" />
+    <noscript>
+      <p style="padding: 24px">John Company needs JavaScript enabled to play online.</p>
+    </noscript>
+  </body>
+</html>

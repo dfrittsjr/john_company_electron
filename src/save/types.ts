@@ -3,7 +3,7 @@ import type { ActorId, GameLogEntry, GameState, PhaseId } from "../engine";
 export const SAVE_FILE_TYPE = "john-company-2e-save";
 export const SAVE_SCHEMA_VERSION = 1;
 export const DEFAULT_APP_VERSION = "0.1.0";
-export const DEFAULT_RULESET_VERSION = "john-company-2e-data-1";
+export const DEFAULT_RULESET_VERSION = "john-company-2e-data-3";
 
 export type SaveChecksums = {
   stateSha256: string;

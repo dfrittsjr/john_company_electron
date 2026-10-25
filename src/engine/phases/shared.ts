@@ -151,7 +151,13 @@ export function createCommandLogEntry(input: {
   summary: string;
   details?: unknown;
   rngRolls?: GameLogEntry["rngRolls"];
+  /** Leads the summary for the actor only, e.g. "Ann kept their blackmail card."; see publicSummary. */
+  privateNote?: string;
+  /** What everyone but the actor reads instead of `summary` (GameLogEntry.publicSummary). */
+  publicSummary?: string;
 }): GameLogEntry {
+  const summary = input.privateNote ? `${input.privateNote} ${input.summary}` : input.summary;
+  const publicSummary = input.privateNote ? input.summary : input.publicSummary;
   return {
     id: `log-${input.state.log.length + 1}`,
     sequence: input.state.log.length + 1,
@@ -160,9 +166,13 @@ export function createCommandLogEntry(input: {
     phase: input.state.phase,
     actor: input.command.actorId,
     type: input.type,
-    summary: input.summary,
+    summary,
     details: input.details,
     commandId: input.command.id,
     rngRolls: input.rngRolls,
+    ...(publicSummary !== undefined ? { publicSummary } : {}),
   };
 }
+
+/** The public text of a log entry for a private decision with nothing else to report. */
+export const PRIVATE_DECISION_SUMMARY = "A player made a private decision.";

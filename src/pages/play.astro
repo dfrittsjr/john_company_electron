@@ -1,0 +1,27 @@
+---
+import { App } from "../ui/App";
+import "../ui/styles.css";
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Play · John Company</title>
+    <!-- Astro's island loader calls Object.hasOwn, which Safari only added in 15.4. -->
+    <script is:inline>
+      if (!Object.hasOwn) {
+        Object.hasOwn = function (object, key) {
+          return Object.prototype.hasOwnProperty.call(object, key);
+        };
+      }
+    </script>
+  </head>
+  <body>
+    <App client:only="react" />
+    <noscript>
+      <p style="padding: 24px">John Company needs JavaScript enabled to run.</p>
+    </noscript>
+  </body>
+</html>
