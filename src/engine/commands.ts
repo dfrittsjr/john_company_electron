@@ -14,6 +14,8 @@ import { familyCommandHandlers } from "./phases/family";
 import { finalScoringCommandHandlers } from "./phases/final-scoring";
 import { hiringCommandHandlers } from "./phases/hiring";
 import { londonSeasonCommandHandlers } from "./phases/london-season";
+import { negotiationCommandHandlers } from "./phases/negotiation";
+import { blackmailCommandHandlers } from "./phases/negotiation-blackmail";
 import { parliamentCommandHandlers } from "./phases/parliament";
 import { revenueCommandHandlers } from "./phases/revenue";
 import { setupCommandHandlers } from "./phases/setup";
@@ -32,6 +34,8 @@ const COMMAND_HANDLERS: Record<string, CommandHandler> = {
   ...parliamentCommandHandlers,
   ...upkeepCommandHandlers,
   ...finalScoringCommandHandlers,
+  ...negotiationCommandHandlers,
+  ...blackmailCommandHandlers,
 };
 
 const KNOWN_COMMAND_TYPES = new Set([

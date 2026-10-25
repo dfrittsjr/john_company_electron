@@ -126,12 +126,6 @@ export type CardInstance = {
   facedown?: boolean;
 };
 
-export type PromiseCardInstance = {
-  id: string;
-  owner: PlayerId;
-  guarantor: PlayerId;
-};
-
 /**
  * Family pieces stored on the player are those whose only location is a per-family box.
  * Pieces in shared locations (offices, Court, Stock Exchange, Writers boxes, orders, Armies,
@@ -154,9 +148,8 @@ export type PlayerState = {
   opportunityMarker: FamilyActionId | "supply" | "removed";
   enterprises: EnterpriseInstance[];
   prestigeCards: CardInstance[];
+  /** Face-down cards are unplayed and transferable; face-up cards have been played (p.12). */
   blackmailCards: CardInstance[];
-  promiseCardsOwned: PromiseCardInstance[];
-  promiseCardsGuaranteedToOthers: PromiseCardInstance[];
   trophies: number;
   passedLawTokens: number;
   windows: number;

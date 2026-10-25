@@ -430,3 +430,70 @@ input {
     grid-template-columns: repeat(3, minmax(80px, 1fr));
   }
 }
+
+.negotiation-panel {
+  display: grid;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #c9bba1;
+}
+
+.negotiation-panel h3 {
+  margin: 8px 0 0;
+  font-size: 0.95rem;
+}
+
+.negotiation-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.negotiation-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.negotiation-list small {
+  display: block;
+  color: #6b5a44;
+}
+
+.negotiation-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.negotiation-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+}
+
+.negotiation-columns fieldset {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  border: 1px solid #c9bba1;
+  border-radius: 6px;
+}
+
+.negotiation-check {
+  font-size: 0.9rem;
+}
+
+.negotiation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.privacy-curtain {
+  display: grid;
+  gap: 8px;
+}

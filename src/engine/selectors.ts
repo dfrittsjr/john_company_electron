@@ -1,4 +1,11 @@
-import { companyTracks, offices, scenarios } from "../data";
+import {
+  companyTracks,
+  offices,
+  powerTrack,
+  scenarios,
+  type PowerTargetId,
+  type PowerTrackPositionId,
+} from "../data";
 import type { OfficeDefinition, ScenarioDefinition } from "../data/types";
 import type {
   ArmyId,
@@ -201,4 +208,45 @@ export function shipsInSeaZones(state: GameState): ShipState[] {
       ship.location === "east-indian" ||
       ship.location === "china",
   );
+}
+
+/** Power track boxes in index order: the number stored in company.powerTrack for each marker. */
+export const POWER_TRACK_POSITION_ORDER: readonly PowerTrackPositionId[] = powerTrack.positions.map(
+  (position) => position.id,
+);
+
+/**
+ * Where each power marker sits. company.powerTrack stores an index into POWER_TRACK_POSITION_ORDER
+ * per marker; an empty record means the printed starting boxes (setup step 5).
+ * TODO(PA): Parliament owns power policies; if you change this encoding, update both helpers.
+ */
+export function powerMarkerPositions(state: GameState): Record<PowerTargetId, PowerTrackPositionId> {
+  const stored = state.company.powerTrack;
+  const positions = { ...powerTrack.startingPositions };
+  for (const target of Object.keys(positions) as PowerTargetId[]) {
+    const index = stored[target];
+    if (index !== undefined && POWER_TRACK_POSITION_ORDER[index]) {
+      positions[target] = POWER_TRACK_POSITION_ORDER[index];
+    }
+  }
+
+  return positions;
+}
+
+export function withPowerMarkerPositions(
+  state: GameState,
+  positions: Record<PowerTargetId, PowerTrackPositionId>,
+): GameState {
+  return {
+    ...state,
+    company: {
+      ...state.company,
+      powerTrack: Object.fromEntries(
+        Object.entries(positions).map(([target, position]) => [
+          target,
+          POWER_TRACK_POSITION_ORDER.indexOf(position),
+        ]),
+      ),
+    },
+  };
 }
