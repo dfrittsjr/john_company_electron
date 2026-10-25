@@ -4,7 +4,7 @@
 // connected.
 
 import { DurableObject } from "cloudflare:workers";
-import { ONLINE_LIMITS, type ClientMessage, type ServerMessage } from "../online/protocol";
+import { ONLINE_LIMITS, type ClientMessage, type ServerMessage, type Viewer } from "../online/protocol";
 import type { GameState } from "../engine";
 import {
   GameRoomCore,
@@ -15,6 +15,7 @@ import {
   type RoomMeta,
   type RoomStorage,
   type SeatRecord,
+  viewerOf,
 } from "./game-room-core";
 
 /** Snapshot JSON is split into rows of at most this many characters (SQLite values max 2 MB). */
@@ -23,7 +24,8 @@ const SNAPSHOT_CHUNK_CHARS = 500_000;
 const HELLO_TIMEOUT_MS = 30_000;
 
 /** Kept on each socket across hibernation (serializeAttachment; at most 16 KB). */
-type SocketAttachment = { seatId?: string; connectedAt: number };
+/** `viewer` is who the socket belongs to; `seatId` finds the seat again after hibernation. */
+type SocketAttachment = { seatId?: string; viewer?: Viewer; connectedAt: number };
 
 type SeatRow = {
   id: string;
@@ -230,7 +232,7 @@ export class GameRoom extends DurableObject<Env> {
         send(ws, { type: "error", code: "INVALID_TOKEN", message: "This link is not valid for this game." });
         return ws.close(1008, "invalid token");
       }
-      ws.serializeAttachment({ seatId: authenticated.id, connectedAt: attachment.connectedAt } satisfies SocketAttachment);
+      ws.serializeAttachment({ seatId: authenticated.id, viewer: viewerOf(authenticated), connectedAt: attachment.connectedAt } satisfies SocketAttachment);
       return send(ws, { type: "view", view: this.core.viewFor(authenticated) });
     }
 
