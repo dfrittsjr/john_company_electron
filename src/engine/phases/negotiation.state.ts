@@ -53,7 +53,9 @@ export type TransferItem =
   | { kind: "prestige"; cardInstanceId: string }
   | { kind: "blackmail"; cardInstanceId: string }
   | { kind: "share"; shareId: string; fromPrizeId?: string }
-  | { kind: "promise"; promiseId: string };
+  | { kind: "promise"; promiseId: string }
+  /** Shares of a firm (Deregulation, p.38: "like Company shares, firm shares can be traded"). */
+  | { kind: "firmShare"; firmId: string; count: number };
 
 export type ConsentRequest = {
   id: string;

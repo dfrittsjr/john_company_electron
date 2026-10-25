@@ -1177,7 +1177,7 @@ export function resolveNewCompanyShares(state: GameState): GameState {
 
     converted.add(slot.id);
     debt -= 1;
-    court = [...court, { id: `company-share-${state.turn}-${slot.id}-${slot.share.owner}`, owner: slot.share.owner }];
+    court = [...court, { id: `company-share-${state.turn}-${slot.id}-${slot.share.owner}`, owner: slot.share.owner, createdTurn: state.turn }]; // FP: immature this turn (p.38)
   }
 
   const remaining = state.company.stockExchange
