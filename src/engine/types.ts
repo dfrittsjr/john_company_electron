@@ -8,6 +8,7 @@ import type { NegotiationState } from "./phases/negotiation.state";
 import type { ParliamentState } from "./phases/parliament.state";
 
 import type { ScenarioId as DataScenarioId } from "../data/types";
+import type { FirmStrategyId } from "../data/firms";
 
 // Version 2: one canonical location per family piece, scenario-driven setup, Standing as a track index.
 export const GAME_SCHEMA_VERSION = 3;
@@ -127,6 +128,11 @@ export type EnterpriseInstance = {
   id: string;
   type: "shipyard" | "workshop" | "luxury";
   cardId?: string;
+  /**
+   * A workshop flipped to its invested side to form or invest in a firm (p.38). It stays invested
+   * for the rest of the game, gives no bonus, and isn't scored if the Company fails.
+   */
+  invested?: boolean;
 };
 
 export type CardInstance = {
@@ -184,6 +190,8 @@ export type OfficeState = {
 export type ShareInstance = {
   id: string;
   owner?: PlayerId;
+  /** The turn this Company share was created. "Immature" shares can't form or invest in a firm that turn (p.38). */
+  createdTurn?: number;
 };
 
 export type StockExchangeSlot = {
@@ -314,12 +322,44 @@ export type LawInstance = {
 /** Parliament (and Revenue) state is owned by phases/parliament.state.ts. */
 export type { ParliamentState } from "./phases/parliament.state";
 
+/**
+ * A firm (Deregulation, rulebook pp.37-42). It sits on its manager's family board, flipped to the
+ * firm charter side. Its ships are company.ships entries located at `firm:<id>`.
+ */
 export type FirmState = {
+  /** Stable for the firm's life ("firm-1", ...). A hostile takeover changes the manager, not the id. */
   id: FirmId;
-  owner: PlayerId;
-  treasury: number;
-  /** Firm shares are family pieces; this is their only location. */
+  /** Whose family board holds the charter. The firm's name comes from that board (firmName()). */
+  manager: PlayerId;
+  /** Investments land here; pays expenses and fits ships (p.37). */
+  londonTreasury: number;
+  /** Trade revenue lands here; pays dividends and expenses, then the rest moves to London (p.37, p.42). */
+  indiaTreasury: number;
+  /** The Value track space, 1-10 (charter). Starts at 1. */
+  value: number;
+  /**
+   * £ paid out in the last dividends: the dividend cube on the Company Balance track (p.42).
+   * Undefined until first placed; such a firm, or one at 0, can't fund a special retirement (p.37).
+   */
+  dividendCube?: number;
+  /** Firm shares are family pieces; this is their only location. At most 10 in total. */
   shares: Record<PlayerId, number>;
+  formedTurn: number;
+  /** £ on the charter's Trade Bid box this turn. Set (and taken from London) once every manager has chosen (p.40). */
+  tradeBid?: number;
+  /** This turn's trading at its Presidency (p.40). Cleared in Refresh. */
+  trade?: FirmTradeRecord;
+};
+
+export type FirmTradeRecord = {
+  /** The strategy card, revealed at its Presidency's start. */
+  strategy: FirmStrategyId;
+  dice: number;
+  successes: number;
+  /** Ships minus successes, when at least one success let the firm trade. May be negative (p.40). */
+  initiative?: number;
+  /** £ added to the India treasury by this turn's trade. */
+  income: number;
 };
 
 export type CrownPromiseState = {
@@ -359,12 +399,18 @@ export type CrownState = {
   currentDecisionProfile?: CrownDecisionProfileId;
 };
 
+/**
+ * One manager's Firm Strategy choice this turn (p.40). Online, only its manager sees `strategy` and
+ * `bid` until every manager has chosen; the bid then becomes FirmState.tradeBid, and the strategy
+ * stays secret until `revealed` at its Presidency's start (src/engine/projection.ts).
+ */
 export type FirmStrategySecret = {
   firmId: FirmId;
   committedBy: PlayerId;
-  commitmentHash?: string;
-  revealedStrategy?: string;
-  salt?: string;
+  strategy?: FirmStrategyId;
+  /** £ from the London treasury; 0 for Hobnob. */
+  bid?: number;
+  revealed?: boolean;
 };
 
 export type HiddenInfoState = {

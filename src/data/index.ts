@@ -5,6 +5,7 @@ export * from "./components";
 export * from "./crown";
 export * from "./enterprises";
 export * from "./family-actions";
+export * from "./firms";
 export * from "./india-events";
 export * from "./laws";
 export * from "./map";

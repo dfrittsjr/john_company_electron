@@ -2,6 +2,7 @@
 // Used by people debugging rules and by AI playtesters. Games are stored as real .joco saves.
 //
 //   npm run harness -- new <file> [--scenario 1710] [--players Red,Blue,Yellow] [--seed s] [--setup random|starter]
+//       [--deregulated]   test aid: start as if the Vote to Deregulate had passed (Long 1710 by default)
 //   npm run harness -- show <file>
 //   npm run harness -- play <file> <n> [--actor id]          apply legal command n of the pending decision
 //   npm run harness -- do <file> <type> [payloadJSON] --actor id   any command, including anytime commands
@@ -44,8 +45,14 @@ function parseArgs(argv: string[]): { positional: string[]; flags: Flags } {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg.startsWith("--")) {
-      flags[arg.slice(2)] = argv[index + 1] ?? "true";
-      index += 1;
+      // A flag followed by another flag (or nothing) is a switch, e.g. --deregulated.
+      const value = argv[index + 1];
+      if (value === undefined || value.startsWith("--")) {
+        flags[arg.slice(2)] = "true";
+      } else {
+        flags[arg.slice(2)] = value;
+        index += 1;
+      }
     } else {
       positional.push(arg);
     }
@@ -261,14 +268,18 @@ function main(): void {
   if (subcommand === "new") {
     const names = (flags.players ?? "Red,Blue,Yellow").split(",");
     const now = NOW();
-    const state = createNewGame({
+    const deregulated = flags.deregulated !== undefined;
+    const created = createNewGame({
       mode: "hotseat",
-      scenario: (flags.scenario ?? "1710") as ScenarioId,
+      scenario: (flags.scenario ?? (deregulated ? "long-1710" : "1710")) as ScenarioId,
       seed: flags.seed ?? `harness-${now}`,
       now,
       setupDistribution: (flags.setup ?? "random") as "random" | "starter",
       players: names.map((name, index) => ({ id: `player-${index + 1}`, name, color: name.toLowerCase() })),
     });
+    const state = deregulated
+      ? { ...created, parliament: { ...created.parliament, deregulated: true }, firms: created.firms ?? [] }
+      : created;
     save(file, state, null);
     console.log(show(state));
     return;

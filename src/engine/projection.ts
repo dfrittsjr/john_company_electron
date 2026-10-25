@@ -154,9 +154,11 @@ function hidePrivateRecords(view: GameState, me: PlayerId | undefined): void {
   hidden.firmStrategySecrets = Object.fromEntries(
     Object.entries(hidden.firmStrategySecrets).map(([firmId, secret]) => [
       firmId,
-      secret.committedBy === me || secret.revealedStrategy !== undefined
+      secret.committedBy === me
         ? secret
-        : { firmId: secret.firmId, committedBy: secret.committedBy },
+        : secret.revealed
+          ? { firmId: secret.firmId, committedBy: secret.committedBy, strategy: secret.strategy, revealed: true }
+          : { firmId: secret.firmId, committedBy: secret.committedBy },
     ]),
   );
   delete hidden.crownDeck;

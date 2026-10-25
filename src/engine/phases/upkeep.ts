@@ -11,6 +11,7 @@ import type {
 } from "../types";
 import { findLegalCommand, illegal, prizeDefinition } from "./retirements";
 import { createCommandLogEntry, createSystemDecision, wrongPhase } from "./shared";
+import { beginTurn } from "./turn-start";
 
 // IX. Upkeep and Refresh (p.36). Every family member on a prize costs that prize's upkeep. A
 // player who cannot pay returns pieces to supply, losing each prize's VP, until the rest is
@@ -125,19 +126,7 @@ function continueUpkeep(state: GameState): Continuation {
   const refreshed = refreshBoard(cleared);
   const nextTurn = state.turn + 1;
   return {
-    state: {
-      ...refreshed.state,
-      turn: nextTurn,
-      pendingDecision: createSystemDecision({
-        id: `decision-london-season-confirm-turn-${nextTurn}`,
-        phase: "londonSeason",
-        step: "londonSeason.confirm",
-        prompt: "Begin the London Season: attrition, retirements, and prestige cards.",
-        commandType: "londonSeason.confirm",
-        label: "Begin London Season",
-        description: "Roll attrition for every office card, then retire pensioners (p.11).",
-      }),
-    },
+    state: beginTurn({ ...refreshed.state, turn: nextTurn }),
     ending: `Upkeep resolved. Advanced to turn ${nextTurn}.`,
     details: refreshed.details,
   };
