@@ -343,7 +343,7 @@ const exhaustPolicy: CrownPolicy = (state, decision) => {
           : commanderAction("exhaustRegiment")[0];
     const choice = choose(
       command,
-      `${label(state)}: exhausts ${unit.kind === "alliance" ? "a Local Alliance" : unit.kind === "officer" ? (unit.playerId === CROWN_PLAYER_ID ? "a Crown officer" : `one of ${state.players[unit.playerId].name}'s officers`) : "a regiment"}, ${remaining} dice short of matching the exact ${dice(required)} (Handbook p.12).`,
+      `${label(state)}: exhausts ${unit.kind === "alliance" ? "a Local Alliance" : unit.kind === "officer" ? (unit.playerId === CROWN_PLAYER_ID ? "a Crown officer" : `one of ${state.players[unit.playerId].name}'s officers`) : "a regiment"}: it needs ${remaining} more to roll exactly ${dice(required)}${strength > 0 ? ` after the region's strength of ${strength}` : ""} (Handbook p.12).`,
     );
     return choice && unit.kind === "officer" && unit.playerId === pick.playerId && pick.passButton ? { ...choice, passButton: true } : choice;
   }

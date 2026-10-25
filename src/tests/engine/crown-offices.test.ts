@@ -249,6 +249,23 @@ describe("the Crown as Director of Trade (pp.6-7)", () => {
     expect(state.pendingDecision.legalCommands[0].payload).toEqual({ action: "finish" });
   });
 
+  it("measures fewest and most ships across every Presidency, not just those with a Crown writer", () => {
+    // Bear 2: "A Crown writer from Presidency with fewest ships to Presidency with most." The only
+    // Crown writers are in Bengal, which has the most ships, so the transfer can't be made.
+    const ship = (id: string, location: ShipState["location"]): ShipState => ({ id, kind: "company", location, fatigued: false });
+    let state = operate({
+      climate: "bear",
+      offices: { "director-of-trade": CROWN, "president-bombay": undefined, "president-madras": undefined, "president-bengal": undefined },
+      acted: ["chairman"],
+      current: { office: "director-of-trade", stage: "transfers", transfersMade: 0 },
+      ships: [ship("s1", "east-indian"), ship("s2", "east-indian"), ship("s3", "east-indian"), ship("s4", "west-indian"), ship("s5", "south-indian"), ship("s6", "south-indian")],
+    });
+    state = withWriters(withWriters(withWriters(state, CROWN, "Bombay", 0), CROWN, "Madras", 0), CROWN, "Bengal", 2);
+    state = crownizeDecision({ ...state, pendingDecision: createNextCompanyOperationDecision(state) });
+    expect(state.pendingDecision.legalCommands).toHaveLength(1);
+    expect(state.pendingDecision.legalCommands[0].payload).toEqual({ action: "finish" });
+  });
+
   it("lets favours prevent a transfer or pick one, but never undo one", () => {
     let state = operate({ offices: { "director-of-trade": CROWN, "president-bengal": ANN }, acted: ["chairman"], current: { office: "director-of-trade", stage: "transfers", transfersMade: 0 } });
     state = withWriters(state, CROWN, "Bombay", 1);

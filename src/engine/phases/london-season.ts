@@ -234,7 +234,9 @@ function prestigeDecision(state: GameState, playerId: PlayerId): PendingDecision
 
   display.forEach((cardId, slot) => {
     const prestige = prestigeById.get(cardId);
-    const name = prestige ? `${prestige.name} (${prestige.prestigeType})` : `face-down blackmail: ${prestigeCardName(cardId)}`;
+    // Nobody may look at the blackmail the Crown takes (Crown Handbook p.2), so its options don't name it.
+    const hidden = player.isCrown ? "a face-down blackmail card" : `face-down blackmail: ${prestigeCardName(cardId)}`;
+    const name = prestige ? `${prestige.name} (${prestige.prestigeType})` : hidden;
     if (prestige || !noBlackmail) {
       legalCommands.push({
         type: "londonSeason.choosePrestigeCard",
@@ -244,7 +246,7 @@ function prestigeDecision(state: GameState, playerId: PlayerId): PendingDecision
     }
   });
   display.forEach((cardId, slot) => {
-    const name = prestigeById.get(cardId)?.name ?? `face-down blackmail: ${prestigeCardName(cardId)}`;
+    const name = prestigeById.get(cardId)?.name ?? (player.isCrown ? "a face-down blackmail card" : `face-down blackmail: ${prestigeCardName(cardId)}`);
     legalCommands.push({
       type: "londonSeason.choosePrestigeCard",
       label: `Discard ${name}`,

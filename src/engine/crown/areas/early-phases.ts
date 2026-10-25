@@ -395,7 +395,7 @@ const hirePolicy: CrownPolicy = (state, decision) => {
 const nepotismConsentPolicy: CrownPolicy = (_state, decision) =>
   choose(
     optionsOfType(decision, "hiring.resolveNepotismConsent", (payload) => payload.accepted === false)[0],
-    "The Crown gives no consent for nepotism unless a favour buys it (Handbook p.2).",
+    "The Crown gives no consent for nepotism unless a favour buys it (Handbook pp.2-3).",
   );
 
 // ---------------------------------------------------------------------------------------------

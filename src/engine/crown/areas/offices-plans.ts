@@ -338,9 +338,16 @@ function metricValue(state: GameState, metric: Metric): (presidency: PresidencyI
   }
 }
 
-/** The candidates a pick selects, in the order to try them (ties by the AI card, p.45). */
-function ranked(state: GameState, pick: Pick, candidates: PresidencyId[]): PresidencyId[] {
-  if ("by" in pick) return extreme(state, candidates, metricValue(state, pick.metric), pick.by);
+/**
+ * The candidates a pick selects, in the order to try them (ties by the AI card, p.45). "Fewest" and
+ * "most" compare every Presidency (but `besides`, the one moved from), not just those with something
+ * to move: if the Presidency with the fewest ships has no Crown writer, that transfer can't be made.
+ */
+function ranked(state: GameState, pick: Pick, candidates: PresidencyId[], besides?: PresidencyId): PresidencyId[] {
+  if ("by" in pick) {
+    const all = PRESIDENCY_IDS.filter((presidency) => presidency !== besides);
+    return extreme(state, all, metricValue(state, pick.metric), pick.by).filter((presidency) => candidates.includes(presidency));
+  }
   if ("set" in pick) {
     const allowed = pick.set === "crown" ? crownPresidencies(state) : playerPresidencies(state);
     return aiOrder(state, candidates.filter((presidency) => allowed.includes(presidency)));
@@ -414,7 +421,7 @@ function findTransfer(
   for (const from of froms) {
     const fromHere = options.filter((option) => option.from === from && option.to !== from);
     const tos: Array<PresidencyId | "china"> =
-      "china" in rule.to ? (fromHere.some((option) => option.to === "china") ? ["china"] : []) : ranked(state, rule.to, [...new Set(fromHere.map((option) => option.to).filter((to): to is PresidencyId => to !== "china"))]);
+      "china" in rule.to ? (fromHere.some((option) => option.to === "china") ? ["china"] : []) : ranked(state, rule.to, [...new Set(fromHere.map((option) => option.to).filter((to): to is PresidencyId => to !== "china"))], from);
     for (const to of tos) {
       let here = fromHere.filter((option) => option.to === to);
       if (rule.item === "ship") {
@@ -731,8 +738,11 @@ function armyEnds(state: GameState, options: ArmyMoveOption[]): Array<{ from: Ar
       for (const to of aiOrder(state, toFor(from).filter((army) => crownPresidencies(state).includes(army)))) pairs.push({ from, to });
     }
   } else if (climate === "lion") {
-    for (const from of extreme(state, froms, (army) => ships(state, army), "fewest")) {
-      for (const to of extreme(state, toFor(from), (army) => ships(state, army), "most")) pairs.push({ from, to });
+    // Fewest and most among all the Presidencies, not only those with something to move.
+    const shipsOf = (army: ArmyId) => ships(state, army);
+    for (const from of extreme(state, PRESIDENCY_IDS, shipsOf, "fewest").filter((army) => froms.includes(army))) {
+      const others = PRESIDENCY_IDS.filter((army) => army !== from);
+      for (const to of extreme(state, others, shipsOf, "most").filter((army) => toFor(from).includes(army))) pairs.push({ from, to });
     }
   } else {
     for (const from of aiOrder(state, froms.filter((army) => playerIsCommander(state, army)))) {
