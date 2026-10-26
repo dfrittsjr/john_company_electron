@@ -2,6 +2,13 @@ import type { CommandHandler } from "../command-handler";
 import { enterpriseDecks, familyActions, lawsById, prizes } from "../../data";
 import type { EnterpriseCardDefinition, LawExtraAction } from "../../data";
 import { chairmanTitleHolder, playerForbidsHolding } from "../selectors";
+import {
+  CROWN_FAMILY_CHART,
+  chartIndexAfter,
+  crownFamilyActionCount,
+  vacantPresidenciesWithoutCrownWriter,
+} from "../crown/areas/early-phases-rules";
+import { crownClimate } from "../crown/state";
 import type {
   ActorId,
   ApplyCommandResult,
@@ -18,7 +25,7 @@ import type {
   StockExchangeSlot,
   ValidationError,
 } from "../types";
-import type { FamilyState, FamilyTurnStage, FamilyTurnState } from "./family.state";
+import type { CrownFamilyTurn, FamilyState, FamilyTurnStage, FamilyTurnState } from "./family.state";
 import { isDeregulated } from "../firms";
 import { startFirmsPhase } from "./firms";
 import { startHiringPhase } from "./hiring";
@@ -79,6 +86,9 @@ const TURN_STAGES: FamilyTurnStage[] = [
   "lawExtraAction",
 ];
 
+/** The decisions that place a writer for the four-vacancy rule: the player's (p.13) and the Crown's free ones (Handbook p.3). */
+const EXTRA_WRITER_STEPS = ["family.chooseExtraWriter", "family.crownFreeWriter", "family.crownVacancyWriter"];
+
 const FAMILY_ACTION_LABELS = new Map<string, string>(familyActions.map((action) => [action.id, action.label]));
 
 const ENTERPRISE_ACTIONS: Record<EnterpriseType, RealFamilyActionId> = {
@@ -109,10 +119,11 @@ const SPOUSE_FORBIDDEN_HOLDINGS: Record<string, RealFamilyActionId[]> = {
  * former Chairman while the office is vacant) and proceeds clockwise (p.13).
  */
 export function startFamilyPhase(state: GameState): GameState {
-  const humans = state.seatingOrder.filter((playerId) => !state.players[playerId].isCrown);
+  // The Crown takes its turn in its seat like any family (Crown Handbook p.3).
+  const seats = state.seatingOrder;
   const first = chairmanTitleHolder(state);
-  const startIndex = first && humans.includes(first) ? humans.indexOf(first) : 0;
-  const order = [...humans.slice(startIndex), ...humans.slice(0, startIndex)];
+  const startIndex = first && seats.includes(first) ? seats.indexOf(first) : 0;
+  const order = [...seats.slice(startIndex), ...seats.slice(0, startIndex)];
   const family: FamilyState = {
     order,
     index: 0,
@@ -132,9 +143,11 @@ function beginFamilyTurn(state: GameState, index: number): GameState {
     playerId,
     markerAtStart: effectiveOpportunityMarker(player),
     resolvedStages: [],
+    ...(player.isCrown ? { crown: { chartIndex: 0, chartTaken: 0, chartDone: false, extraDone: false, done: [] } } : {}),
   };
   const next: GameState = { ...state, family: { ...state.family, index, turn } };
 
+  if (player.isCrown) return continueCrownTurn(next);
   return withDecision(next, createMainActionDecision(next, playerId));
 }
 
@@ -155,6 +168,7 @@ function createMainActionDecision(state: GameState, playerId: PlayerId): Pending
 function continueFamilyTurn(state: GameState): GameState {
   const turn = state.family.turn;
   if (!turn) return state;
+  if (turn.crown) return continueCrownTurn(state);
 
   for (const stage of TURN_STAGES) {
     if (turn.resolvedStages.includes(stage)) continue;
@@ -164,6 +178,111 @@ function continueFamilyTurn(state: GameState): GameState {
   }
 
   return finishFamilyTurn(state);
+}
+
+// The Crown's turn (Crown Handbook p.3): free Enlist Writer actions, then the climate's chart (two
+// actions, one in a two-player game), then the most recently passed extra action unless the chart
+// already treated one of its actions as that. Its policies (crown/areas/early-phases.ts) choose;
+// this only offers the decisions and keeps count.
+function continueCrownTurn(state: GameState): GameState {
+  let current = state;
+  const playerId = current.family.turn!.playerId;
+
+  for (const stage of ["crownFreeWriter", "crownVacancyWriter"] as const) {
+    if (current.family.turn!.resolvedStages.includes(stage)) continue;
+    const decision = createCrownFreeWriterDecision(current, playerId, stage);
+    if (decision) return withDecision(current, decision);
+    current = resolveStage(current, stage);
+  }
+
+  const crown = current.family.turn!.crown as CrownFamilyTurn;
+  if (!crown.chartDone) {
+    const first = crown.done.length === 0;
+    const decision = first ? createMainActionDecision(current, playerId) : createCrownActionDecision(current, playerId);
+    // A later chart action nobody can take ends the chart, so the decision isn't offered.
+    if (first || decision.legalCommands.some((command) => (command.payload as FamilyActionPayload).action !== "no-action")) {
+      return withDecision(current, decision);
+    }
+    current = setCrownTurn(current, { chartDone: true });
+  }
+
+  const after = current.family.turn!.crown as CrownFamilyTurn;
+  if (!after.extraDone && !current.family.turn!.resolvedStages.includes("lawExtraAction")) {
+    const decision = createStageDecision(current, current.family.turn!, "lawExtraAction");
+    if (decision) return withDecision(current, decision);
+  }
+
+  return finishFamilyTurn(current);
+}
+
+function setCrownTurn(state: GameState, patch: Partial<CrownFamilyTurn>): GameState {
+  const turn = state.family.turn as FamilyTurnState;
+  return { ...state, family: { ...state.family, turn: { ...turn, crown: { ...(turn.crown as CrownFamilyTurn), ...patch } } } };
+}
+
+/** A later chart action: what is viable, or "No Action" to end the chart. */
+function createCrownActionDecision(state: GameState, playerId: PlayerId): PendingDecision {
+  return {
+    id: `decision-family-crown-action-turn-${state.turn}-${playerId}-${state.family.turn?.crown?.done.length ?? 0}`,
+    phase: "family",
+    step: "family.chooseCrownAction",
+    actor: playerId,
+    visibility: "public",
+    prompt: "The Crown's next family action.",
+    legalCommands: [
+      ...createActionOptions(state, playerId, "main"),
+      {
+        type: "family.chooseAction",
+        label: "No further action",
+        description: "No other action on the Crown's chart is viable or affordable.",
+        payload: { action: "no-action" } satisfies FamilyActionPayload,
+      },
+    ],
+    canSave: true,
+  };
+}
+
+/** The Crown's free Enlist Writer: with four or more vacant offices, then for a Presidency with no President and no Crown writer. */
+function createCrownFreeWriterDecision(
+  state: GameState,
+  playerId: PlayerId,
+  stage: "crownFreeWriter" | "crownVacancyWriter",
+): PendingDecision | undefined {
+  const sources = pieceSources(state.players[playerId]);
+  if (sources.length === 0) return undefined;
+  const presidencies =
+    stage === "crownFreeWriter"
+      ? vacantOfficeCount(state) >= 4 && !state.family.extraWriterUsedBy.includes(playerId)
+        ? PRESIDENCIES
+        : []
+      : vacantPresidenciesWithoutCrownWriter(state);
+  if (presidencies.length === 0) return undefined;
+
+  const commands: LegalCommand[] = [];
+  for (const source of sources) {
+    for (const presidency of presidencies) {
+      commands.push({
+        type: "family.placeExtraWriter",
+        label: `Free Enlist Writer (${presidency})${sourceLabel(source)}`,
+        description: `Place one family member in the ${presidency} Writers box as a free action.`,
+        payload: withSource({ presidency }, source) satisfies ExtraWriterPayload,
+      });
+    }
+  }
+
+  return {
+    id: `decision-family-${stage === "crownFreeWriter" ? "crown-free-writer" : "crown-vacancy-writer"}-turn-${state.turn}-${playerId}`,
+    phase: "family",
+    step: stage === "crownFreeWriter" ? "family.crownFreeWriter" : "family.crownVacancyWriter",
+    actor: playerId,
+    visibility: "public",
+    prompt:
+      stage === "crownFreeWriter"
+        ? `${vacantOfficeCount(state)} offices are vacant: the Crown Enlists a Writer as a free action.`
+        : "A Presidency has no President and no Crown writer: the Crown Enlists a Writer there as a free action.",
+    legalCommands: commands,
+    canSave: true,
+  };
 }
 
 function createStageDecision(
@@ -198,6 +317,9 @@ function createStageDecision(
         canSave: true,
       };
     }
+    case "crownFreeWriter":
+    case "crownVacancyWriter":
+      return createCrownFreeWriterDecision(state, playerId, stage);
     case "lawExtraAction": {
       const extra = currentLawExtraAction(state);
       if (!extra || !lawExtraActionAllowed(turn, extra.action)) return undefined;
@@ -332,6 +454,8 @@ function stageForStep(step: string, turn: FamilyTurnState | undefined): FamilyTu
   if (!turn) return undefined;
   if (step === "family.chooseRepeatAction") return "repeat";
   if (step === "family.chooseExtraAction") return "lawExtraAction";
+  if (step === "family.crownFreeWriter") return "crownFreeWriter";
+  if (step === "family.crownVacancyWriter") return "crownVacancyWriter";
   if (step === "family.chooseExtraWriter") {
     return turn.resolvedStages.includes("extraWriterAfterMain") ? "extraWriterAfterRepeat" : "extraWriterAfterMain";
   }
@@ -361,7 +485,7 @@ export function createFamilyActionCommands(state: GameState, actorId: ActorId): 
   if (actorId === "system") return [];
 
   const actor = state.players[actorId];
-  if (!actor || actor.isCrown) return [];
+  if (!actor) return [];
 
   const commands = createActionOptions(state, actorId, "main");
   if (commands.length > 0) return commands;
@@ -450,6 +574,7 @@ function createSeekShareOptions(
   const canRequestBroker =
     brokerOwner !== undefined &&
     brokerOwner !== player.id &&
+    !player.isCrown &&
     !state.family.stockBrokerRefused.includes(player.id) &&
     player.cash >= 1;
 
@@ -486,6 +611,8 @@ function createSeekShareOptions(
 }
 
 function isActionForbidden(player: PlayerState, action: RealFamilyActionId, stage: ActionStage): boolean {
+  // The Crown ignores any text effects on Spouse cards (Crown Handbook p.2).
+  if (player.isCrown) return false;
   for (const card of player.prestigeCards) {
     // Mr. Rochester and William Collins forbid the family action itself; the extra writer from
     // Tenure Limits and the extra officer from Army Spending are still permitted (card text).
@@ -522,7 +649,7 @@ export function chooseFamilyAction(state: GameState, command: GameCommand): Appl
     return chooseRepeatedFamilyAction(state, command);
   }
 
-  if (state.phase !== "family" || state.pendingDecision.step !== "family.chooseAction") {
+  if (state.phase !== "family" || !["family.chooseAction", "family.chooseCrownAction"].includes(state.pendingDecision.step)) {
     return familyError("WRONG_PHASE", "Family actions can only be chosen during the Family phase.", "phase");
   }
 
@@ -530,6 +657,7 @@ export function chooseFamilyAction(state: GameState, command: GameCommand): Appl
   if (!checked.ok) return checked.result;
   const { player, payload } = checked;
   const now = command.clientTimestamp;
+  if (player.isCrown) return crownChartAction(state, command, player, payload);
 
   if (payload.stockBroker === "request") {
     return requestStockBroker(state, command, player, payload, "main");
@@ -552,6 +680,68 @@ export function chooseFamilyAction(state: GameState, command: GameCommand): Appl
     updatedAt: now,
     log: [...applied.state.log, logEntry],
     family: { ...applied.state.family, turn: { ...turn, mainAction: payload.action } },
+  };
+
+  return { ok: true, logEntry, state: continueFamilyTurn(next) };
+}
+
+/** One of the Crown's chart actions (Crown Handbook p.3), or the end of its chart. */
+function crownChartAction(
+  state: GameState,
+  command: GameCommand,
+  player: PlayerState,
+  payload: FamilyActionPayload,
+): ApplyCommandResult {
+  const turn = state.family.turn as FamilyTurnState;
+  const crown = turn.crown as CrownFamilyTurn;
+  const now = command.clientTimestamp;
+  const applied = applyFamilyAction(state, player, payload, "main");
+  if (!applied.ok) return applied;
+
+  // "If the most recently passed extra action is an action the Crown chooses to take based on the
+  // chart, the Crown will treat that action as an extra action" (so it may take three).
+  const noAction = payload.action === "no-action";
+  const extra = currentLawExtraAction(state);
+  const asExtra =
+    !noAction &&
+    !crown.extraDone &&
+    extra?.action.familyAction === payload.action &&
+    (extra.action.restriction !== "notAfterEnlistWriter" || (crown.done.length > 0 && !crown.done.includes("enlist-writer")));
+  const chartTaken = crown.chartTaken + (noAction || asExtra ? 0 : 1);
+  const chart = CROWN_FAMILY_CHART[crownClimate(state)];
+  const nextCrown: CrownFamilyTurn = {
+    chartIndex: chartIndexAfter(chart, crown.chartIndex, payload.action),
+    chartTaken,
+    chartDone: noAction || chartTaken >= crownFamilyActionCount(state),
+    extraDone: crown.extraDone || asExtra,
+    done: noAction ? crown.done : [...crown.done, payload.action],
+  };
+
+  const logEntry = createCommandLogEntry({
+    state: applied.state,
+    command,
+    now,
+    type: "family.action.chosen",
+    summary: noAction
+      ? crown.done.length === 0
+        ? `${player.name} had no viable family action.`
+        : `${player.name} took no further family action.`
+      : `${player.name} chose ${familyActionLabel(payload.action)}${asExtra ? " (as the law's extra action)" : ""}.`,
+    details: { action: payload, effects: applied.effects, asExtraAction: asExtra },
+  });
+  const next: GameState = {
+    ...applied.state,
+    updatedAt: now,
+    log: [...applied.state.log, logEntry],
+    family: {
+      ...applied.state.family,
+      turn: {
+        ...turn,
+        mainAction: turn.mainAction ?? payload.action,
+        crown: nextCrown,
+        resolvedStages: asExtra ? [...turn.resolvedStages, "lawExtraAction"] : turn.resolvedStages,
+      },
+    },
   };
 
   return { ok: true, logEntry, state: continueFamilyTurn(next) };
@@ -613,7 +803,7 @@ export function finishFamilyAction(state: GameState, command: GameCommand): Appl
 }
 
 export function placeExtraWriter(state: GameState, command: GameCommand): ApplyCommandResult {
-  if (state.phase !== "family" || state.pendingDecision.step !== "family.chooseExtraWriter") {
+  if (state.phase !== "family" || !EXTRA_WRITER_STEPS.includes(state.pendingDecision.step)) {
     return familyError("WRONG_PHASE", "The extra writer can only be placed when it is offered.", "phase");
   }
 
@@ -633,7 +823,10 @@ export function placeExtraWriter(state: GameState, command: GameCommand): ApplyC
     command,
     now,
     type: "family.extraWriter",
-    summary: `${player.name} placed an extra writer in ${payload.presidency} (four or more vacant offices).`,
+    summary:
+      state.pendingDecision.step === "family.crownVacancyWriter"
+        ? `${player.name} enlisted a free writer in ${payload.presidency} (no President or Crown writer there).`
+        : `${player.name} placed an extra writer in ${payload.presidency} (four or more vacant offices).`,
     details: { ...payload, vacantOffices: vacantOfficeCount(state) },
   });
   const next = resolveStage(
@@ -641,7 +834,14 @@ export function placeExtraWriter(state: GameState, command: GameCommand): ApplyC
       ...placed.state,
       updatedAt: now,
       log: [...placed.state.log, logEntry],
-      family: { ...placed.state.family, extraWriterUsedBy: [...placed.state.family.extraWriterUsedBy, player.id] },
+      family: {
+        ...placed.state.family,
+        // The Crown's vacant-Presidency writer is a separate free action from the four-vacancy one.
+        extraWriterUsedBy:
+          state.pendingDecision.step === "family.crownVacancyWriter"
+            ? placed.state.family.extraWriterUsedBy
+            : [...placed.state.family.extraWriterUsedBy, player.id],
+      },
     },
     turn.currentStage ?? "extraWriterAfterMain",
   );
@@ -703,7 +903,7 @@ export function chooseExtraAction(state: GameState, command: GameCommand): Apply
     "lawExtraAction",
   );
 
-  return { ok: true, logEntry, state: continueFamilyTurn(next) };
+  return { ok: true, logEntry, state: continueFamilyTurn(next.family.turn?.crown ? setCrownTurn(next, { extraDone: true }) : next) };
 }
 
 export function skipExtraAction(state: GameState, command: GameCommand): ApplyCommandResult {
@@ -883,7 +1083,7 @@ function checkActionCommand(
   }
 
   const player = state.players[command.actorId];
-  if (!player || player.isCrown || state.family.turn?.playerId !== player.id) {
+  if (!player || state.family.turn?.playerId !== player.id) {
     return {
       ok: false,
       result: familyError("INVALID_ACTOR", "Only the family taking its turn can choose this action.", "actorId"),
@@ -1198,7 +1398,8 @@ export function resolveNewCompanyShares(state: GameState): GameState {
 
 function effectiveOpportunityMarker(player: PlayerState): PlayerState["opportunityMarker"] {
   // Lady Glencora removes the opportunity marker from the game.
-  return ownsPrestigeCard(player, "lady-glencora") ? "removed" : player.opportunityMarker;
+  // The Crown takes its actions from the chart and has no double action (Crown Handbook p.3).
+  return player.isCrown || ownsPrestigeCard(player, "lady-glencora") ? "removed" : player.opportunityMarker;
 }
 
 function canRepeatMainAction(turn: FamilyTurnState): boolean {
@@ -1239,7 +1440,9 @@ function currentLawExtraAction(
 function lawExtraActionAllowed(turn: FamilyTurnState, extra: LawExtraAction): boolean {
   // Tenure Limits: "After taking any family action(s) other than enlist writer ..."
   if (extra.restriction === "notAfterEnlistWriter") {
-    return turn.mainAction !== "enlist-writer" && turn.repeatAction !== "enlist-writer";
+    return (
+      turn.mainAction !== "enlist-writer" && turn.repeatAction !== "enlist-writer" && !turn.crown?.done.includes("enlist-writer")
+    );
   }
 
   return true;

@@ -444,6 +444,8 @@ export function validateTransfer(
     return errors;
   }
   if (from === to) fail("A player cannot transfer to themselves.");
+  // The Crown makes and accepts no deals (Handbook p.2); the board favours are the way to trade with it.
+  if (giver.isCrown || receiver.isCrown) fail("The Crown makes no deals: use the Crown's favours to trade with it (p.46).");
   if (!Array.isArray(items) || items.length === 0) fail("Name at least one thing to transfer.");
   if (errors.length > 0) return errors;
 

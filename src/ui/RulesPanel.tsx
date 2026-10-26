@@ -9,11 +9,14 @@ import {
   type RuleFigure,
   type RuleSection,
 } from "../data/rules-text";
+import { HANDBOOK_ID_PREFIX, HandbookPage, handbookEntries } from "./CrownHandbookView";
 
 type Props = {
   /** Section to show when the panel opens. Defaults to the first section. */
   initialSectionId?: string;
   onClose: () => void;
+  /** A Crown game: the Crown Handbook is listed after the rulebook sections. */
+  crown?: boolean;
 };
 
 function Highlighted({ text, query }: { text: string; query: string }): ReactNode {
@@ -55,15 +58,26 @@ function Figure({ figure }: { figure: RuleFigure }) {
   );
 }
 
-export function RulesPanel({ initialSectionId, onClose }: Props) {
+export function RulesPanel({ initialSectionId, onClose, crown }: Props) {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState(
-    rulesSections.some((section) => section.id === initialSectionId) ? initialSectionId! : rulesSections[0].id,
+    rulesSections.some((section) => section.id === initialSectionId) || (crown && initialSectionId?.startsWith(HANDBOOK_ID_PREFIX))
+      ? initialSectionId!
+      : rulesSections[0].id,
   );
   const bodyRef = useRef<HTMLDivElement>(null);
 
   const results = useMemo(() => searchRuleSections(query), [query]);
-  const selected: RuleSection | undefined = results.find((section) => section.id === selectedId) ?? results[0];
+  const handbook = useMemo(
+    () => (crown ? handbookEntries(query.toLowerCase().split(/\s+/).filter((term) => term.length > 0)) : []),
+    [crown, query],
+  );
+  const selectedHandbook = handbook.find((entry) => entry.id === selectedId);
+  const selected: RuleSection | undefined = selectedHandbook
+    ? undefined
+    : (results.find((section) => section.id === selectedId) ?? results[0]);
+  const selectedKey = selectedHandbook?.id ?? selected?.id ?? handbook[0]?.id;
+  const showHandbook = selectedHandbook ?? (!selected ? handbook[0] : undefined);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -75,7 +89,7 @@ export function RulesPanel({ initialSectionId, onClose }: Props) {
 
   useEffect(() => {
     bodyRef.current?.scrollTo?.({ top: 0 });
-  }, [selected?.id]);
+  }, [selectedKey]);
 
   return (
     <div className="rules-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
@@ -97,7 +111,7 @@ export function RulesPanel({ initialSectionId, onClose }: Props) {
         </header>
         <div className="rules-layout">
           <nav className="rules-toc" aria-label="Rules contents">
-            {results.length === 0 ? (
+            {results.length === 0 && handbook.length === 0 ? (
               <p className="status-note">No section mentions that.</p>
             ) : (
               <ul>
@@ -113,10 +127,24 @@ export function RulesPanel({ initialSectionId, onClose }: Props) {
                     </button>
                   </li>
                 ))}
+                {handbook.length > 0 ? <li className="rules-toc-heading">Crown Handbook (solo and two players)</li> : null}
+                {handbook.map((entry) => (
+                  <li key={entry.id} className="rules-toc-child">
+                    <button
+                      type="button"
+                      className={entry.id === showHandbook?.id ? "rules-toc-link rules-toc-active" : "rules-toc-link"}
+                      aria-current={entry.id === showHandbook?.id ? "true" : undefined}
+                      onClick={() => setSelectedId(entry.id)}
+                    >
+                      {entry.title}
+                    </button>
+                  </li>
+                ))}
               </ul>
             )}
           </nav>
           <div className="rules-body" ref={bodyRef}>
+            {showHandbook ? <HandbookPage page={showHandbook.page} /> : null}
             {selected ? (
               <article aria-labelledby="rules-section-title">
                 <h3 id="rules-section-title">

@@ -26,4 +26,6 @@ export type FirmsPhaseState = {
   /** Turns in a row that were a pass, an automatic pass or a refused request. Ends the step at `order.length`. */
   passes: number;
   merge?: MergeDraft;
+  /** The Crown's one investment (Crown Handbook p.3) has been offered; it comes after every player has finished. */
+  crownActed?: boolean;
 };

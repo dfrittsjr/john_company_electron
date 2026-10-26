@@ -7,6 +7,7 @@ import {
   companyShareCount,
   playerOffices,
   shipsInSeaZones,
+  standingLabel,
 } from "../selectors";
 import type {
   ApplyCommandResult,
@@ -335,9 +336,28 @@ const companyFraud: CommandHandler = (state, command) => {
 // ---------------------------------------------------------------------------------------------
 // Royal Protection (law #50): the Chairman may discard it to avoid emergency loans.
 
+/** What paying the expenses each way does to Standing, so nobody fails the Company by surprise. */
+function expensesOutcome(state: GameState, discard: boolean): string {
+  const after = resolveExpenses(state, discard, newCollector());
+  if (after.company.failed) {
+    return discard
+      ? "Warning: the Balance still misses Expectations, so Standing falls to F and the Company fails."
+      : "Warning: the loans cost Standing (public embarrassment) and the Balance then misses Expectations: Standing falls to F and the Company fails.";
+  }
+  const from = standingLabel(state);
+  const to = standingLabel(after);
+  return from === to ? `Standing stays at ${from}.` : `Standing falls from ${from} to ${to}.`;
+}
+
+/** A warning leads the description, so the UI marks the option (it looks for a leading "Warning"). */
+function withOutcome(text: string, outcome: string): string {
+  return outcome.startsWith("Warning") ? `${outcome} ${text}` : `${text} ${outcome}`;
+}
+
 function royalProtectionDecision(state: GameState, chairman: PlayerId): PendingDecision {
   const expenses = calculateCompanyExpenses(state);
   const loans = calculateEmergencyLoans(state.company.balance, expenses.total);
+  const keep = expensesOutcome(state, false);
   return {
     id: nextDecisionId(state, "revenue.royalProtection"),
     phase: "revenue",
@@ -349,11 +369,18 @@ function royalProtectionDecision(state: GameState, chairman: PlayerId): PendingD
       {
         type: "revenue.royalProtection",
         label: "Discard Royal Protection: no loans, cancel the remaining expenses",
-        description:
-          "The Balance pays what it can of the expenses first. The rest of the expenses are cancelled, with no emergency loans. Expectations are still checked afterwards, so Standing can still fall if the Balance misses them.",
+        description: withOutcome(
+          "The Balance pays what it can of the expenses first. The rest of the expenses are cancelled, with no emergency loans. Expectations are still checked afterwards.",
+          expensesOutcome(state, true),
+        ),
         payload: { discard: true },
       },
-      { type: "revenue.royalProtection", label: "Keep Royal Protection and take the loans", payload: { discard: false } },
+      {
+        type: "revenue.royalProtection",
+        label: "Keep Royal Protection and take the loans",
+        description: withOutcome("Each loan adds £5 and 1 Debt; 1-2 loans cost 1 Standing, 3 or more cost 2.", keep),
+        payload: { discard: false },
+      },
     ],
     canSave: true,
   };

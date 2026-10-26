@@ -20,11 +20,11 @@ import type {
   ShareInstance,
   ValidationError,
 } from "../types";
-import { createNextCompanyOperationDecision } from "./company-operation";
+import { beginCompanyOperation } from "./company-operation";
 import { takeFamilyPiece } from "./family";
 import { hiringResumeHandler } from "./hiring-resume";
 import type { ChairmanElectionState, HireOfficePayload, HireSource, HiringState } from "./hiring.state";
-import { appendLog, nepotismConsentGuarantors } from "./negotiation";
+import { appendLog, nepotismConsentGuarantors, registerStateRefresher } from "./negotiation";
 import {
   facedownBlackmailInstance,
   registerBlackmailResume,
@@ -32,6 +32,7 @@ import {
   startBlackmailPlay,
 } from "./negotiation-blackmail";
 import { createCommandLogEntry, PRIVATE_DECISION_SUMMARY } from "./shared";
+import { crownCubes, humanPlayerIds, isCrownPlayer } from "../crown/state";
 
 // Hiring (rulebook pp.14-17). Vacant offices are hired in ascending order of the number on the
 // back of each office card. The Chairman is elected by Company-share support; every other office
@@ -88,8 +89,7 @@ export function startHiringPhase(state: GameState): GameState {
 function advanceHiring(state: GameState): GameState {
   const officeId = nextVacantOfficeId(state);
   if (!officeId) {
-    const next: GameState = { ...state, phase: "companyOperation" };
-    return { ...next, pendingDecision: createNextCompanyOperationDecision(next) };
+    return beginCompanyOperation(state);
   }
 
   return presentOfficeHire(state, officeId);
@@ -291,7 +291,7 @@ function presentChairmanElection(state: GameState): GameState {
       id: `decision-hiring-elect-chairman-turn-${state.turn}`,
       phase: "hiring",
       step: "hiring.electChairman",
-      actor: humanOrSystem(state, formerChairman),
+      actor: existingPlayerOrSystem(state, formerChairman),
       visibility: "public",
       prompt: `${state.players[candidates[0]].name} holds every Company share and becomes Chairman.`,
       legalCommands: [electChairmanCommand(state, candidates[0], counts, totalShares)],
@@ -312,6 +312,17 @@ function presentChairmanElection(state: GameState): GameState {
   return presentNextSupporter({ ...state, hiring: { ...state.hiring, election } });
 }
 
+// A favour (Handbook p.3) or deal can move Company shares before anyone has declared support: the
+// election is worked out again from the Court as it now stands.
+function rebuildChairmanElection(state: GameState): GameState {
+  if (state.phase !== "hiring" || (state.hiring.election?.nextSupporterIndex ?? 0) > 0) return state;
+  return presentChairmanElection({ ...state, hiring: { ...state.hiring, election: undefined } });
+}
+
+for (const step of ["hiring.chairmanSupport", "hiring.electChairman", "hiring.emptyCourtChairman"]) {
+  registerStateRefresher(step, rebuildChairmanElection);
+}
+
 function presentNextSupporter(state: GameState): GameState {
   const election = state.hiring.election as ChairmanElectionState;
   const supporter = election.supportOrder[election.nextSupporterIndex];
@@ -324,7 +335,7 @@ function presentNextSupporter(state: GameState): GameState {
       id: `decision-hiring-former-chairman-picks-turn-${state.turn}`,
       phase: "hiring",
       step: "hiring.electChairman",
-      actor: humanOrSystem(state, election.formerChairman),
+      actor: existingPlayerOrSystem(state, election.formerChairman),
       visibility: "public",
       prompt: "No candidate has majority support. The former Chairman chooses the new Chairman.",
       legalCommands: election.candidates.map((candidateId) =>
@@ -368,7 +379,7 @@ function presentEmptyCourt(state: GameState, formerChairman: PlayerId | undefine
   const player = formerChairman ? state.players[formerChairman] : undefined;
   const sources =
     // Joseph Sedley (#15): a holder may not own a Company share, so cannot continue as Chairman.
-    !player || player.isCrown || playerForbidsHolding(state, player.id, "companyShare")
+    !player || playerForbidsHolding(state, player.id, "companyShare")
       ? []
       : player.familyMembers.supply > 0
         ? [undefined]
@@ -560,7 +571,7 @@ export function emptyCourtChairman(state: GameState, command: GameCommand): Appl
 function courtShareCounts(state: GameState): Map<PlayerId, number> {
   const counts = new Map<PlayerId, number>();
   for (const share of state.company.court) {
-    if (!share.owner || state.players[share.owner]?.isCrown) continue;
+    if (!share.owner) continue;
     counts.set(share.owner, (counts.get(share.owner) ?? 0) + 1);
   }
 
@@ -583,15 +594,16 @@ function describeTally(state: GameState, tally: Map<PlayerId, number>): string {
   return [...tally.entries()].map(([playerId, shares]) => `${state.players[playerId].name} ${shares}`).join(", ");
 }
 
-/** Human players in clockwise seating order, starting with `first` when it is one of them. */
+/** Families in clockwise seating order (the Crown included), starting with `first` when it is one of them. */
 function orderedFrom(state: GameState, first: PlayerId | undefined): PlayerId[] {
-  const humans = state.seatingOrder.filter((playerId) => !state.players[playerId].isCrown);
-  const start = first ? humans.indexOf(first) : -1;
-  return start <= 0 ? humans : [...humans.slice(start), ...humans.slice(0, start)];
+  const seats = state.seatingOrder;
+  const start = first ? seats.indexOf(first) : -1;
+  return start <= 0 ? [...seats] : [...seats.slice(start), ...seats.slice(0, start)];
 }
 
-function humanOrSystem(state: GameState, playerId: PlayerId | undefined): PlayerId | "system" {
-  return playerId && state.players[playerId] && !state.players[playerId].isCrown ? playerId : "system";
+// The Crown elects and hires like any family (Crown Handbook p.3), so it is a valid actor here.
+function existingPlayerOrSystem(state: GameState, playerId: PlayerId | undefined): PlayerId | "system" {
+  return playerId && state.players[playerId] ? playerId : "system";
 }
 
 // The new Chairman moves one of their Court shares to the Chairman slot; it still counts as a
@@ -696,6 +708,11 @@ function createNepotismConsentDecision(state: GameState): PendingDecision {
   const candidate = state.players[nepotism.hire.candidateId];
   const office = officeLabel(nepotism.hire.officeId);
 
+  // Solo, Crown hiring its own family: "You must give consent for nepotism to the Crown when
+  // required if they have 2 or more promises" (Crown Handbook p.3; cube favour +2).
+  const mustConsent =
+    isCrownPlayer(state, nepotism.hirer) && humanPlayerIds(state).length === 1 && crownCubes(state) >= 2 && !isCrownPlayer(state, consenter);
+
   return {
     id: `decision-hiring-nepotism-${nepotism.hire.officeId}-turn-${state.turn}-${consenter}${immediateSuffix(state)}`,
     phase: state.phase,
@@ -710,12 +727,16 @@ function createNepotismConsentDecision(state: GameState): PendingDecision {
         description: `Allow ${candidate.name} to fill ${office} with their own family member.`,
         payload: { accepted: true, hire: nepotism.hire } satisfies ResolveNepotismConsentPayload,
       },
-      {
-        type: "hiring.resolveNepotismConsent",
-        label: "Refuse",
-        description: `${candidate.name} must hire someone else as ${office}.`,
-        payload: { accepted: false, hire: nepotism.hire } satisfies ResolveNepotismConsentPayload,
-      },
+      ...(mustConsent
+        ? []
+        : [
+            {
+              type: "hiring.resolveNepotismConsent",
+              label: "Refuse",
+              description: `${candidate.name} must hire someone else as ${office}.`,
+              payload: { accepted: false, hire: nepotism.hire } satisfies ResolveNepotismConsentPayload,
+            },
+          ]),
     ],
     canSave: true,
   };
@@ -792,8 +813,9 @@ export function resolveNepotismConsent(state: GameState, command: GameCommand): 
 
 /** The player holding an unplayed Hiring Preference blackmail card, if any. */
 function hiringPreferenceHolder(state: GameState): PlayerId | undefined {
+  // Crown blackmail cards stay face down (Crown Handbook p.2).
   return Object.values(state.players).find((player) =>
-    player.blackmailCards.some((card) => card.cardId === HIRING_PREFERENCE_CARD_ID && card.facedown !== false),
+    !player.isCrown && player.blackmailCards.some((card) => card.cardId === HIRING_PREFERENCE_CARD_ID && card.facedown !== false),
   )?.id;
 }
 
@@ -995,8 +1017,6 @@ function createWriterHireCommands(
 ): LegalCommand[] {
   const commands: LegalCommand[] = [];
   for (const player of Object.values(state.players)) {
-    if (player.isCrown) continue;
-
     for (const presidency of eligiblePresidencies) {
       if ((state.india.presidencies[presidency].writers[player.id] ?? 0) <= 0) continue;
 
@@ -1027,7 +1047,7 @@ function createPromotionThenWriterHireCommands(state: GameState, targetOfficeId:
     }
 
     const candidate = state.players[office.holder];
-    if (!candidate || candidate.isCrown) continue;
+    if (!candidate) continue;
 
     promotions.push(
       hireCommand(
@@ -1111,7 +1131,7 @@ function createCommanderHireCommands(state: GameState, officeId: OfficeId): Lega
   for (const army of PRESIDENCIES) {
     const commanderId = state.company.armies[army].commander;
     const player = commanderId ? state.players[commanderId] : undefined;
-    if (!player || player.isCrown) continue;
+    if (!player) continue;
 
     commands.push(hireCommand(state, officeId, player.id, { type: "commander", army }, `Hire ${player.name} ${army} Commander`));
   }
@@ -1126,8 +1146,6 @@ function createOfficerHireCommands(
 ): LegalCommand[] {
   const commands: LegalCommand[] = [];
   for (const player of Object.values(state.players)) {
-    if (player.isCrown) continue;
-
     for (const army of eligibleArmies) {
       for (const readiness of ["ready", "exhausted"] as const) {
         if ((state.company.armies[army].officers[player.id]?.[readiness] ?? 0) <= 0) continue;
@@ -1150,7 +1168,7 @@ function createOfficerHireCommands(
 
 function createOfficersInTrainingHireCommands(state: GameState, officeId: OfficeId): LegalCommand[] {
   return Object.values(state.players)
-    .filter((player) => !player.isCrown && player.familyMembers.officersInTraining > 0)
+    .filter((player) => player.familyMembers.officersInTraining > 0)
     .map((player) =>
       hireCommand(state, officeId, player.id, { type: "officersInTraining" }, `Hire ${player.name} officer in training`),
     );

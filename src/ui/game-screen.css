@@ -1068,3 +1068,535 @@
   font-size: 13px;
   font-style: italic;
 }
+
+/* The Crown: board, decision, favours, handbook (solo and two-player games). */
+
+.difficulty-list {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 8px;
+  border: 0;
+  padding: 0;
+}
+
+.difficulty-list legend {
+  margin-bottom: 4px;
+  font-weight: 700;
+}
+
+.crown-board {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #d3c5b1;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fffaf2;
+}
+
+.crown-board-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.crown-board-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.crown-difficulty {
+  border: 1px solid #c2b49f;
+  border-radius: 999px;
+  padding: 1px 8px;
+  color: #6b5d4d;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.crown-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5em;
+  height: 1.5em;
+  margin: 0 1px;
+  border-radius: 999px;
+  padding: 0 4px;
+  background: #e8dcc8;
+  color: #3a3025;
+  font-size: 0.72em;
+  font-weight: 800;
+  line-height: 1;
+  vertical-align: baseline;
+}
+
+.crown-climate-bull { background: #c9503a; color: #fff; }
+.crown-climate-stag { background: #5d8a3c; color: #fff; }
+.crown-climate-lion { background: #d4a017; color: #2a2008; }
+.crown-climate-bear { background: #7a5233; color: #fff; }
+.crown-climate-peacock { background: #1f8a8a; color: #fff; }
+
+.crown-icon-cube {
+  min-width: 0.9em;
+  width: 0.9em;
+  height: 0.9em;
+  border-radius: 2px;
+  background: #b3261e;
+}
+
+.promise-cube {
+  display: inline-block;
+  width: 0.8em;
+  height: 0.8em;
+  margin-right: 3px;
+  border-radius: 2px;
+  background: #b3261e;
+  vertical-align: baseline;
+}
+
+.climate-track {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.climate-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid #d3c5b1;
+  border-radius: 6px;
+  padding: 4px 2px;
+  background: #fff;
+  font-size: 0.78rem;
+}
+
+.climate-cell small {
+  color: #6b5d4d;
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 0.62rem;
+}
+
+.climate-current {
+  border-color: #3a3025;
+  background: #f3e4bf;
+  box-shadow: 0 0 0 2px #3a3025;
+  font-weight: 800;
+}
+
+.ai-cards {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.ai-card {
+  position: relative;
+  display: flex;
+  border: 1px solid #8f7f66;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 0.78rem;
+}
+
+.ai-card-front {
+  width: 210px;
+}
+
+.ai-card-lane {
+  position: relative;
+  flex: 0 0 34px;
+  height: 84px;
+  margin-top: 6px;
+  border-right: 1px dashed #c2b49f;
+}
+
+.ai-arrow {
+  position: absolute;
+  left: 2px;
+  transform: translateY(-50%);
+  border: 1px solid #222;
+  border-radius: 3px;
+  padding: 0 3px;
+  font-size: 0.62rem;
+  font-weight: 800;
+}
+
+.ai-arrow-first { background: #222; color: #fff; }
+.ai-arrow-second { background: #fff; color: #222; left: 12px; }
+
+.ai-hand {
+  position: absolute;
+  right: -2px;
+  transform: translateY(-50%);
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.ai-card-main {
+  display: grid;
+  flex: 1;
+  gap: 4px;
+  min-width: 0;
+  padding: 6px;
+}
+
+.ai-card-criterion {
+  margin: 0;
+  font-weight: 800;
+}
+
+.ai-card-number {
+  display: inline-block;
+  min-width: 1.4em;
+  border-radius: 3px;
+  background: #3a3025;
+  color: #fff;
+  text-align: center;
+}
+
+.ai-bands {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ai-bands li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ai-bands li span:first-child {
+  min-width: 3.2em;
+  font-weight: 700;
+}
+
+.ai-splay {
+  display: flex;
+  gap: 3px;
+}
+
+.ai-slot {
+  width: 22px;
+  height: 14px;
+  border: 1px solid #8f7f66;
+  border-radius: 2px;
+  background: #fff;
+}
+
+.ai-slot-shaded {
+  background: #8f7f66;
+}
+
+.ai-regions {
+  margin: 0;
+  color: #6b5d4d;
+  font-size: 0.7rem;
+}
+
+.ai-card-back {
+  width: 116px;
+  height: 96px;
+  padding: 6px 0 6px 6px;
+  background: repeating-linear-gradient(135deg, #f6ecd8, #f6ecd8 6px, #efe2c6 6px, #efe2c6 12px);
+}
+
+.ai-back-lane {
+  display: grid;
+  grid-auto-rows: 28px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ai-back-lane li {
+  display: flex;
+  align-items: center;
+  font-weight: 800;
+}
+
+.ai-back-arrow {
+  position: absolute;
+  right: 6px;
+  margin-top: 6px;
+  transform: translateY(-50%);
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.ai-meaning {
+  flex: 1 1 140px;
+  min-width: 140px;
+}
+
+.ai-meaning h3 {
+  margin: 0 0 4px;
+  color: #6b5d4d;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.ai-meaning dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.ai-meaning dt {
+  color: #6b5d4d;
+}
+
+.ai-meaning dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.crown-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+}
+
+.crown-counts div {
+  border: 1px solid #d3c5b1;
+  border-radius: 6px;
+  padding: 3px 8px;
+  background: #fff;
+}
+
+.crown-counts dt {
+  color: #6b5d4d;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.crown-counts dd {
+  margin: 0;
+  font-weight: 800;
+}
+
+.crown-reason,
+.crown-will {
+  margin: 0 0 8px;
+  line-height: 1.4;
+}
+
+.crown-reason {
+  border-left: 3px solid #8f7f66;
+  padding-left: 8px;
+  color: #4d4233;
+}
+
+.crown-favors {
+  border: 1px solid #d3c5b1;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fff;
+}
+
+.crown-favors-waiting {
+  border-color: #3a3025;
+  box-shadow: 0 0 0 2px #e3d3a8;
+}
+
+.crown-favors h3,
+.crown-favors summary {
+  margin: 0;
+  font-weight: 800;
+}
+
+.crown-favors summary {
+  cursor: pointer;
+}
+
+.favor-lists {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.favor-player h4 {
+  margin: 0 0 4px;
+  font-size: 0.9rem;
+}
+
+.favor-player h4 small {
+  color: #6b5d4d;
+  font-weight: 600;
+}
+
+.favor-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.favor-list li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid #eadfcf;
+  padding-top: 4px;
+  font-size: 0.85rem;
+}
+
+.favor-list button {
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 0.8rem;
+}
+
+.cube-cost {
+  display: inline-flex;
+  align-items: center;
+  min-width: 2.6em;
+  justify-content: center;
+  border-radius: 4px;
+  padding: 2px 6px;
+  background: #eee6d8;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.cube-cost-pay { background: #f7d9d4; color: #8a1c14; }
+.cube-cost-gain { background: #d6e4f7; color: #123f7a; }
+.cube-cost-pay .promise-cube { background: #b3261e; }
+.cube-cost-gain .promise-cube { background: #2457a6; }
+
+.give-cubes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.give-cubes button,
+.give-cubes select {
+  min-height: 28px;
+  font-size: 0.8rem;
+}
+
+.log-reason {
+  display: block;
+  color: #6b5d4d;
+  font-size: 0.72rem;
+  font-style: italic;
+}
+
+/* Crown Handbook in the rules reference. */
+.rules-toc-heading {
+  margin: 10px 0 2px;
+  color: #6b5d4d;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.handbook-section {
+  margin-bottom: 14px;
+}
+
+.handbook-favors {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.handbook-favor {
+  display: grid;
+  grid-template-columns: minmax(0, auto) 1fr;
+  gap: 8px;
+  align-items: start;
+  border-top: 1px solid #eadfcf;
+  padding-top: 4px;
+}
+
+.handbook-favor-mandatory {
+  border-left: 4px solid #3a3025;
+  padding-left: 6px;
+  background: #f3ece0;
+}
+
+.handbook-favor-climates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.handbook-climate-cost {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.handbook-table {
+  border-collapse: collapse;
+  margin: 6px 0;
+  font-size: 0.85rem;
+}
+
+.handbook-table caption {
+  caption-side: top;
+  padding-bottom: 2px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.handbook-table th,
+.handbook-table td {
+  border: 1px solid #d3c5b1;
+  padding: 3px 7px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.handbook-table th {
+  background: #f3ece0;
+}
+
+.handbook-note {
+  color: #6b5d4d;
+  font-size: 0.85rem;
+}
+
+@media (max-width: 700px) {
+  .ai-card-front {
+    width: 100%;
+  }
+
+  .handbook-favor {
+    grid-template-columns: 1fr;
+  }
+}
+
+.favor-wait {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+}

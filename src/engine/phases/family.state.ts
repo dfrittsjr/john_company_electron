@@ -6,7 +6,23 @@ export type FamilyTurnStage =
   | "extraWriterAfterMain"
   | "repeat"
   | "extraWriterAfterRepeat"
-  | "lawExtraAction";
+  | "lawExtraAction"
+  // The Crown's free Enlist Writer actions (Crown Handbook p.3), before its chart actions.
+  | "crownFreeWriter"
+  | "crownVacancyWriter";
+
+/** The Crown's turn (Crown Handbook p.3): its chart actions are tracked here, since it has no opportunity marker. */
+export type CrownFamilyTurn = {
+  /** Where the climate's action chart resumes: the actions before it were taken or skipped. */
+  chartIndex: number;
+  /** Chart actions that count towards its two (one in a two-player game); an action treated as the law's extra action does not. */
+  chartTaken: number;
+  chartDone: boolean;
+  /** The most recently passed extra action has been taken (in the chart or after it). */
+  extraDone: boolean;
+  /** Every family action taken so far this turn, in order. */
+  done: FamilyActionId[];
+};
 
 export type FamilyTurnState = {
   playerId: PlayerId;
@@ -18,6 +34,7 @@ export type FamilyTurnState = {
   resolvedStages: FamilyTurnStage[];
   /** The follow-up stage the pending decision belongs to. */
   currentStage?: FamilyTurnStage;
+  crown?: CrownFamilyTurn;
   /** A Seek Share waiting for the Stock Broker owner's permission. */
   stockBrokerRequest?: {
     slotId: string;

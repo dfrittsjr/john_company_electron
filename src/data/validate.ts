@@ -44,29 +44,23 @@ export const requiredScenarioIds: ScenarioId[] = [
 ];
 
 export const requiredCrownAiCardFieldPaths = [
-  "climateIcon",
-  "standingClimateMap",
-  "splayCardIndex",
-  "direction",
-  "presidencyPriority.blackArrow",
-  "presidencyPriority.whiteArrow",
-  "presidencyPriority.fallback",
+  "criterion",
+  "climateBands",
+  "splaySlot",
+  "firstArrow",
+  "secondArrow",
+  "hand",
   "regionPriority",
-  "familyActionPriority",
-  "voteToDeregulateLimit",
-  "chairmanSeekDebtProfile",
-  "chairmanAllocationProfile",
-  "shippingPurchaseProfile",
-  "governorGeneralDiceMinimum",
-  "governorDiceMinimum",
-  "commanderLocalAllianceProfile",
-  "commanderDeployDiceMinimums.nonCompanyControlled",
-  "commanderDeployDiceMinimums.companyControlled",
-  "commanderDeployAgain",
-  "presidentTradeDiceMinimum",
-  "chinaTradeDiceMinimum",
-  "revenueDividendReserve",
+  "back.presidencies",
+  "back.upperArrow",
+  "back.lowerArrow",
 ] as const;
+
+/**
+ * The Crown's behaviour (the Crown Handbook) is built, so solo and two-player games can start.
+ * Set to false to block the Crown modes again.
+ */
+export const CROWN_BEHAVIOUR_BUILT = true;
 
 export const staticData: StaticDataSet = {
   scenarios,
@@ -1319,6 +1313,16 @@ export const validateNewGameStaticData = ({
       path: "newGame.humanPlayerCount",
       message: "Two-player Crown mode requires exactly two human players.",
       source: "printnplay/Rulebooks/John Company Rules.pdf",
+    });
+  }
+
+  if (mode !== "hotseat" && !CROWN_BEHAVIOUR_BUILT) {
+    issues.push({
+      severity: "error",
+      code: "new-game.crown-not-built",
+      path: "newGame.mode",
+      message: `Crown mode '${mode}' is blocked: the Crown's behaviour is not built yet.`,
+      source: "crown-handbook",
     });
   }
 

@@ -1,5 +1,6 @@
 import { rollCheck } from "../../checks";
-import { presidentOf } from "../../selectors";
+import { clearScopedCrownEffects } from "../../crown/state";
+import { familyAdjective, presidentOf } from "../../selectors";
 import type {
   GameState,
   LegalCommand,
@@ -258,7 +259,7 @@ export function tradeDecision(state: GameState, presidency: PresidencyId, activi
       for (const playerId of writersInBox) {
         commands.push({
           type: "companyOperation.trade",
-          label: `Place a ${playerName(state, playerId)} writer on ${orderId}`,
+          label: `Place a ${familyAdjective(state, playerId)} writer on ${orderId}`,
           payload: { action: "place", orderId, writer: playerId } satisfies TradePayload,
         });
       }
@@ -294,7 +295,11 @@ export function tradeStep(state: GameState, presidency: PresidencyId, activity: 
     case "roll": {
       const penalty = activity.declared.length - 1;
       const dice = payload.spend - penalty;
-      const paid = changeOfficeTreasury(state, presidentOfficeId(presidency), -payload.spend);
+      const paid = clearScopedCrownEffects(
+        changeOfficeTreasury(state, presidentOfficeId(presidency), -payload.spend),
+        "presidencies.trade.dice",
+        `trade:${presidency}`,
+      );
       const check = rollCheck(paid.rng, dice, `companyOperation.trade.${presidency}`);
       const rolled: GameState = { ...paid, rng: check.rng };
       const pending: PendingCheck = {
@@ -417,7 +422,7 @@ function placeOrder(
   const summary =
     writer === "token"
       ? `Filled ${orderId} with a filled-order token.`
-      : `Placed a ${playerName(state, writer)} writer on ${orderId}.`;
+      : `Placed a ${familyAdjective(state, writer)} writer on ${orderId}.`;
   next = withActivity(next, presidency, placing);
 
   if (placementCandidates(next, presidency, placing).length > 0) return { state: next, summary };

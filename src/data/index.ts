@@ -3,6 +3,7 @@ export * from "./cards";
 export * from "./company-tracks";
 export * from "./components";
 export * from "./crown";
+export * from "./crown-handbook";
 export * from "./enterprises";
 export * from "./family-actions";
 export * from "./firms";

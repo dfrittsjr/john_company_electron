@@ -1,8 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { standingLabel, type GameState, type LegalCommand, type PlayerId } from "../engine";
+import { crownFavorsPausing, standingLabel, type CrownFavorOffer, type GameState, type LegalCommand, type PlayerId } from "../engine";
 import { policyDial } from "../data";
 import "./game-screen.css";
 import { BoardView } from "./BoardView";
+import { CrownBoard } from "./CrownBoard";
+import { CrownFavors } from "./CrownFavors";
 import { DecisionPanel } from "./DecisionPanel";
 import { DetailsPanel } from "./DetailsPanel";
 import { FinalScoringView } from "./FinalScoringView";
@@ -48,6 +50,11 @@ export type GameScreenProps = {
   fixedPlayer?: PlayerId;
   /** Extra header content next to the title (e.g. a connection indicator). */
   titleExtra?: ReactNode;
+  /**
+   * Local Crown games: whether the Crown waits for favours, and the favours already passed on
+   * (crownPausingFavorKeys), so the favours list opens only when the Crown is really waiting.
+   */
+  crownPauses?: { waitForFavors: boolean; setWaitForFavors: (on: boolean) => void; seenFavors: ReadonlySet<string> };
   /** Online: one more sidebar tab (table talk). `onShow` runs while it is open and `unread` changes. */
   extraTab?: { label: string; unread?: number; content: ReactNode; onShow?: () => void };
 };
@@ -71,6 +78,7 @@ export function GameScreen({
   fixedPlayer,
   titleExtra,
   extraTab,
+  crownPauses,
 }: GameScreenProps) {
   const [selected, setSelected] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string[]>([]);
@@ -119,6 +127,7 @@ export function GameScreen({
     game.pendingDecision.visibility === "private" &&
     decisionActor !== "system" &&
     decisionActor !== "simultaneous" &&
+    !game.players[decisionActor]?.isCrown &&
     revealedPlayer !== decisionActor;
   const legalCommands = game.pendingDecision.legalCommands ?? [];
   const highlights = new Set(decisionHidden ? [] : legalCommands.flatMap(commandTargets));
@@ -127,6 +136,22 @@ export function GameScreen({
   const policySpace = policyDial.spaces[game.parliament.policyDialPosition];
   const showFinalScoring = Boolean(game.finalScoring.complete) && !finalScoringDismissed;
   const undoBlocked = undo.blockedReason;
+
+  function buyFavor(playerId: PlayerId, offer: CrownFavorOffer) {
+    run(playerId, "crown.favor", { favorId: offer.favorId, ...(offer.option !== undefined ? { option: offer.option } : {}) });
+  }
+
+  function giveCubes(from: PlayerId, to: PlayerId, count: number) {
+    run(from, "crown.giveCubes", { to, count });
+  }
+
+  const crownWaiting =
+    Boolean(game.crown) &&
+    decisionActor !== "system" &&
+    decisionActor !== "simultaneous" &&
+    game.players[decisionActor]?.isCrown === true &&
+    (crownPauses?.waitForFavors ?? true) &&
+    crownFavorsPausing(game, crownPauses?.seenFavors);
 
   function runLegal(legalCommand: LegalCommand) {
     // The acting player is whoever the decision names. Online, the server ignores this and uses
@@ -224,6 +249,7 @@ export function GameScreen({
               <DetailsPanel game={game} target={selected} optionCount={decisionHidden ? 0 : optionCount} onClose={() => setSelected(null)} />
             ) : null}
           </div>
+          {game.crown ? <CrownBoard game={game} onOpenRules={(sectionId) => setRulesOpen({ sectionId })} /> : null}
           <PlayerDashboards game={game} revealedPlayer={revealedPlayer} onSelectPlayer={(playerId) => setSelected(`player:${playerId}`)} />
         </div>
 
@@ -241,6 +267,13 @@ export function GameScreen({
             onOpenRules={(sectionId) => setRulesOpen({ sectionId })}
             note={decisionNote}
           />
+          {game.crown && !readOnly ? <CrownFavors
+              game={game}
+              waiting={crownWaiting}
+              onFavor={buyFavor}
+              onGive={giveCubes}
+              waitForFavors={crownPauses ? { on: crownPauses.waitForFavors, set: crownPauses.setWaitForFavors } : undefined}
+            /> : null}
           <div className="sidebar-tabs" role="tablist" aria-label="Side panels">
             <button type="button" role="tab" aria-selected={sideTab === "log"} className={sideTab === "log" ? "tab tab-active" : "tab"} onClick={() => setSideTab("log")}>
               Log
@@ -284,19 +317,11 @@ export function GameScreen({
               />
             )}
           </div>
-          {game.crown ? (
-            <div className="crown-summary">
-              <h3>Crown</h3>
-              <p>Difficulty: {game.crown.difficulty}</p>
-              <p>Climate: {game.crown.climate}</p>
-              <p>Crown cubes: {game.crown.promiseCubes.crownSupply}</p>
-            </div>
-          ) : null}
         </aside>
       </div>
 
       {showFinalScoring ? <FinalScoringView game={game} onClose={() => setFinalScoringDismissed(true)} onSave={onSaveFinal} /> : null}
-      {rulesOpen ? <RulesPanel initialSectionId={rulesOpen.sectionId} onClose={() => setRulesOpen(null)} /> : null}
+      {rulesOpen ? <RulesPanel initialSectionId={rulesOpen.sectionId} crown={Boolean(game.crown)} onClose={() => setRulesOpen(null)} /> : null}
     </main>
   );
 }

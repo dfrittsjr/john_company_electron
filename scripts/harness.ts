@@ -3,6 +3,8 @@
 //
 //   npm run harness -- new <file> [--scenario 1710] [--players Red,Blue,Yellow] [--seed s] [--setup random|starter]
 //       [--deregulated]   test aid: start as if the Vote to Deregulate had passed (Long 1710 by default)
+//       One or two --players play against the Crown: [--difficulty easy|normal|hard|expert]
+//   npm run harness -- favor <file> <n> --actor id           buy Crown favour n (listed by show)
 //   npm run harness -- show <file>
 //   npm run harness -- play <file> <n> [--actor id]          apply legal command n of the pending decision
 //   npm run harness -- do <file> <type> [payloadJSON] --actor id   any command, including anytime commands
@@ -22,7 +24,9 @@ import {
   applyCommand,
   companyExpectations,
   createNewGame,
+  crownFavorOffers,
   familyPieceTotal,
+  humanPlayerIds,
   isAnytimeCommandType,
   officeHolder,
   playerOffices,
@@ -96,13 +100,32 @@ function show(state: GameState): string {
   const chairman = officeHolder(state, "chairman");
   lines.push(`Chairman: ${chairman ? playerName(state, chairman) : "vacant"}`);
   lines.push("");
+  if (state.crown) {
+    const crown = state.crown;
+    const cubes = humanPlayerIds(state).map((playerId) => `${playerName(state, playerId)} ${crown.promiseCubes.byHumanPlayer[playerId] ?? 0}`);
+    lines.push(
+      `Crown: climate ${crown.climate}, AI card ${crown.faceupAiCard} (next back ${crown.aiDeck.drawPile[0] ?? "-"}), ` +
+        `cubes Crown ${crown.promiseCubes.crownSupply} / ${cubes.join(", ")}` +
+        (crown.playerButton ? `, Player Button ${playerName(state, crown.playerButton.holder)}` : ""),
+    );
+  }
   lines.push(`Pending: ${decision.actor === "system" ? "system" : playerName(state, decision.actor)} — ${decision.prompt}`);
+  if (decision.crown) {
+    lines.push(`  Crown: ${decision.crown.reason}${decision.crown.chooser ? ` (${playerName(state, decision.crown.chooser)} chooses)` : ""}`);
+  }
   decision.legalCommands.forEach((legal, index) => {
     const payload = legal.payload === undefined ? "" : ` ${JSON.stringify(legal.payload)}`;
     lines.push(`  [${index}] ${legal.type}: ${legal.label}${payload}`);
   });
   if (decision.legalCommands.length === 0) {
     lines.push("  (no legal commands: the game is over or stuck)");
+  }
+  if (state.crown) {
+    for (const playerId of humanPlayerIds(state)) {
+      crownFavorOffers(state, playerId).forEach((offer, index) => {
+        lines.push(`  favor [${index}] ${playerName(state, playerId)} (${playerId}) ${offer.cubes > 0 ? "+" : ""}${offer.cubes}: ${offer.label}`);
+      });
+    }
   }
   return lines.join("\n");
 }
@@ -132,7 +155,7 @@ function apply(state: GameState, type: string, payload: unknown, actorId: ActorI
 function newLogLines(before: GameState, after: GameState): string {
   return after.log
     .slice(before.log.length)
-    .map((entry) => `  log: ${entry.summary}`)
+    .map((entry) => `  log: ${entry.summary}${entry.crownReason ? ` [Crown: ${entry.crownReason}]` : ""}`)
     .join("\n");
 }
 
@@ -163,6 +186,9 @@ function anytimeMoves(state: GameState): AnytimeMove[] {
       for (const option of choice.options) {
         moves.push({ actor, type: "negotiation.playBlackmail", payload: { cardInstanceId: choice.cardInstanceId, params: option.params } });
       }
+    }
+    for (const offer of crownFavorOffers(state, actor)) {
+      moves.push({ actor, type: "crown.favor", payload: { favorId: offer.favorId, ...(offer.option !== undefined ? { option: offer.option } : {}) } });
     }
   }
   return moves;
@@ -272,6 +298,13 @@ function checkInvariants(state: GameState): string[] {
   }
   if (state.company.balance < 0) problems.push("Company Balance is negative");
   if (state.pendingDecision.phase !== state.phase) problems.push("pending decision phase differs from game phase");
+  if (state.crown) {
+    const cubes = state.crown.promiseCubes;
+    const total = cubes.crownSupply + Object.values(cubes.byHumanPlayer).reduce((sum, count) => sum + count, 0);
+    if (total !== 12 || Object.values(cubes.byHumanPlayer).some((count) => count < 0) || cubes.crownSupply < 0) {
+      problems.push(`promise cubes are off: ${JSON.stringify(cubes)}`);
+    }
+  }
   return problems;
 }
 
@@ -288,7 +321,8 @@ function main(): void {
     const now = NOW();
     const deregulated = flags.deregulated !== undefined;
     const created = createNewGame({
-      mode: "hotseat",
+      mode: names.length === 1 ? "soloCrown" : names.length === 2 ? "twoPlayerCrown" : "hotseat",
+      crownDifficulty: (flags.difficulty ?? "normal") as "easy" | "normal" | "hard" | "expert",
       scenario: (flags.scenario ?? (deregulated ? "long-1710" : "1710")) as ScenarioId,
       seed: flags.seed ?? `harness-${now}`,
       now,
@@ -320,7 +354,7 @@ function main(): void {
     case "log": {
       const last = Number(flags.last ?? 20);
       for (const entry of state.log.slice(-last)) {
-        console.log(`#${entry.sequence} t${entry.turn} ${entry.phase} ${entry.actor ?? ""}: ${entry.summary}`);
+        console.log(`#${entry.sequence} t${entry.turn} ${entry.phase} ${entry.actor ?? ""}: ${entry.summary}${entry.crownReason ? ` [Crown: ${entry.crownReason}]` : ""}`);
       }
       return;
     }
@@ -329,6 +363,17 @@ function main(): void {
       const legal = state.pendingDecision.legalCommands[index];
       if (!legal) throw new Error(`No legal command [${positional[0]}].`);
       const next = apply(state, legal.type, legal.payload ?? {}, (flags.actor as ActorId) ?? defaultActor(state));
+      save(file, next, saveId);
+      console.log(newLogLines(state, next));
+      console.log(show(next));
+      return;
+    }
+    case "favor": {
+      const actor = flags.actor ?? humanPlayerIds(state)[0];
+      const offer = crownFavorOffers(state, actor)[Number(positional[0])];
+      if (!offer) throw new Error(`No favour [${positional[0]}] for ${actor}.`);
+      const payload = { favorId: offer.favorId, ...(offer.option !== undefined ? { option: offer.option } : {}) };
+      const next = apply(state, "crown.favor", payload, actor);
       save(file, next, saveId);
       console.log(newLogLines(state, next));
       console.log(show(next));

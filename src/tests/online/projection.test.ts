@@ -161,8 +161,6 @@ describe("projectForViewer", () => {
           "firm-a": { firmId: "firm-a", committedBy: ANN, strategy: "south-indian", bid: 4 },
           "firm-b": { firmId: "firm-b", committedBy: BEN, strategy: "west-indian", bid: 3, revealed: true },
         },
-        crownDeck: { drawPile: ["crown-ai-03"], discardPile: [], removed: [] },
-        crownBlackmail: [{ id: "crown-bm", cardId: "secret-crown", facedown: true }],
       },
     };
 
@@ -170,8 +168,6 @@ describe("projectForViewer", () => {
     expect(ben.hidden.privateCards).toEqual({ [BEN]: state.hidden.privateCards[BEN] });
     expect(ben.hidden.firmStrategySecrets["firm-a"]).toEqual({ firmId: "firm-a", committedBy: ANN });
     expect(ben.hidden.firmStrategySecrets["firm-b"]).toEqual(state.hidden.firmStrategySecrets["firm-b"]);
-    expect(ben.hidden.crownDeck).toBeUndefined();
-    expect(ben.hidden.crownBlackmail).toBeUndefined();
     expect(JSON.stringify(ben.hidden.firmStrategySecrets)).not.toContain("south-indian");
     expect(mentions(ben, "secret-ann")).toBe(false);
 
@@ -189,9 +185,10 @@ describe("projectForViewer", () => {
     const solo = createNewGame({ mode: "soloCrown", scenario: "1710", seed: SEED, now: NOW, players: [{ id: ANN, name: "Ann", color: "red" }] });
     const view = projectForViewer(solo, { kind: "seat", playerId: ANN });
     expect(solo.crown?.aiDeck.drawPile.length).toBeGreaterThan(0);
-    expect(view.crown?.aiDeck.drawPile).toEqual(solo.crown?.aiDeck.drawPile.map(() => "hidden:card"));
-    expect(view.hidden.crownDeck).toBeUndefined();
-    for (const cardId of solo.crown!.aiDeck.drawPile) expect(view.crown!.aiDeck.drawPile).not.toContain(cardId);
+    const [top, ...rest] = solo.crown!.aiDeck.drawPile;
+    // The top card's back is on the table; the order below it is hidden.
+    expect(view.crown?.aiDeck.drawPile).toEqual([top, ...rest.map(() => "hidden:card")]);
+    for (const cardId of rest) expect(view.crown!.aiDeck.drawPile).not.toContain(cardId);
   });
 
   it("gives legal commands only to the player who must decide", () => {

@@ -20,6 +20,8 @@ export type CompanyOperationState = {
   chinaTradeAttempted?: boolean;
   /** One Govern (p.26). */
   governorGeneralGoverned?: boolean;
+  /** Company ships the Manager of Shipping has bought this turn (the Crown's buying limit reads it). */
+  shippingBought?: number;
   /** Board of Control may be used once per turn (law #34). */
   boardOfControlUsed?: boolean;
   /** Deregulation (p.40): firms that have already filled their orders this turn. */
@@ -46,17 +48,28 @@ export type FirmFillState = {
 export type ShipDestination = SeaZoneId | "china";
 
 export type OfficeProgress =
-  | { office: "chairman"; debtAdvances: number; consentRefused: boolean }
+  | {
+      office: "chairman";
+      debtAdvances: number;
+      consentRefused: boolean;
+      /** Crown games: what the Chairman has allocated to each office this turn (the Crown's priority list reads it). */
+      allocated?: Partial<Record<OfficeId, number>>;
+    }
   | {
       office: "director-of-trade";
       stage: "envoy" | "envoyEffect" | "transfers";
       transfersMade: number;
+      /** Crown games: Special Envoys sent, and the transfers made (the Crown never undoes one). */
+      envoys?: number;
+      moves?: OfficeMove[];
     }
   | {
       office: "military-affairs";
       stage: "transfers" | "assign" | "commanders";
       transfersMade: number;
       armiesResolved: ArmyId[];
+      /** Crown games: the transfers made this turn (the Crown never undoes one). */
+      moves?: OfficeMove[];
     }
   | { office: "presidency"; presidency: PresidencyId; commanderDone: boolean; governorsDone: OfficeId[]; activity?: PresidencyActivity }
   | {
@@ -65,6 +78,9 @@ export type OfficeProgress =
       choicesRemaining: number;
       taxRegions: RegionId[];
     };
+
+/** One writer, ship, officer or regiment moved by the Director of Trade or Military Affairs. */
+export type OfficeMove = { kind: "writer" | "ship" | "officer" | "regiment"; from: string; to: string; playerId?: PlayerId; shipId?: string };
 
 export type PresidencyActivity = TradeActivity | CommanderActivity | GovernorActivity;
 
@@ -90,6 +106,12 @@ export type CommanderActivity = {
   stage: "alliances" | "deploy" | "exhaust";
   target?: RegionId;
   selection?: DeploySelection;
+  /** Deploys rolled so far (the Crown's "deploy again?" chart reads it). */
+  deploys?: number;
+  /** Local Alliance purchases asked for so far (the Crown buys at most one, or two with a favour). */
+  alliancesAsked?: number;
+  /** Alliances a Crown President refused this turn: not offered again, since the Crown won't change its mind. */
+  alliancesRefused?: string[];
 };
 
 export type GovernorActivity = {

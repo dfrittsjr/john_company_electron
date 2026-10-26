@@ -23,10 +23,13 @@ import { parliamentCommandHandlers } from "./phases/parliament";
 import { revenueCommandHandlers } from "./phases/revenue";
 import { setupCommandHandlers } from "./phases/setup";
 import { upkeepCommandHandlers } from "./phases/upkeep";
+import { crownSetupCommandHandlers } from "./crown/setup";
+import { afterCrownCommand } from "./crown/hook";
 
 // Each phase module owns its own command map, so phases can be built independently.
 const COMMAND_HANDLERS: Record<string, CommandHandler> = {
   ...setupCommandHandlers,
+  ...crownSetupCommandHandlers,
   ...londonSeasonCommandHandlers,
   ...familyCommandHandlers,
   ...firmsCommandHandlers,
@@ -56,6 +59,11 @@ export function isAnytimeCommandType(commandType: string): boolean {
 }
 
 export function applyCommand(state: GameState, command: GameCommand): ApplyCommandResult {
+  // In a Crown game the Crown then decides its next step, and cube favours are settled (crown/hook.ts).
+  return afterCrownCommand(state, applyRulesCommand(state, command), command);
+}
+
+function applyRulesCommand(state: GameState, command: GameCommand): ApplyCommandResult {
   const anytimeHandler = anytimeCommandHandlers[command.type];
   if (anytimeHandler) {
     const errors = validateAnytimeCommand(state, command);

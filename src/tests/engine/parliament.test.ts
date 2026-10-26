@@ -567,6 +567,19 @@ describe("Revenue law and card effects (p.27)", () => {
     expect(state.pendingDecision.step).toBe("revenue.chooseDividends");
   });
 
+  it("Royal Protection: each option says where Standing ends, and warns when the Company would fail", () => {
+    const describe = (state: GameState, discard: boolean) =>
+      state.pendingDecision.legalCommands.find((legal) => (legal.payload as { discard: boolean }).discard === discard)?.description ?? "";
+    const safe = choose(revenueState({ balance: 2, regiments: 6, chairman: "player-red" }), "revenue.confirm");
+    expect(describe(safe, false)).toMatch(/Standing falls from £10 to £6\.$/);
+    expect(describe(safe, true)).toMatch(/Standing falls from £10 to £8\.$/);
+
+    // At £6 expectations, a loan and the missed Expectations take Standing to F.
+    const low = revenueState({ balance: 0, regiments: 6, chairman: "player-red" });
+    const failing = choose({ ...low, company: { ...low.company, standing: 2 } }, "revenue.confirm");
+    expect(describe(failing, false)).toMatch(/^Warning: .*the Company fails/);
+  });
+
   it("Royal Protection kept: loans are taken as usual", () => {
     let state = choose(revenueState({ balance: 2, regiments: 6, chairman: "player-red" }), "revenue.confirm");
     state = choose(state, "revenue.royalProtection", (payload) => payload.discard === false);

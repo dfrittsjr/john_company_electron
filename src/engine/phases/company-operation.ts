@@ -1,4 +1,6 @@
 import type { CommandHandler } from "../command-handler";
+import { CROWN_PLAYER_ID, flipAiCard, isCrownGame } from "../crown/state";
+import { chairmanHolder } from "../selectors";
 import type { GameState, PendingDecision } from "../types";
 import { chairmanStep, debtConsentStep } from "./company-operation/chairman";
 import { chinaStep } from "./company-operation/china";
@@ -53,9 +55,20 @@ export function returnExtraShips(state: GameState): GameState {
   return { ...state, company: { ...state.company, ships: state.company.ships.filter((ship) => ship.kind !== "extra") } };
 }
 
-/** The decision that starts or continues Company Operation; Hiring calls this when it ends. */
+/** The decision that starts or continues Company Operation. */
 export function createNextCompanyOperationDecision(state: GameState): PendingDecision {
   return decideOperation({ ...state, phase: "companyOperation" });
+}
+
+/**
+ * Starts Company Operation when Hiring ends. A Crown Chairman flips a new AI card before it acts
+ * (Handbook p.5); doing it here, in the command that ends Hiring, leaves no moment for a player to
+ * change anything before the new climate is known (rulebook p.45).
+ */
+export function beginCompanyOperation(state: GameState): GameState {
+  let next: GameState = { ...state, phase: "companyOperation" };
+  if (isCrownGame(next) && chairmanHolder(next) === CROWN_PLAYER_ID) next = flipAiCard(next, next.updatedAt);
+  return { ...next, pendingDecision: createNextCompanyOperationDecision(next) };
 }
 
 const skipOfficeStep: OperationStep = (state, command) => {

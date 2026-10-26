@@ -6,10 +6,10 @@ import {
   familyActions,
   mapData,
   offices,
-  requiredCrownAiCardFieldPaths,
   requiredScenarioIds,
   scenarios,
   setupCardDecks,
+  staticData,
   stockExchangeTrack,
   validateComponentData,
   validateCrownData,
@@ -327,68 +327,44 @@ describe("Crown starter data", () => {
     ]);
   });
 
-  test("requires every Crown AI card field from the design schema", () => {
-    const result = validateCrownData();
-
-    expect(result.valid).toBe(false);
-    for (const fieldPath of requiredCrownAiCardFieldPaths) {
-      expect(result.issues).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            code: "crown.ai-card-field-missing",
-            path: `crown.aiCards.crown-ai-01.${fieldPath}`,
-          }),
-        ]),
-      );
+  test("has every AI card field, from the transcribed cards", () => {
+    expect(validateCrownData()).toMatchObject({ valid: true });
+    for (const card of crownAiCards) {
+      expect(card.climateBands.length).toBeGreaterThanOrEqual(3);
+      expect(card.regionPriority).toHaveLength(8);
+      expect(new Set(card.regionPriority).size).toBe(8);
+      expect(new Set(card.back.presidencies)).toEqual(new Set(["bombay", "madras", "bengal"]));
+      expect(card.firstArrow).not.toBe(card.secondArrow);
     }
+    // Rulebook p.45's example: card 1 is Company Expectations, £4 peacock / £6 lion / £8+ bull,
+    // left slot, regions Madras first and Bengal last.
+    expect(crownAiCards[0]).toMatchObject({
+      criterion: "Company Expectations",
+      climateBands: [
+        { range: "£4", climate: "peacock" },
+        { range: "£6", climate: "lion" },
+        { range: "£8+", climate: "bull" },
+      ],
+      splaySlot: "left",
+    });
+    expect(crownAiCards[0].regionPriority[0]).toBe("madras");
+    expect(crownAiCards[0].regionPriority[7]).toBe("bengal");
   });
 
-  test("blocks solo Crown mode while Crown AI cards are placeholders", () => {
-    const result = validateNewGameStaticData({
-      scenarioId: "1710",
-      mode: "soloCrown",
-      humanPlayerCount: 1,
-    });
-
-    expect(result.valid).toBe(false);
+  test("reports a missing AI card field", () => {
+    const [first, ...rest] = crownAiCards;
+    const broken = { ...first, splaySlot: undefined } as unknown as typeof first;
+    const result = validateCrownData({ ...staticData.crown, aiCards: [broken, ...rest] });
     expect(result.issues).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          code: "new-game.crown.ai-card-field-missing",
-          message: expect.stringContaining("soloCrown"),
-          path: "crown.aiCards.crown-ai-01.climateIcon",
-        }),
-      ]),
+      expect.arrayContaining([expect.objectContaining({ code: "crown.ai-card-field-missing", path: "crown.aiCards.crown-ai-01.splaySlot" })]),
     );
   });
 
-  test("blocks two-player Crown mode while Crown AI cards are placeholders", () => {
-    const result = validateNewGameStaticData({
-      scenarioId: "1710",
-      mode: "twoPlayerCrown",
-      humanPlayerCount: 2,
-    });
-
-    expect(result.valid).toBe(false);
-    expect(result.issues).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          code: "new-game.crown.ai-card-field-missing",
-          message: expect.stringContaining("twoPlayerCrown"),
-          path: "crown.aiCards.crown-ai-01.climateIcon",
-        }),
-      ]),
-    );
-  });
-
-  test("allows hotseat setup to use starter scenario data without Crown data", () => {
-    const result = validateNewGameStaticData({
-      scenarioId: "1710",
-      mode: "hotseat",
-      humanPlayerCount: 3,
-    });
-
-    expect(result.valid).toBe(true);
-    expect(result.issues).toEqual([]);
+  test("allows the Crown modes now the Crown's behaviour is built", () => {
+    for (const [mode, humanPlayerCount] of [["soloCrown", 1], ["twoPlayerCrown", 2]] as const) {
+      const result = validateNewGameStaticData({ scenarioId: "1710", mode, humanPlayerCount });
+      expect(result.valid).toBe(true);
+      expect(result.issues.map((issue) => issue.code)).not.toContain("new-game.crown-not-built");
+    }
   });
 });

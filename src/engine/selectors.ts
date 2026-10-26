@@ -180,6 +180,12 @@ export function familyPieceLocations(state: GameState, playerId: PlayerId): Reco
   };
 }
 
+/** A family's name used before a piece: "a Red officer", "a Crown writer" (not "a The Crown writer"). */
+export function familyAdjective(state: GameState, playerId: PlayerId): string {
+  const player = state.players[playerId];
+  return player?.isCrown ? "Crown" : player?.name ?? playerId;
+}
+
 export function familyPieceTotal(state: GameState, playerId: PlayerId): number {
   return Object.values(familyPieceLocations(state, playerId)).reduce((total, count) => total + count, 0);
 }
@@ -266,6 +272,8 @@ export function playerForbidsHolding(
   playerId: PlayerId,
   holding: "blackmail" | "workshop" | "shipyard" | "companyShare",
 ): boolean {
+  // The Crown ignores any text effects on Spouse cards (Crown Handbook p.2).
+  if (state.players[playerId]?.isCrown) return false;
   return playerSpouses(state, playerId).some((spouse) =>
     spouse.effects.some((effect) => effect.type === "forbidHolding" && effect.holding === holding),
   );

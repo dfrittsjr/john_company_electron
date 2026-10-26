@@ -1,7 +1,8 @@
 import { localAlliances } from "../../../data";
+import { clearScopedCrownEffects } from "../../crown/state";
 import { countSixes, rollCheck } from "../../checks";
 import { rollDice } from "../../rng";
-import { commanderOf, presidentOf } from "../../selectors";
+import { commanderOf, familyAdjective, presidentOf } from "../../selectors";
 import type {
   ArmyState,
   GameState,
@@ -126,7 +127,7 @@ export function commanderDecision(state: GameState, presidency: PresidencyId, ac
     if (president) {
       for (const [allianceId, status] of Object.entries(army.localAlliances ?? {})) {
         const definition = alliance(allianceId);
-        if (status !== "exhausted" || definition.cost > treasury) continue;
+        if (status !== "exhausted" || definition.cost > treasury || activity.alliancesRefused?.includes(allianceId)) continue;
         commands.push({
           type: "companyOperation.commander",
           label: `Buy ${definition.name} (strength ${definition.strength}) for £${definition.cost} from the President's treasury`,
@@ -169,7 +170,7 @@ export function commanderDecision(state: GameState, presidency: PresidencyId, ac
       if (stack.ready - (selection.officers[playerId] ?? 0) <= 0) continue;
       commands.push({
         type: "companyOperation.commander",
-        label: `Exhaust a ${playerName(state, playerId)} officer`,
+        label: `Exhaust a ${familyAdjective(state, playerId)} officer`,
         payload: { action: "exhaustOfficer", playerId } satisfies CommanderPayload,
       });
     }
@@ -219,22 +220,24 @@ export function commanderStep(
   switch (payload.action) {
     case "buyAlliance": {
       const president = presidentOf(state, presidency);
+      // Counted when asked, so a refusal is not asked again (the Crown buys at most so many).
+      const asked = withActivity(state, presidency, { ...activity, alliancesAsked: (activity.alliancesAsked ?? 0) + 1 });
       if (president !== commanderOf(state, presidency)) {
         return {
-          state: withCo(state, { interrupt: { kind: "allianceConsent", presidency, allianceId: payload.allianceId } }),
+          state: withCo(asked, { interrupt: { kind: "allianceConsent", presidency, allianceId: payload.allianceId } }),
           summary: `${commanderName} asked the President of ${presidency} to pay for ${alliance(payload.allianceId).name}.`,
         };
       }
       return {
-        state: buyAlliance(state, presidency, payload.allianceId),
+        state: buyAlliance(asked, presidency, payload.allianceId),
         summary: `${commanderName} bought ${alliance(payload.allianceId).name} for £${alliance(payload.allianceId).cost}.`,
       };
     }
     case "beginDeploys":
-      return { state: withActivity(state, presidency, { kind: "commander", stage: "deploy" }), summary: `${commanderName} moved on to Deploy.` };
+      return { state: withActivity(state, presidency, { kind: "commander", stage: "deploy", ...(activity.alliancesAsked ? { alliancesAsked: activity.alliancesAsked } : {}) }), summary: `${commanderName} moved on to Deploy.` };
     case "target":
       return {
-        state: withActivity(state, presidency, { kind: "commander", stage: "exhaust", target: payload.regionId, selection: EMPTY_SELECTION }),
+        state: withActivity(state, presidency, { kind: "commander", stage: "exhaust", target: payload.regionId, selection: EMPTY_SELECTION, ...(activity.deploys ? { deploys: activity.deploys } : {}) }),
         summary: `${commanderName} targeted ${state.india.regions[payload.regionId].name}.`,
       };
     case "exhaustOfficer":
@@ -251,14 +254,14 @@ export function commanderStep(
         state: withActivity(state, presidency, { ...activity, selection: next }),
         summary:
           payload.action === "exhaustOfficer"
-            ? `${commanderName} committed a ${playerName(state, payload.playerId)} officer.`
+            ? `${commanderName} committed a ${familyAdjective(state, payload.playerId)} officer.`
             : payload.action === "exhaustRegiment"
               ? `${commanderName} committed a regiment.`
               : `${commanderName} committed ${alliance(payload.allianceId).name}.`,
       };
     }
     case "cancelDeploy":
-      return { state: withActivity(state, presidency, { kind: "commander", stage: "deploy" }), summary: `${commanderName} cancelled the Deploy.` };
+      return { state: withActivity(state, presidency, { kind: "commander", stage: "deploy", ...(activity.deploys ? { deploys: activity.deploys } : {}) }), summary: `${commanderName} cancelled the Deploy.` };
     case "roll":
       return rollDeploy(state, presidency, activity);
     case "finish":
@@ -268,7 +271,9 @@ export function commanderStep(
 
 export function finishCommander(state: GameState, presidency: PresidencyId, summary: string): StepResult {
   const progress = presidencyProgress(state, presidency);
-  return { state: withPresidencyProgress(state, { ...progress, commanderDone: true, activity: undefined }), summary };
+  // Favours bought for this Commander's actions end with them.
+  const cleared = clearScopedCrownEffects(state, "presidencies.commander.", `commander:${presidency}`);
+  return { state: withPresidencyProgress(cleared, { ...progress, commanderDone: true, activity: undefined }), summary };
 }
 
 export function buyAlliance(state: GameState, presidency: PresidencyId, allianceId: string): GameState {
@@ -290,7 +295,7 @@ function rollDeploy(state: GameState, presidency: PresidencyId, activity: Comman
   const selection = activity.selection ?? EMPTY_SELECTION;
   const target = activity.target!;
   const dice = selectionDice(selection) - defendingStrength(state, target);
-  const exhausted = exhaustSelection(state, presidency, selection);
+  const exhausted = clearScopedCrownEffects(exhaustSelection(state, presidency, selection), "presidencies.commander.dice", `commander:${presidency}`);
   const check = rollCheck(exhausted.rng, dice, `companyOperation.deploy.${presidency}`);
   const rolled: GameState = { ...exhausted, rng: check.rng };
   const pending: Extract<PendingCheck, { context: "deploy" }> = {
@@ -354,6 +359,8 @@ export function resolveDeployCheck(
   const commander = commanderOf(state, presidency);
   const rolls: RngRollRecord[] = [];
   let next = state;
+  const rolled = presidencyProgress(state, presidency).activity;
+  const deploys = (rolled?.kind === "commander" ? rolled.deploys ?? 0 : 0) + 1;
 
   // Loss checks (p.22 step 3): one die per exhausted officer, never regiments; each 6 loses an officer.
   const survivors: Record<PlayerId, number> = {};
@@ -378,7 +385,7 @@ export function resolveDeployCheck(
 
   if (check.outcome === "success") {
     const conquest = conquer(next, presidency, check.target, check.selection, survivors);
-    next = withActivity(conquest.state, presidency, { kind: "commander", stage: "deploy" });
+    next = withActivity(conquest.state, presidency, { kind: "commander", stage: "deploy", deploys });
     parts.push(conquest.summary);
     details = { ...details, ...conquest.details };
   } else if (check.outcome === "catastrophe" && commander) {
@@ -404,7 +411,7 @@ export function resolveDeployCheck(
     next = finished.state;
     parts.push(`${playerName(next, commander)} loses ${lostTrophies} troph${lostTrophies === 1 ? "y" : "ies"} and the Commander returns to supply.`);
   } else {
-    next = withActivity(next, presidency, { kind: "commander", stage: "deploy" });
+    next = withActivity(next, presidency, { kind: "commander", stage: "deploy", deploys });
     parts.push("The Commander may deploy again while pieces remain.");
   }
 

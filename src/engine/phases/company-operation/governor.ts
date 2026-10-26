@@ -1,4 +1,5 @@
 import { rollCheck } from "../../checks";
+import { clearScopedCrownEffects } from "../../crown/state";
 import { officeHolder } from "../../selectors";
 import type { GameState, LegalCommand, OfficeId, PendingDecision, PresidencyId, RegionId } from "../../types";
 import type { GovernorActivity } from "../company-operation.state";
@@ -154,7 +155,7 @@ export function governorStep(
         // "If the check did not succeed, add an unrest to the region" (p.24): a catastrophe is a failure too.
         const catastropheUnrest = isLawInEffect(next, "zamindar-taxes") ? 2 : 1;
         next = addUnrest(next, regionId, catastropheUnrest);
-        next = vacateAfterCatastrophe(next, activity.officeId);
+        next = clearScopedCrownEffects(vacateAfterCatastrophe(next, activity.officeId), "presidencies.governor.", `governor:${activity.officeId}`);
         const progress = presidencyProgress(next, presidency);
         next = withPresidencyProgress(next, {
           ...progress,
@@ -225,7 +226,7 @@ function finishGovernor(
   rngRolls?: StepResult["rngRolls"],
 ): StepResult {
   const progress = presidencyProgress(state, presidency);
-  const next = withPresidencyProgress(state, {
+  const next = withPresidencyProgress(clearScopedCrownEffects(state, "presidencies.governor.", `governor:${officeId}`), {
     ...progress,
     governorsDone: [...progress.governorsDone, officeId],
     activity: undefined,

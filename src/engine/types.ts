@@ -8,7 +8,7 @@ import type { LondonSeasonState } from "./phases/london-season.state";
 import type { NegotiationState } from "./phases/negotiation.state";
 import type { ParliamentState } from "./phases/parliament.state";
 
-import type { ScenarioId as DataScenarioId } from "../data/types";
+import type { CrownClimate, CrownDifficulty, ScenarioId as DataScenarioId } from "../data/types";
 import type { FirmStrategyId } from "../data/firms";
 
 // Version 2: one canonical location per family piece, scenario-driven setup, Standing as a track index.
@@ -41,12 +41,7 @@ export type FirmId = string;
 export type FamilyActionId = string;
 export type CardInstanceId = string;
 export type CrownAiCardId = string;
-export type CrownClimateId = string;
-export type CrownDecisionProfileId = string;
-export type CrownFavorWindowId = string;
-export type CrownFavorTiming = string;
-export type CrownConditionId = string;
-export type CrownEffectId = string;
+export type { CrownClimate, CrownDifficulty };
 export type PolicySpaceId = string;
 export type LawInstanceId = string;
 export type PowerTargetId = string;
@@ -72,6 +67,25 @@ export type PendingDecision = {
   legalCommands: LegalCommand[];
   canSave: true;
   canUndoBeforeConfirm?: boolean;
+  /** Set on the Crown's own decisions (src/engine/crown/policy.ts). */
+  crown?: CrownDecisionInfo;
+};
+
+/**
+ * How the Crown is deciding (Crown Handbook). `legalCommands` is cut down to what the Crown would
+ * do; `all` keeps every option the rules allow, for favours that change the Crown's mind.
+ */
+export type CrownDecisionInfo = {
+  all: LegalCommand[];
+  /** Why the Crown chose these options ("Bull: Seek Shares first."), shown and logged. */
+  reason: string;
+  /**
+   * The soloist or Player Button holder, who picks for the Crown among `legalCommands` when the
+   * Handbook leaves several options (rulebook p.46) or after a favour lets them choose.
+   */
+  chooser?: PlayerId;
+  /** The Crown is choosing between the two players: the Button passes once it has acted (p.44). */
+  passButton?: boolean;
 };
 
 export type GameCommand = {
@@ -118,6 +132,8 @@ export type GameLogEntry = {
    * (src/engine/projection.ts).
    */
   publicSummary?: string;
+  /** For the Crown's commands: why the Crown did it (CrownDecisionInfo.reason). */
+  crownReason?: string;
 };
 
 export type PieceStack = {
@@ -363,41 +379,69 @@ export type FirmTradeRecord = {
   income: number;
 };
 
+/** The 12 Crown promise cubes (rulebook p.43, p.46): a closed economy between the Crown and the players. */
 export type CrownPromiseState = {
   crownSupply: number;
   byHumanPlayer: Record<PlayerId, number>;
-  totalCubes: 12;
 };
 
+/** Two-player games: whoever the Crown favours when it must choose between the players (p.44). */
 export type PlayerButtonState = {
   holder: PlayerId;
-  nextTransferReason?: string;
 };
 
-export type CrownFavorWindow = {
-  id: CrownFavorWindowId;
-  timing: CrownFavorTiming;
-  actor?: PlayerId;
-  mandatory: boolean;
-  favorIds: string[];
+/**
+ * A favour bought earlier whose effect a later Crown decision reads (e.g. "one more die required").
+ * Dropped when the phase ends unless the area that set it clears it sooner.
+ */
+export type CrownFavorEffect = {
+  favorId: string;
+  by: PlayerId;
+  turn: number;
+  phase: PhaseId;
+  /** The decision it was bought during. */
+  decisionId: string;
+  /** The favour's chosen option, if it had any. */
+  option?: unknown;
+  /**
+   * "Choose for the Crown" favours: the commands (from CrownDecisionInfo.all) the buyer may pick
+   * from on decision `decisionId`.
+   */
+  choices?: LegalCommand[];
+};
+
+/** Crown setup card draft (rulebook pp.43-44), while it runs. */
+export type CrownSetupDraftState = {
+  /** Undrawn setup cards, top first. */
+  deck: string[];
+  /** The cards the picker has drawn and must choose from. */
+  hand: string[];
+  picker: PlayerId;
+  /** Picks still to make, in order. */
+  queue: PlayerId[];
+  kept: Record<PlayerId, string[]>;
 };
 
 export type CrownState = {
-  difficulty: "easy" | "normal" | "hard" | "expert";
-  climate: CrownClimateId;
+  difficulty: CrownDifficulty;
+  climate: CrownClimate;
+  /**
+   * The face-down AI deck, top first. The back of its top card is visible to everyone and breaks
+   * ties (p.45); the order below it is hidden.
+   */
   aiDeck: DeckState<CrownAiCardId>;
   faceupAiCard: CrownAiCardId;
   promiseCubes: CrownPromiseState;
   playerButton?: PlayerButtonState;
-  familyPiecePools: {
-    primaryColor: string;
-    secondaryColor: string;
-    primaryRemaining: number;
-    secondaryRemaining: number;
-  };
-  familyTreasury: number;
-  pendingFavorWindows: CrownFavorWindow[];
-  currentDecisionProfile?: CrownDecisionProfileId;
+  /** The Crown has two families' pieces (36); the UI shows the first colour (p.43). */
+  colors: [string, string];
+  favorEffects: CrownFavorEffect[];
+  setupDraft?: CrownSetupDraftState;
+  // Per-area Crown memory (src/engine/crown/areas/*). Each area adds its own optional fields here.
+  // --- early phases (London Season, Family, Firms, Hiring) ---
+  // --- offices (Chairman, Director of Trade / Governor General, Shipping, Military Affairs) ---
+  // --- presidencies (Presidency operations, Events in India, Revenue) ---
+  // --- parliament (Parliament, Upkeep, Final Scoring, negotiation) ---
 };
 
 /**
@@ -418,8 +462,6 @@ export type HiddenInfoState = {
   mode: "trustedTable" | "encryptedSecrets";
   privateCards: Record<PlayerId, CardInstance[]>;
   firmStrategySecrets: Record<FirmId, FirmStrategySecret>;
-  crownDeck?: DeckState;
-  crownBlackmail?: CardInstance[];
 };
 
 export type GameState = {

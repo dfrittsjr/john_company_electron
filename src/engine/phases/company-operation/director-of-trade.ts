@@ -1,8 +1,9 @@
 import { beginImmediateHire } from "../hiring";
 import { rollCheck } from "../../checks";
-import { PRESIDENCY_IDS, officeHolder } from "../../selectors";
+import { PRESIDENCY_IDS, familyAdjective, officeHolder } from "../../selectors";
 import type { GameState, LegalCommand, PendingDecision, PlayerId, PresidencyId, ShipState } from "../../types";
-import type { OfficeProgress, ShipDestination } from "../company-operation.state";
+import { isCrownGame } from "../../crown/state";
+import type { OfficeMove, OfficeProgress, ShipDestination } from "../company-operation.state";
 import {
   CHINA_OFFICE_ID,
   SEA_ZONE_LABEL,
@@ -149,7 +150,7 @@ function transferCommands(state: GameState): LegalCommand[] {
       for (const to of PRESIDENCY_IDS.filter((presidency) => presidency !== from)) {
         commands.push({
           type: "companyOperation.directorOfTrade",
-          label: `Move a ${playerName(state, playerId)} writer from ${from} to ${to}`,
+          label: `Move a ${familyAdjective(state, playerId)} writer from ${from} to ${to}`,
           payload: { action: "moveWriter", playerId, from, to } satisfies DirectorPayload,
         });
       }
@@ -194,6 +195,8 @@ export const directorStep: OperationStep = (state, command) => {
 
   switch (payload.action) {
     case "envoy": {
+      // Crown games count the envoys, so a favour can change "the next one" (Handbook p.6).
+      const counted = isCrownGame(state) ? { ...current, envoys: (current.envoys ?? 0) + 1 } : current;
       const paid = changeOfficeTreasury(state, OFFICE_ID, -payload.spend);
       const check = rollCheck(paid.rng, payload.spend, "companyOperation.specialEnvoy");
       const rolled: GameState = { ...paid, rng: check.rng };
@@ -202,7 +205,7 @@ export const directorStep: OperationStep = (state, command) => {
 
       if (check.outcome === "success") {
         return {
-          state: withCo(rolled, { current: { ...current, stage: "envoyEffect" } }),
+          state: withCo(rolled, { current: { ...counted, stage: "envoyEffect" } }),
           summary: `Special Envoy succeeded on ${payload.spend} ${payload.spend === 1 ? "die" : "dice"} [${check.values.join(", ")}].`,
           details,
           rngRolls,
@@ -218,7 +221,7 @@ export const directorStep: OperationStep = (state, command) => {
         };
       }
       return {
-        state: withCo(rolled, { current }),
+        state: withCo(rolled, { current: counted }),
         summary: `Special Envoy failed [${check.values.join(", ")}].`,
         details,
         rngRolls,
@@ -243,15 +246,23 @@ export const directorStep: OperationStep = (state, command) => {
     case "moveWriter":
       return {
         state: withCo(moveWriter(state, payload.playerId, payload.from, payload.to), {
-          current: { ...current, transfersMade: current.transfersMade + 1 },
+          current: {
+            ...current,
+            transfersMade: current.transfersMade + 1,
+            ...recordMove(state, current, { kind: "writer", playerId: payload.playerId, from: payload.from, to: payload.to }),
+          },
         }),
-        summary: `The Director of Trade moved a ${playerName(state, payload.playerId)} writer from ${payload.from} to ${payload.to}.`,
+        summary: `The Director of Trade moved a ${familyAdjective(state, payload.playerId)} writer from ${payload.from} to ${payload.to}.`,
       };
     case "moveShip": {
       const ship = state.company.ships.find((candidate) => candidate.id === payload.shipId)!;
       return {
         state: withCo(moveShip(state, payload.shipId, payload.to), {
-          current: { ...current, transfersMade: current.transfersMade + 1 },
+          current: {
+            ...current,
+            transfersMade: current.transfersMade + 1,
+            ...recordMove(state, current, { kind: "ship", shipId: payload.shipId, from: ship.location, to: payload.to }),
+          },
         }),
         summary: `The Director of Trade moved ${shipLabel(state, ship)} to ${SEA_ZONE_LABEL[payload.to]}.`,
       };
@@ -260,6 +271,11 @@ export const directorStep: OperationStep = (state, command) => {
       return { state: finishOffice(state, OFFICE_ID), summary: "The Director of Trade finished." };
   }
 };
+
+/** Crown games remember each transfer, so nobody (Crown or favour) undoes one (Handbook pp.6, 9). */
+function recordMove(state: GameState, current: DirectorProgress, move: OfficeMove): { moves?: OfficeMove[] } {
+  return isCrownGame(state) ? { moves: [...(current.moves ?? []), move] } : {};
+}
 
 export const CHINA_HIRE_RESUME = "companyOperation.chinaHire";
 
