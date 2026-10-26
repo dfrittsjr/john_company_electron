@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { crownFavorOffers, humanPlayerIds, playerCubes, type CrownFavorOffer, type GameState, type PlayerId } from "../engine";
+import { crownFavorOffers, crownFavorsOutOfReach, humanPlayerIds, playerCubes, type CrownFavorOffer, type GameState, type PlayerId } from "../engine";
 import { playerName } from "./view-model";
 
 type Props = {
@@ -57,7 +57,11 @@ export function CrownFavors({ game, waiting, only, onFavor, onGive, waitForFavor
   if (!game.crown || game.finalScoring.complete) return null;
   const humans = humanPlayerIds(game);
   const shown = only ? humans.filter((playerId) => playerId === only) : humans;
-  const offers = shown.map((playerId) => ({ playerId, offers: crownFavorOffers(game, playerId) }));
+  const offers = shown.map((playerId) => ({
+    playerId,
+    offers: crownFavorOffers(game, playerId),
+    outOfReach: crownFavorsOutOfReach(game, playerId),
+  }));
   const total = offers.reduce((sum, entry) => sum + entry.offers.length, 0);
   const twoPlayer = humans.length === 2;
 
@@ -69,13 +73,13 @@ export function CrownFavors({ game, waiting, only, onFavor, onGive, waitForFavor
           Wait for me when a favour could change the Crown's move
         </label>
       ) : null}
-      {offers.map(({ playerId, offers: list }) => (
+      {offers.map(({ playerId, offers: list, outOfReach }) => (
         <div key={playerId} className="favor-player">
           <h4>
             {playerName(game, playerId)} <small>{playerCubes(game, playerId)} cubes</small>
           </h4>
           {list.length === 0 ? (
-            <p className="status-note">No favours on offer.</p>
+            <p className="status-note">{outOfReach.length === 0 ? "No favours on offer." : "No favours you can pay for."}</p>
           ) : (
             <ul className="favor-list">
               {list.map((offer, index) => (
@@ -89,6 +93,18 @@ export function CrownFavors({ game, waiting, only, onFavor, onGive, waitForFavor
               ))}
             </ul>
           )}
+          {outOfReach.length > 0 ? (
+            // "You may never perform a favor you cannot fully pay" (p.46): shown, but not offered.
+            <ul className="favor-list favor-list-out" aria-label="Favours you can't pay for yet">
+              {outOfReach.map((offer, index) => (
+                <li key={`${offer.favorId}:${JSON.stringify(offer.option ?? null)}:${index}`}>
+                  <CubeCost cubes={offer.cubes} />
+                  <span className="favor-text">{offer.label}</span>
+                  <small className="favor-need">needs {-offer.cubes} cubes</small>
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </div>
       ))}
       {twoPlayer ? (

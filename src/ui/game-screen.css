@@ -1600,3 +1600,12 @@
   margin-bottom: 0.75rem;
   font-size: 0.9rem;
 }
+
+.favor-list-out li {
+  opacity: 0.6;
+}
+
+.favor-need {
+  white-space: nowrap;
+  color: #6c6155;
+}
