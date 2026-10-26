@@ -111,4 +111,16 @@ describe("New Crown game", () => {
     fireEvent.click(start);
     expect(screen.getByLabelText("The Crown")).toBeTruthy();
   });
+
+  test("a solo player's private choices show without passing the device", () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "New Game" }));
+    fireEvent.change(screen.getByLabelText("Player count"), { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+    // Drafting the setup cards is a private choice.
+    fireEvent.click(screen.getByRole("button", { name: /Draft the setup cards/ }));
+    expect(screen.getByText(/you drew three/)).toBeTruthy();
+    expect(screen.queryByText(/Pass the device/)).toBeNull();
+    expect(screen.getAllByRole("button", { name: /^Keep:/ })).toHaveLength(3);
+  });
 });

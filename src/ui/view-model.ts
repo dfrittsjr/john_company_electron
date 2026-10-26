@@ -243,9 +243,17 @@ export function groupLegalCommands(commands: LegalCommand[]): CommandGroup[] {
  * After a player acts, the player who must decide next if it is someone else; that player should
  * receive the save file. System decisions and the same player continuing need no handoff.
  */
+/** The one human in a solo game against the Crown: their private information is always on screen. */
+export function soloPlayer(game: GameState): PlayerId | null {
+  if (game.mode !== "soloCrown") return null;
+  return game.seatingOrder.find((playerId) => !game.players[playerId]?.isCrown) ?? null;
+}
+
 export function handoffTarget(after: GameState, actedBy: ActorId): PlayerId | null {
   const next = after.pendingDecision.actor;
   if (next === "system" || next === "simultaneous") return null;
+  // A solo game has nobody to pass the device to.
+  if (soloPlayer(after)) return null;
   if (after.pendingDecision.legalCommands.length === 0) return null;
   // The Crown acts through whoever chooses for it (the soloist or the Player Button holder).
   if (next === "crown" && after.players.crown?.isCrown) {

@@ -26,7 +26,7 @@ import { HandoffBanner } from "./HandoffBanner";
 import { copyText, openTextFile, saveTextFile, TEXT_FILE_TYPE } from "./platform/files";
 import { installFlexGapFallback } from "./platform/flex-gap-fallback";
 import { nextActorName, suggestedSaveName, suggestedSummaryName } from "./save-names";
-import { FAMILY_PALETTE, commandTargets, handoffTarget, humanize, phaseLabel, playerName } from "./view-model";
+import { FAMILY_PALETTE, commandTargets, handoffTarget, humanize, phaseLabel, playerName, soloPlayer } from "./view-model";
 
 type PlayerSetup = {
   id: string;
@@ -617,7 +617,7 @@ export function App() {
       mode="local"
       runCommand={runCommand}
       commandError={commandError}
-      revealedPlayer={revealedPlayer}
+      revealedPlayer={soloPlayer(game) ?? revealedPlayer}
       onRevealPlayer={setRevealedPlayer}
       undo={{ run: undo, blockedReason: undoBlocked ?? null }}
       boardResetKey={boardResetKey}
