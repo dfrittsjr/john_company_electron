@@ -458,9 +458,30 @@ export type FirmStrategySecret = {
   revealed?: boolean;
 };
 
+/**
+ * The setup card draft for 3-6 player games (rulebook p.5), while it runs: each player picks one
+ * card from the hand in front of them, then the hands pass left. Private until the draft ends.
+ */
+export type SetupDraftState = {
+  /** The setup deck being drafted (a key of `setupCardDecks`). */
+  deckId: string;
+  /** The hand in front of each player, still to pick from. */
+  hands: Record<PlayerId, string[]>;
+  /** What each player has picked so far, in order. */
+  picks: Record<PlayerId, string[]>;
+  /** The players drafting, in seat order; hands pass to the next one (left, clockwise). */
+  order: PlayerId[];
+  /** Players who have not yet picked from the hand in front of them this round, in order. */
+  queue: PlayerId[];
+  /** Extra cards left out of the draft (p.5). */
+  removed: string[];
+};
+
 export type HiddenInfoState = {
   mode: "trustedTable" | "encryptedSecrets";
   privateCards: Record<PlayerId, CardInstance[]>;
+  /** Optional: only while a setup card draft runs. */
+  setupDraft?: SetupDraftState;
   firmStrategySecrets: Record<FirmId, FirmStrategySecret>;
 };
 

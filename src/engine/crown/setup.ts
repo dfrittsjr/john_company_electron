@@ -68,7 +68,7 @@ function cardById(cardId: string): SetupCardDefinition {
 const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 const seaName = (zone: string) => zone.split("-").map(capitalize).join(" ");
 
-function describeEffect(effect: SetupCardEffect): string {
+export function describeEffect(effect: SetupCardEffect): string {
   switch (effect.type) {
     case "cash":
       return `£${effect.amount}`;

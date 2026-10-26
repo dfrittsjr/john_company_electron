@@ -239,6 +239,8 @@ export function App() {
     setSetup((current) => ({
       ...current,
       playerCount,
+      // The Crown's games choose how the cards are shared out themselves.
+      setupDistribution: playerCount < 3 ? "random" : current.setupDistribution,
       players: createPlayers(playerCount),
     }));
   }
@@ -262,7 +264,7 @@ export function App() {
         color: player.color,
       })),
       crownDifficulty: setup.crownDifficulty,
-      setupDistribution: "random",
+      setupDistribution: crownEnabled || setup.setupDistribution !== "draft" ? "random" : "draft",
       seed: `${setup.scenario}:${mode}:${setup.players.map((player) => player.name).join("|")}${crownEnabled ? `:${Date.now()}` : ""}`,
     });
 
@@ -538,14 +540,16 @@ export function App() {
                   }))
                 }
               >
-                <option value="draft" disabled>
-                  Draft (coming later)
+                <option value="draft" disabled={crownEnabled}>
+                  Draft
                 </option>
                 <option value="random">Random</option>
               </select>
               <p className="status-note">
-                Random setup is implemented for 1710 and Long 1710. Draft setup remains on the rules
-                backlog.
+                {setup.setupDistribution === "draft"
+                  ? "Each player picks one setup card from the hand in front of them and passes the rest left, until none remain (rulebook p.5). Picks are private, so with passed save files each pick needs a hand-off."
+                  : "Setup cards are dealt at random."}
+                {crownEnabled ? " Games with the Crown choose how the cards are shared out when they begin." : ""}
               </p>
             </label>
 
