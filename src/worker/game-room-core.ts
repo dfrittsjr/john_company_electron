@@ -10,16 +10,20 @@ import {
   identifiableFaceDownCards,
   isAnytimeCommandType,
   projectForViewer,
+  delegatedActorFor,
+  passOnCrownFavors,
+  resolveDecisionOption,
   resolveHiddenIds,
-  runAutomaticSteps,
-  systemDecisionDelegate,
+  runCrownSteps,
   undoBlockReason,
   type GameCommand,
   type GameState,
   type PlayerId,
 } from "../engine";
-import type { ScenarioId } from "../data/types";
+import type { CrownDifficulty, ScenarioId } from "../data/types";
 import {
+  CROWN_DIFFICULTIES,
+  CROWN_SCENARIOS,
   ONLINE_LIMITS,
   ONLINE_PAGE_PATH,
   PLAYABLE_SCENARIOS,
@@ -232,11 +236,15 @@ const HEX_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
 /** The family palette the hotseat setup uses (src/ui/view-model.ts FAMILY_PALETTE). */
 const DEFAULT_COLORS = ["#2563a8", "#c9971a", "#c2417d", "#2e7d4f", "#7a4fa0", "#3b3b3b"];
 
+const CROWN_DIFFICULTY_IDS = new Set<string>(CROWN_DIFFICULTIES.map((difficulty) => difficulty.id));
+
 type CreateInput = {
   scenario: ScenarioId;
   players: Array<{ name: string; color: string }>;
   creatorIndex: number;
   setupDistribution: "random" | "draft";
+  /** Set for one or two players: the game is against the Crown. */
+  crownDifficulty?: CrownDifficulty;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -251,6 +259,14 @@ function parseCreate(body: unknown): CreateInput | string {
   const players = body.players;
   if (!Array.isArray(players) || players.length < ONLINE_LIMITS.minPlayers || players.length > ONLINE_LIMITS.maxPlayers) {
     return `An online game needs ${ONLINE_LIMITS.minPlayers}-${ONLINE_LIMITS.maxPlayers} players.`;
+  }
+  // One or two players play against the Crown, which needs setup cards only 1710 and Long 1710 have.
+  const crown = players.length < ONLINE_LIMITS.minHotseatPlayers;
+  if (crown && !CROWN_SCENARIOS.includes(body.scenario as ScenarioId)) {
+    return "Games against the Crown (one or two players) are available in 1710 and Long 1710.";
+  }
+  if (body.crownDifficulty !== undefined && (typeof body.crownDifficulty !== "string" || !CROWN_DIFFICULTY_IDS.has(body.crownDifficulty))) {
+    return "crownDifficulty must be easy, normal, hard or expert.";
   }
   const parsed: CreateInput["players"] = [];
   for (const [index, player] of players.entries()) {
@@ -277,7 +293,13 @@ function parseCreate(body: unknown): CreateInput | string {
   if (body.setupDistribution !== undefined && body.setupDistribution !== "random" && body.setupDistribution !== "draft") {
     return 'setupDistribution must be "random" or "draft".';
   }
-  return { scenario: body.scenario as ScenarioId, players: parsed, creatorIndex, setupDistribution: body.setupDistribution ?? "random" };
+  return {
+    scenario: body.scenario as ScenarioId,
+    players: parsed,
+    creatorIndex,
+    setupDistribution: body.setupDistribution ?? "random",
+    ...(crown ? { crownDifficulty: (body.crownDifficulty as CrownDifficulty | undefined) ?? "normal" } : {}),
+  };
 }
 
 type CommandInput = CommandRequest["command"];
@@ -342,7 +364,9 @@ export class GameRoomCore {
 
     const at = this.timestamp();
     let state = createNewGame({
-      mode: "hotseat",
+      // One or two players play the Crown (rulebook pp.43-46); more is the ordinary table.
+      mode: parsed.players.length === 1 ? "soloCrown" : parsed.players.length === 2 ? "twoPlayerCrown" : "hotseat",
+      ...(parsed.crownDifficulty ? { crownDifficulty: parsed.crownDifficulty } : {}),
       scenario: parsed.scenario,
       gameId: input.gameId,
       seed: this.newSeed(),
@@ -350,7 +374,7 @@ export class GameRoomCore {
       setupDistribution: parsed.setupDistribution,
       players: parsed.players.map((player, index) => ({ id: `player-${index + 1}`, name: player.name, color: player.color })),
     });
-    const automatic = runAutomaticSteps(state, { now: at, idPrefix: "setup-auto" });
+    const automatic = runCrownSteps(state, { now: at, idPrefix: "setup-auto" });
     state = automatic.state;
 
     const creatorId = state.seatingOrder[parsed.creatorIndex];
@@ -379,10 +403,10 @@ export class GameRoomCore {
       const message = error instanceof SaveValidationError ? error.message : "The file is not a John Company save.";
       return fail(400, "INVALID_SAVE", message);
     }
-    if (state.mode !== "hotseat") return fail(400, "INVALID_SAVE", "Only hotseat games (3-6 players, no Crown) can be played online.");
+    if (state.mode !== "hotseat") return fail(400, "INVALID_SAVE", "Only hotseat games (3-6 players, no Crown) can be imported.");
     const humans = state.seatingOrder.filter((playerId) => state.players[playerId] && !state.players[playerId].isCrown);
-    if (humans.length < this.limits.minPlayers || humans.length > this.limits.maxPlayers) {
-      return fail(400, "INVALID_SAVE", `An online game needs ${this.limits.minPlayers}-${this.limits.maxPlayers} players.`);
+    if (humans.length < this.limits.minHotseatPlayers || humans.length > this.limits.maxPlayers) {
+      return fail(400, "INVALID_SAVE", `An imported game needs ${this.limits.minHotseatPlayers}-${this.limits.maxPlayers} players.`);
     }
     const creatorId = body.creatorPlayerId ?? humans[0];
     if (typeof creatorId !== "string" || !humans.includes(creatorId)) {
@@ -392,7 +416,7 @@ export class GameRoomCore {
     // Whoever had the file knows its random seed; a fresh one keeps future dice unpredictable.
     const at = this.timestamp();
     state = this.reseeded(state);
-    const automatic = runAutomaticSteps(state, { now: at, idPrefix: "import-auto" });
+    const automatic = runCrownSteps(state, { now: at, idPrefix: "import-auto" });
     state = automatic.state;
 
     const { seats, tokens } = await this.issueSeats(state, creatorId);
@@ -545,8 +569,9 @@ export class GameRoomCore {
     const playerId = seat.playerId;
     const viewer: Viewer = { kind: "seat", playerId };
     const anytime = isAnytimeCommandType(parsed.type);
-    // A multi-option "system" decision is answered by its named seat on the system's behalf.
-    const actorId = !anytime && state.pendingDecision.actor === "system" && systemDecisionDelegate(state) === playerId ? "system" : playerId;
+    // A multi-option "system" decision is answered by its named seat on the system's behalf; so is
+    // the Crown's, by its chooser, or by any seat while it waits for favours (letting it act).
+    const actorId = (!anytime && delegatedActorFor(state, playerId)) || playerId;
     const at = this.timestamp();
     const command: GameCommand = {
       id: parsed.id,
@@ -554,7 +579,7 @@ export class GameRoomCore {
       actorId,
       decisionId: parsed.decisionId,
       type: parsed.type,
-      payload: resolveHiddenIds(state, viewer, parsed.payload),
+      payload: actorId === "crown" ? resolveDecisionOption(state, viewer, parsed.type, parsed.payload) : resolveHiddenIds(state, viewer, parsed.payload),
       clientTimestamp: at,
     };
 
@@ -567,7 +592,9 @@ export class GameRoomCore {
       });
     }
 
-    const automatic = runAutomaticSteps(result.state, { now: at, idPrefix: `${parsed.id}:auto` });
+    // Letting the Crown act passes on the favours that were on offer, so it won't wait for them again.
+    const afterCommand = actorId === "crown" ? passOnCrownFavors(state, result.state) : result.state;
+    const automatic = runCrownSteps(afterCommand, { now: at, idPrefix: `${parsed.id}:auto` });
     const version = meta.version + 1;
     const history = [...meta.history, { seatId: seat.id, commandId: parsed.id, beforeVersion: meta.version, afterVersion: version }].slice(
       -this.limits.undoDepth,
@@ -773,5 +800,5 @@ export class GameRoomCore {
 }
 
 function automaticRecord(version: number, command: GameCommand, at: string): CommandRecord {
-  return { version, seatId: null, kind: "automatic", commandId: command.id, type: command.type, actorId: "system", payload: command.payload, at };
+  return { version, seatId: null, kind: "automatic", commandId: command.id, type: command.type, actorId: command.actorId, payload: command.payload, at };
 }

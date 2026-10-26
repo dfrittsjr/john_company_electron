@@ -63,7 +63,7 @@ projected view. Placeholders all start with `hidden:` (`isHiddenId`).
 | Blackmail in the London Season discards | `hidden:blackmail`, with its instance id hidden in the log too. It goes there unseen, and the engine already logs it as "a face-down blackmail card". |
 | `hidden.privateCards` | Only the viewer's own. |
 | Firm strategy secrets | Others' unrevealed entries keep only `firmId` and `committedBy`. |
-| Crown internals | `hidden.crownDeck`, `hidden.crownBlackmail` and `crown.currentDecisionProfile` removed. |
+| Crown internals | The Crown's state is public (board, climate, cubes, favours); see "Crown games" for what is hidden. |
 | Who holds a face-down card | Company Fraud and Scandal candidates, Envoy offers and Hiring Preference offers cut to the viewer; a pending Connection interrupt or Scandal pick is dropped for others. |
 | Legal commands | Only for the player who must decide (including interrupted decisions saved in negotiation). Spectators never get any. |
 | Decisions that exist only because the actor holds a face-down card | Shown to others with step `hidden:private`, actor `hidden:player`, a neutral id and the prompt "A player is making a private decision." The steps are `CARD_REVEALING_STEPS` in `projection.ts`. |
@@ -81,7 +81,7 @@ card in a deal. The server maps it to the real card (`resolveHiddenIds`).
 | Route | Auth | Body → response | Notes |
 | --- | --- | --- | --- |
 | `GET /api/config` | none | → `ConfigResponse` `{ turnstileSiteKey }` | For rendering the Turnstile widget. |
-| `POST /api/games` | Turnstile | `CreateGameRequest` → `CreateGameResponse` | 3-6 players, hotseat rules, random setup. |
+| `POST /api/games` | Turnstile | `CreateGameRequest` → `CreateGameResponse` | 3-6 players: hotseat rules, random setup. 1-2 players: a solo or two-player game against the Crown (`crownDifficulty`; 1710 and Long 1710 only). See "Crown games". |
 | `POST /api/games/import` | Turnstile | `ImportGameRequest` → `ImportGameResponse` | A hotseat `.joco`, verified by `deserializeSave`. |
 | `POST /api/games/:id/join` | Turnstile + token in body | `JoinRequest` → `JoinResponse` | Says which seat a link is; records the first join. |
 | `GET /api/games/:id/view` (also `GET /api/games/:id`) | Bearer | → `GameView` | Counts against the rate limit. |
@@ -136,6 +136,34 @@ authenticates.
 - **Deploys:** a deploy disconnects every socket. Clients should reconnect with backoff and say
   hello again.
 
+## Crown games
+
+One or two players make a solo or two-player game against the Crown (rulebook pp.43-46,
+`phases/crown.md`). Seats are the human players only; the Crown has none.
+
+- **The server plays the Crown.** After every accepted command, and at creation and import, the
+  room runs `runCrownSteps`: the Crown's single-option steps and the automatic "system" steps. It
+  stops when a player must act, when someone must choose for the Crown, or when a favour that the
+  players haven't passed on is on offer. The first decision belongs to the first player: how the
+  setup cards are shared out (draft or random deal).
+- **Who may answer a Crown decision** (`delegatedActorFor` in `engine/automatic.ts`; commands reach
+  the engine as actor `"crown"`):
+  - with several options, only `pendingDecision.crown.chooser` (the soloist or Player Button
+    holder, p.46), who is the only seat offered the options. Anyone else gets `ACTOR_NOT_ALLOWED`;
+  - when it only waits for favours ("Let the Crown act"), any human seat; each seat is offered the
+    Crown's one option. Pressing it passes on the favours that were on offer.
+  - `crown.favor` and `crown.giveCubes` are anytime commands and always act as the sending seat.
+- **Passed-on favours** are kept in the game (`state.crown.passedFavors`, keys from
+  `crownPausingFavorKeys`, only this turn's), so they survive restarts and undo.
+- **The per-browser "wait for favours" switch is local-only.** Online the Crown waits for everyone
+  the same way, since one table shares one game.
+- **Views** show the Crown's board, climate, cubes, and the top AI card's back. The rest of the AI
+  deck, the undrawn setup cards of the Crown draft, the other player's draft hand and the cards set
+  aside unseen are placeholders. The Crown's face-down blackmail looks like any player's. A seat
+  that picks or presses for the Crown on a decision mentioning cards it can't identify (the Crown's
+  prestige pick from the London Season Display) sends the placeholder back; the server maps it to
+  the option at the same place in the real list (`resolveDecisionOption`).
+
 ## Chat
 
 Table talk for negotiating; binding deals still go through Deals & Cards.
@@ -184,7 +212,7 @@ in between. The server keeps the last 20 commands' snapshots.
 | --- | --- |
 | Command, undo and join bodies, and WebSocket messages | 32 KB |
 | Create and import bodies (the `.joco` text included) | 8 MB |
-| Players | 3-6 (hotseat only; Crown modes stay file-only) |
+| Players | 1-6 (1-2 play the Crown; an imported save must be a hotseat game of 3-6) |
 | Player name | 1-40 characters, no control characters, unique |
 | Rate limit | Per seat: 60-request burst, refilled at 2 per second. Covers views, commands, undo, chat and export, but not WebSocket pushes or pings. Kept in memory, so it resets when the object restarts. |
 | Chat | 500 characters per message; views carry the newest 100 |

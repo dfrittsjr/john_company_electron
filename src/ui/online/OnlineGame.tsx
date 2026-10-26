@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { crownAwaitsLetGo } from "../../engine";
 import { HIDDEN_PLAYER_ID, type ChatMessage, type GameView } from "../../online/protocol";
 import { GameScreen } from "../GameScreen";
 import { saveTextFile } from "../platform/files";
@@ -41,6 +42,9 @@ export function isMyDecision(view: GameView): boolean {
   if (view.viewer.kind !== "seat" || view.state.finalScoring.complete) return false;
   const { actor, legalCommands } = view.state.pendingDecision;
   if (actor === view.viewer.playerId) return true;
+  // Only the chooser is offered a Crown decision that needs picking for it. While the Crown just
+  // waits to be let go (favours on offer), both players are offered it but neither is "up".
+  if (actor === "crown") return (legalCommands?.length ?? 0) > 0 && !crownAwaitsLetGo(view.state);
   return actor === "simultaneous" && (legalCommands?.length ?? 0) > 0;
 }
 
@@ -49,6 +53,10 @@ function waitingText(view: GameView): string {
   const actor = decision.actor;
   if (actor === HIDDEN_PLAYER_ID) return "Waiting for a player's private decision.";
   let who: string;
+  if (actor === "crown") {
+    const chooser = decision.crown?.chooser;
+    return chooser ? `Waiting for ${playerName(view.state, chooser)} to choose for the Crown: ${decision.prompt}` : `The Crown: ${decision.prompt}`;
+  }
   if (actor === "system") who = "the table";
   else if (actor === "simultaneous") who = "the other players";
   else who = playerName(view.state, actor);

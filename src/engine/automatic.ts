@@ -42,9 +42,63 @@ export function systemDecisionDelegate(state: GameState): PlayerId | undefined {
   return state.seatingOrder.find((playerId) => human(playerId));
 }
 
-/** Who must act on the pending decision: its actor, or the delegate of a multi-option "system" decision. */
+/**
+ * The player who picks for the Crown on its pending decision (`pendingDecision.crown.chooser`: the
+ * soloist or Player Button holder, rulebook p.46), or undefined when it is not waiting for one.
+ */
+export function crownChooserOf(state: GameState): PlayerId | undefined {
+  const decision = state.pendingDecision;
+  if (!state.crown || decision.actor !== CROWN_PLAYER_ID || decision.legalCommands.length === 0) return undefined;
+  const chooser = decision.crown?.chooser;
+  return chooser && humanPlayerIds(state).includes(chooser) ? chooser : undefined;
+}
+
+/**
+ * The Crown has a move ready and nobody has to choose for it: it is only waiting for a favour to
+ * be bought or passed on ("Let the Crown act"). Any human seat may press that.
+ */
+export function crownAwaitsLetGo(state: GameState): boolean {
+  const decision = state.pendingDecision;
+  return Boolean(state.crown) && decision.actor === CROWN_PLAYER_ID && decision.legalCommands.length > 0 && !crownChooserOf(state);
+}
+
+/**
+ * Who must act on the pending decision: its actor, the delegate of a multi-option "system"
+ * decision, or the chooser of a Crown decision with several options. (A Crown decision that only
+ * waits for favours may be answered by any human; see delegatedActorFor.)
+ */
 export function effectiveDecisionActor(state: GameState): PendingDecision["actor"] {
-  return systemDecisionDelegate(state) ?? state.pendingDecision.actor;
+  return systemDecisionDelegate(state) ?? crownChooserOf(state) ?? state.pendingDecision.actor;
+}
+
+/**
+ * The actor the engine receives a seat's command as, when the seat answers on someone else's
+ * behalf: "system" for the named delegate of a multi-option system decision, "crown" for the
+ * Crown's chooser, or for any human while the Crown waits on favours. Undefined: the seat acts as
+ * itself (and the engine refuses it if the decision is not its own).
+ */
+export function delegatedActorFor(state: GameState, playerId: PlayerId): "system" | typeof CROWN_PLAYER_ID | undefined {
+  const decision = state.pendingDecision;
+  if (decision.actor === "system" && systemDecisionDelegate(state) === playerId) return "system";
+  if (decision.actor !== CROWN_PLAYER_ID || !humanPlayerIds(state).includes(playerId)) return undefined;
+  return crownChooserOf(state) === playerId || crownAwaitsLetGo(state) ? CROWN_PLAYER_ID : undefined;
+}
+
+/** Whether this player may answer the pending decision (online: whether they get its options). */
+export function playerMayAnswer(state: GameState, playerId: PlayerId): boolean {
+  const actor = state.pendingDecision.actor;
+  return actor === playerId || actor === "simultaneous" || delegatedActorFor(state, playerId) !== undefined;
+}
+
+/**
+ * Remembers the favours on offer before a Crown command as passed on, in the game itself so the
+ * server's record survives restarts and undo (the local app keeps its own set).
+ */
+export function passOnCrownFavors(before: GameState, after: GameState): GameState {
+  if (!after.crown) return after;
+  const turn = `${after.turn}|`;
+  const keys = [...new Set([...(after.crown.passedFavors ?? []), ...crownPausingFavorKeys(before)])].filter((key) => key.startsWith(turn));
+  return { ...after, crown: { ...after.crown, passedFavors: keys } };
 }
 
 export type AutomaticStepsResult = {
@@ -174,8 +228,10 @@ export function runCrownSteps(
 
   for (;;) {
     const decision = current.pendingDecision;
+    const passed = current.crown?.passedFavors;
+    const seenFavors = passed?.length ? new Set([...(options.seenFavors ?? []), ...passed]) : options.seenFavors;
     const legal =
-      crownAutoCommand(current, { ignoreFavors: options.ignoreFavors, seenFavors: options.seenFavors }) ??
+      crownAutoCommand(current, { ignoreFavors: options.ignoreFavors, seenFavors }) ??
       (includeSystem && isAutomaticDecision(decision) ? decision.legalCommands[0] : undefined);
     if (!legal) break;
     if (commands.length >= maxSteps) {

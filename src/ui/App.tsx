@@ -18,7 +18,7 @@ import {
   type ScenarioId,
   type ValidationIssue,
 } from "../data";
-import { PLAYABLE_SCENARIOS } from "../online/protocol";
+import { CROWN_DIFFICULTIES, PLAYABLE_SCENARIOS } from "../online/protocol";
 import { deserializeGameState, serializeSave } from "../save";
 import "./game-screen.css";
 import { GameScreen } from "./GameScreen";
@@ -58,13 +58,6 @@ function createPlayers(count: number): PlayerSetup[] {
     color: FAMILY_PALETTE[index],
   }));
 }
-
-const CROWN_DIFFICULTIES: Array<{ id: CrownDifficulty; name: string; description: string }> = [
-  { id: "easy", name: "Easy", description: "Each player also holds 5 promise cards, which can be traded to the Crown for promise cubes." },
-  { id: "normal", name: "Normal", description: "The standard game: the cubes are split evenly between the Crown and the players." },
-  { id: "hard", name: "Hard", description: "As Normal, but the Crown starts with 4 more promise cubes, taken from the players." },
-  { id: "expert", name: "Expert", description: "As Hard, and the Crown also gets 3 extra setup cards." },
-];
 
 function modeForPlayerCount(playerCount: number): PlayMode {
   if (playerCount === 1) return "soloCrown";
@@ -523,8 +516,7 @@ export function App() {
                   ))}
                 </fieldset>
                 <p className="status-note">
-                  The Crown plays itself from the Crown Handbook. Crown games are played from a save file (no online play), in 1710 or
-                  Long 1710.
+                  The Crown plays itself from the Crown Handbook, in 1710 or Long 1710. You can also play it online.
                 </p>
               </div>
             ) : null}

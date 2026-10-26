@@ -190,8 +190,8 @@ Crown board's favours and the rulebook's pp.43-46 are in `src/data/crown.ts` and
 positions checked on the card images). The Crown is built on branch `crown`: the core in
 `src/engine/crown/`, the behaviour of every phase and all the Handbook's favours in its four area
 modules, and the UI (Crown board, favours, decisions, the Handbook in the rules). See
-docs/phases/crown.md. Crown games are file-only, in 1710 and Long 1710 (the only transcribed setup
-cards).
+docs/phases/crown.md. Crown games run in 1710 and Long 1710 (the only transcribed setup
+cards), from files or online (docs/online/server.md, "Crown games").
 
 **Size.** XL, comparable to Deregulation. It's only worth it if you'll play with one or two people.
 
