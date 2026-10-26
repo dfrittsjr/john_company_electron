@@ -43,7 +43,8 @@ export function crownFavorOffers(state: GameState, playerId: PlayerId): CrownFav
       available = false;
     }
     if (!available) continue;
-    const text = printedFavor(definition.printed).text;
+    // The Crown's family board favours stay on offer from Firms to Revenue; say where they come from.
+    const text = `${"board" in definition.printed ? "Crown board: " : ""}${printedFavor(definition.printed).text}`;
     const options = definition.options ? definition.options(state, playerId) : [{ label: "", option: undefined }];
     for (const { label, option } of options) {
       const cubes = favorCost(state, definition, playerId, option);

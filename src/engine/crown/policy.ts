@@ -38,7 +38,11 @@ function decideForCrown(
     const commands = sameCommands(bought.choices, all);
     if (commands.length > 0) {
       const name = state.players[bought.by]?.name ?? bought.by;
-      return { commands, info: { all, reason: `${name} chooses for the Crown (favour).`, chooser: bought.by } };
+      // With one option left there is nothing to choose: the Crown just does it.
+      return {
+        commands,
+        info: { all, reason: `${name} chose this for the Crown (favour).`, ...(commands.length > 1 ? { chooser: bought.by } : {}) },
+      };
     }
   }
 

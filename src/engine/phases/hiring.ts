@@ -724,7 +724,9 @@ function createNepotismConsentDecision(state: GameState): PendingDecision {
       {
         type: "hiring.resolveNepotismConsent",
         label: "Consent",
-        description: `Allow ${candidate.name} to fill ${office} with their own family member.`,
+        description: mustConsent
+          ? `You must consent while the Crown holds 2 or more promise cubes, and you gain 2 (Crown Handbook p.3).`
+          : `Allow ${candidate.name} to fill ${office} with their own family member.`,
         payload: { accepted: true, hire: nepotism.hire } satisfies ResolveNepotismConsentPayload,
       },
       ...(mustConsent

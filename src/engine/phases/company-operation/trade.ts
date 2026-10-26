@@ -221,7 +221,9 @@ export function tradeDecision(state: GameState, presidency: PresidencyId, activi
 
   if (activity.stage === "declare") {
     const penalty = activity.declared.length - 1;
-    prompt = `Trade from ${presidency}: declared ${activity.declared.join(", ")} (−${penalty} ${penalty === 1 ? "die" : "dice"}). Add regions or roll (treasury £${treasury}).`;
+    prompt =
+      `Trade from ${presidency}: declared ${activity.declared.join(", ")} (−${penalty} ${penalty === 1 ? "die" : "dice"}). Add regions or roll (treasury £${treasury}). ` +
+      "The lowest die decides: 1-2 succeeds, 3-4 fails (you may try again), 5-6 is a catastrophe (p.17).";
     for (let spend = penalty + 1; spend <= treasury; spend += 1) {
       commands.push({
         type: "companyOperation.trade",
