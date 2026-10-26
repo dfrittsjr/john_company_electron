@@ -149,12 +149,10 @@ export const shippingStep: OperationStep = (state, command) => {
         ),
       },
     };
-    summary = `The Manager of Shipping fitted the ${ship.shipyardCardId} ship into ${SEA_ZONE_LABEL[payload.to]} (£${fitCost(state)}).`;
+    summary = `The Manager of Shipping fitted the ${shipyardName(ship.shipyardCardId)} ship into ${SEA_ZONE_LABEL[payload.to]} (£${fitCost(state)}).`;
+    // The cube the owner pays has its own log entry.
     const charge = crownFitsPlayerShip(next, command, ship.shipyardCardId);
-    if (charge) {
-      next = charge.state;
-      summary += ` ${charge.note}`;
-    }
+    if (charge) next = charge.state;
   } else {
     const cost = payload.action === "lease" ? LEASE_COST : COMPANY_SHIP_COST;
     next = addCompanyShip(changeOfficeTreasury(state, OFFICE_ID, -cost), payload.to, payload.action === "lease" ? "extra" : "company");
