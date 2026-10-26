@@ -55,11 +55,16 @@ function decideForCrown(
 
   const commands = sameCommands(choice.commands, all);
   if (commands.length === 0) return free(`The Crown's rule found none of the options legal (${choice.reason}), so you choose for the Crown.`);
+  // Say when the Player Button decided it, since the Button then moves (p.44).
+  const reason =
+    choice.passButton && !/Button/.test(choice.reason)
+      ? `${choice.reason} Between the two players it takes the Player Button holder, and the Button passes (p.44).`
+      : choice.reason;
   return {
     commands,
     info: {
       all,
-      reason: choice.reason,
+      reason,
       ...(commands.length > 1 ? { chooser } : {}),
       ...(choice.passButton ? { passButton: true } : {}),
     },

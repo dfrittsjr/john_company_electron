@@ -103,7 +103,10 @@ export function chairmanDecision(state: GameState): PendingDecision {
     commands.unshift({
       type: "companyOperation.chairman",
       label: "Finish as Chairman",
-      description: "The whole Company Balance has been allocated.",
+      description:
+        isCrownGame(state) && chairmanHolder(state) !== CROWN_PLAYER_ID
+          ? "The whole Company Balance has been allocated. You pay the Crown 1 promise cube, if you have one, and a new AI card sets its climate (Crown Handbook p.4)."
+          : "The whole Company Balance has been allocated.",
       payload: { action: "finish" } satisfies ChairmanPayload,
     });
   }
