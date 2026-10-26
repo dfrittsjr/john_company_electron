@@ -209,6 +209,11 @@ export function shipyardOwner(state: GameState, shipyardCardId: string): PlayerI
   )?.id;
 }
 
+/** A shipyard's printed name ("Atlas"), for prompts; its card id if unknown. */
+export function shipyardName(shipyardCardId: string | undefined): string {
+  return (shipyardCardId && enterpriseCardById.get(shipyardCardId)?.label) || shipyardCardId || "player";
+}
+
 export function shipForShipyard(state: GameState, shipyardCardId: string): ShipState | undefined {
   return state.company.ships.find((ship) => ship.kind === "player" && ship.shipyardCardId === shipyardCardId);
 }

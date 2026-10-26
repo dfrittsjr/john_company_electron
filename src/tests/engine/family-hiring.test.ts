@@ -331,6 +331,9 @@ describe("Family phase (pp.13-14)", () => {
 
       expect(state.company.debt).toBe(0);
       expect(playerCourtShares(state, BLUE)).toBe(1);
+      expect(state.log.find((entry) => entry.type === "family.newCompanyShares")?.summary).toBe(
+        "New Company shares (p.14): 1 Stock Exchange piece (Blue) became Company shares, and Debt fell from 1 to 0.",
+      );
       expect(state.company.stockExchange.map((slot) => slot.share?.owner)).toEqual([
         undefined,
         undefined,

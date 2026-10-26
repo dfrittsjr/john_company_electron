@@ -133,7 +133,11 @@ export function tradeUnavailableReason(state: GameState, presidency: PresidencyI
   if ((coState(state).tradedPresidencies ?? []).includes(presidency)) return "this Presidency has already traded this turn (p.20)";
   const port = homePort(state, presidency);
   if (!port || port.closed) {
-    return `its home port (the £${port?.value ?? "?"} order in ${presidency}) is closed; the Director of Trade can reopen it with a Special Envoy (p.18)`;
+    // The Governor General has no Special Envoy (p.26); a successful Deploy still opens a region's orders (p.23).
+    const reopen = state.company.governorGeneralInPlay
+      ? "with the Governor General in play there is no Special Envoy, but a successful Deploy there opens its orders (p.23)"
+      : "the Director of Trade can reopen it with a Special Envoy (p.18)";
+    return `its home port (the £${port?.value ?? "?"} order in ${presidency}) is closed; ${reopen}`;
   }
   if (!isOrderAvailable(port)) return `its home port (the £${port.value} order in ${presidency}) is already filled this turn`;
   if (shipsInPresidencyZone(state, presidency) === 0) {

@@ -212,7 +212,7 @@ function greedyScore(state: GameState, label: string): number {
     // About four dice is a good chance of success; treasuries carry over to the next turn.
     [/^Spend .* and roll/, 20 + (amount <= 4 ? amount : 8 - amount)],
     [/^Place a .* writer on|^Fill .* filled-order token/, 15],
-    [/^Fit the shipyard/, 15],
+    [/^Fit the .* ship/, 15],
     [/^Buy a Company ship/, 12],
     [/^Give all .* to Presidency/, 12],
     [/^Give all .* to Manager of Shipping/, 10],
