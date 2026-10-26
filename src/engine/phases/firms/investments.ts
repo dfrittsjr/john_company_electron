@@ -18,7 +18,7 @@ import {
   withFirm,
   type FirmInvestmentSource,
 } from "../../firms";
-import { primeMinisterOrder, shipyardOwner } from "../../selectors";
+import { primeMinisterOrder, shipyardName, shipyardOwner } from "../../selectors";
 import type { FirmId, GameState, LegalCommand, PendingDecision, PlayerId } from "../../types";
 import {
   appendLog,
@@ -193,7 +193,7 @@ function buyableShips(state: GameState): ShipOption[] {
 function shipName(state: GameState, shipId: string): string {
   const ship = state.company.ships.find((candidate) => candidate.id === shipId);
   const owner = ship ? shipyardOwner(state, ship.shipyardCardId ?? "") : undefined;
-  return `the ${ship?.shipyardCardId ?? "player"} ship${owner ? ` (${nameOf(state, owner)})` : ""}`;
+  return `the ${shipyardName(ship?.shipyardCardId)} ship${owner ? ` (${nameOf(state, owner)})` : ""}`;
 }
 
 /** Every legal command for this player's turn, the pass last. At least the pass. */
@@ -237,7 +237,7 @@ export function investmentCommands(state: GameState, playerId: PlayerId): LegalC
       commands.push({
         type: "firms.fitShip",
         label: `Fit ${shipName(state, ship.shipId)} to ${firmName(state, mine)} for £${ship.cost}`,
-        description: ship.owner === playerId ? "Your own shipyard." : `Needs ${nameOf(state, ship.owner)}'s consent (p.39).`,
+        description: `Paid from ${firmName(state, mine)}'s London treasury (£${mine.londonTreasury}). ${ship.owner === playerId ? "Your own shipyard." : `Needs ${nameOf(state, ship.owner)}'s consent (p.39).`}`,
         payload: { shipId: ship.shipId },
       });
     }

@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import type { CreateGameResponse, StoredSeat } from "../../online/protocol";
-import { ONLINE_PAGE_PATH, PLAYABLE_SCENARIOS } from "../../online/protocol";
-import type { ScenarioId } from "../../data";
+import { CROWN_DIFFICULTIES, CROWN_SCENARIOS, ONLINE_PAGE_PATH, PLAYABLE_SCENARIOS } from "../../online/protocol";
+import type { CrownDifficulty, ScenarioId } from "../../data";
 import { openTextFile } from "../platform/files";
 import { FAMILY_PALETTE } from "../view-model";
 import { createGame, describeError, fetchView, importGame } from "./api";
+import { isMyDecision } from "./OnlineGame";
 import { loadStoredSeats, removeStoredSeat } from "./storage";
 import { Turnstile } from "./Turnstile";
 import "./online.css";
@@ -89,11 +90,17 @@ export function LinksScreen({ result, onDone }: { result: CreateGameResponse; on
 function StartOnline({ onCreated }: { onCreated: (result: CreateGameResponse) => void }) {
   const [scenario, setScenario] = useState<ScenarioId>("1710");
   const [count, setCount] = useState(4);
+  const [draft, setDraft] = useState(false);
+  const [difficulty, setDifficulty] = useState<CrownDifficulty>("normal");
   const [names, setNames] = useState<string[]>(["", "", "", "", "", ""]);
   const [token, setToken] = useState<string | null>(null);
   const [resetSignal, setResetSignal] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // One or two players play against the Crown (rulebook pp.43-46), in the scenarios it has setup cards for.
+  const crown = count <= 2;
+  const scenarioChoices = PLAYABLE_SCENARIOS.filter((option) => !crown || CROWN_SCENARIOS.includes(option.id));
 
   async function submit() {
     if (!token) return;
@@ -107,6 +114,9 @@ function StartOnline({ onCreated }: { onCreated: (result: CreateGameResponse) =>
           color: FAMILY_PALETTE[index],
         })),
         turnstileToken: token,
+        // Crown games share out the setup cards in their own way when they begin.
+        ...(draft && !crown ? { setupDistribution: "draft" as const } : {}),
+        ...(crown ? { crownDifficulty: difficulty } : {}),
       });
       onCreated(result);
     } catch (reason) {
@@ -123,7 +133,7 @@ function StartOnline({ onCreated }: { onCreated: (result: CreateGameResponse) =>
       <label className="field">
         <span>Scenario</span>
         <select value={scenario} onChange={(event) => setScenario(event.target.value as ScenarioId)} aria-label="Scenario">
-          {PLAYABLE_SCENARIOS.map((option) => (
+          {scenarioChoices.map((option) => (
             <option key={option.id} value={option.id}>
               {option.name}
             </option>
@@ -133,14 +143,54 @@ function StartOnline({ onCreated }: { onCreated: (result: CreateGameResponse) =>
       </label>
       <label className="field">
         <span>Players</span>
-        <select value={count} onChange={(event) => setCount(Number(event.target.value))} aria-label="Player count">
-          {[3, 4, 5, 6].map((value) => (
+        <select
+          value={count}
+          onChange={(event) => {
+            const next = Number(event.target.value);
+            setCount(next);
+            // The Crown has no setup cards for the other scenarios.
+            if (next <= 2 && !CROWN_SCENARIOS.includes(scenario)) setScenario(CROWN_SCENARIOS[0]);
+          }}
+          aria-label="Player count"
+        >
+          {[1, 2, 3, 4, 5, 6].map((value) => (
             <option key={value} value={value}>
               {value}
+              {value <= 2 ? " with the Crown" : ""}
             </option>
           ))}
         </select>
       </label>
+      {crown ? null : (
+        <label className="field">
+          <span>Setup cards</span>
+          <select value={draft ? "draft" : "random"} onChange={(event) => setDraft(event.target.value === "draft")} aria-label="Setup cards">
+            <option value="random">Dealt at random</option>
+            <option value="draft">Drafted (pick one, pass the rest left)</option>
+          </select>
+          {draft ? (
+            <small className="status-note">Each player picks their setup cards in turn from their own seat; nobody sees another player&apos;s hand.</small>
+          ) : null}
+        </label>
+      )}
+      {crown ? (
+        <fieldset className="difficulty-list">
+          <legend>Crown difficulty</legend>
+          {CROWN_DIFFICULTIES.map((option) => (
+            <label key={option.id} className="scenario-option">
+              <input type="radio" name="crown-difficulty" checked={difficulty === option.id} onChange={() => setDifficulty(option.id)} />
+              <span>
+                <strong>{option.name}</strong>
+                <small>{option.description}</small>
+              </span>
+            </label>
+          ))}
+          <p className="status-note">
+            The Crown plays itself from the Crown Handbook, and the server plays its moves.{" "}
+            {count === 1 ? "You play alone against it." : "The two of you play against it; whoever holds the Player Button chooses for it when the rules leave a choice."}
+          </p>
+        </fieldset>
+      ) : null}
       <div className="player-list">
         {Array.from({ length: count }, (_, index) => (
           <label key={index} className="player-row">
@@ -233,14 +283,13 @@ function MyGames() {
       fetchView(seat.gameId, seat.token)
         .then((view) => {
           if (cancelled) return;
-          const actor = view.state.pendingDecision.actor;
           const finished = Boolean(view.state.finalScoring.complete);
           setSummaries((current) => ({
             ...current,
             [seat.gameId + seat.token]: {
               turn: view.state.turn,
               finished,
-              yourTurn: !finished && view.viewer.kind === "seat" && actor === view.viewer.playerId,
+              yourTurn: !finished && isMyDecision(view),
             },
           }));
         })

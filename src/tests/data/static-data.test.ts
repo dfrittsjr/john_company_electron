@@ -51,11 +51,13 @@ describe("scenario starter data", () => {
         }),
         expect.objectContaining({
           code: "scenario.setup-section-missing",
-          path: "scenarios.1758.setup.mapSetup",
-          message: expect.stringContaining("1758"),
+          path: "scenarios.long-1710.setup.deregulation",
+          message: expect.stringContaining("long-1710"),
         }),
       ]),
     );
+    // 1758 and 1813 are fully encoded: map, setup deck, laws and deregulation.
+    expect(result.issues.filter((issue) => /scenarios\.(1758|1813)\./.test(issue.path))).toEqual([]);
   });
 });
 

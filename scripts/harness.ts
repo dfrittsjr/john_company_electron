@@ -212,7 +212,7 @@ function greedyScore(state: GameState, label: string): number {
     // About four dice is a good chance of success; treasuries carry over to the next turn.
     [/^Spend .* and roll/, 20 + (amount <= 4 ? amount : 8 - amount)],
     [/^Place a .* writer on|^Fill .* filled-order token/, 15],
-    [/^Fit the shipyard/, 15],
+    [/^Fit the .* ship/, 15],
     [/^Buy a Company ship/, 12],
     [/^Give all .* to Presidency/, 12],
     [/^Give all .* to Manager of Shipping/, 10],
@@ -326,7 +326,7 @@ function main(): void {
       scenario: (flags.scenario ?? (deregulated ? "long-1710" : "1710")) as ScenarioId,
       seed: flags.seed ?? `harness-${now}`,
       now,
-      setupDistribution: (flags.setup ?? "random") as "random" | "starter",
+      setupDistribution: (flags.setup ?? "random") as "random" | "starter" | "draft",
       players: names.map((name, index) => ({ id: `player-${index + 1}`, name, color: name.toLowerCase() })),
     });
     const state = deregulated

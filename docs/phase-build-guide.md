@@ -6,8 +6,8 @@ Several agents build phases in parallel on separate branches, so the ownership r
 ## Scope
 
 The target is the **1710 scenario for 3-6 human players**, playable start to finish by passing a save
-file. Deregulation and Long 1710 followed (`phases/deregulation.md`). Out of scope for now: 1758/1813
-setup and the Crown (solo/two-player AI).
+file. Deregulation and Long 1710 followed (`phases/deregulation.md`), then the 1758 and 1813 scenarios
+(`phases/scenarios.md`). The Crown (solo/two-player AI) is `phases/crown.md`.
 
 ## Sources of truth
 

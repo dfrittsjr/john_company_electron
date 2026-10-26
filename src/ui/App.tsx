@@ -18,7 +18,7 @@ import {
   type ScenarioId,
   type ValidationIssue,
 } from "../data";
-import { PLAYABLE_SCENARIOS } from "../online/protocol";
+import { CROWN_DIFFICULTIES, PLAYABLE_SCENARIOS } from "../online/protocol";
 import { deserializeGameState, serializeSave } from "../save";
 import "./game-screen.css";
 import { GameScreen } from "./GameScreen";
@@ -42,11 +42,7 @@ type SetupState = {
   players: PlayerSetup[];
 };
 
-const scenarioOptions = [
-  ...PLAYABLE_SCENARIOS,
-  { id: "1758" as ScenarioId, name: "1758", description: "Not available yet: this scenario's setup is not built." },
-  { id: "1813" as ScenarioId, name: "1813", description: "Not available yet: this scenario's setup is not built." },
-];
+const scenarioOptions = PLAYABLE_SCENARIOS;
 
 const playableIds = new Set<ScenarioId>(PLAYABLE_SCENARIOS.map((scenario) => scenario.id));
 
@@ -58,13 +54,6 @@ function createPlayers(count: number): PlayerSetup[] {
     color: FAMILY_PALETTE[index],
   }));
 }
-
-const CROWN_DIFFICULTIES: Array<{ id: CrownDifficulty; name: string; description: string }> = [
-  { id: "easy", name: "Easy", description: "Each player also holds 5 promise cards, which can be traded to the Crown for promise cubes." },
-  { id: "normal", name: "Normal", description: "The standard game: the cubes are split evenly between the Crown and the players." },
-  { id: "hard", name: "Hard", description: "As Normal, but the Crown starts with 4 more promise cubes, taken from the players." },
-  { id: "expert", name: "Expert", description: "As Hard, and the Crown also gets 3 extra setup cards." },
-];
 
 function modeForPlayerCount(playerCount: number): PlayMode {
   if (playerCount === 1) return "soloCrown";
@@ -239,6 +228,8 @@ export function App() {
     setSetup((current) => ({
       ...current,
       playerCount,
+      // The Crown's games choose how the cards are shared out themselves.
+      setupDistribution: playerCount < 3 ? "random" : current.setupDistribution,
       players: createPlayers(playerCount),
     }));
   }
@@ -262,7 +253,7 @@ export function App() {
         color: player.color,
       })),
       crownDifficulty: setup.crownDifficulty,
-      setupDistribution: "random",
+      setupDistribution: crownEnabled || setup.setupDistribution !== "draft" ? "random" : "draft",
       seed: `${setup.scenario}:${mode}:${setup.players.map((player) => player.name).join("|")}${crownEnabled ? `:${Date.now()}` : ""}`,
     });
 
@@ -521,8 +512,7 @@ export function App() {
                   ))}
                 </fieldset>
                 <p className="status-note">
-                  The Crown plays itself from the Crown Handbook. Crown games are played from a save file (no online play), in 1710 or
-                  Long 1710.
+                  The Crown plays itself from the Crown Handbook, in any scenario. You can also play it online.
                 </p>
               </div>
             ) : null}
@@ -538,14 +528,16 @@ export function App() {
                   }))
                 }
               >
-                <option value="draft" disabled>
-                  Draft (coming later)
+                <option value="draft" disabled={crownEnabled}>
+                  Draft
                 </option>
                 <option value="random">Random</option>
               </select>
               <p className="status-note">
-                Random setup is implemented for 1710 and Long 1710. Draft setup remains on the rules
-                backlog.
+                {setup.setupDistribution === "draft"
+                  ? "Each player picks one setup card from the hand in front of them and passes the rest left, until none remain (rulebook p.5). Picks are private, so with passed save files each pick needs a hand-off."
+                  : "Setup cards are dealt at random."}
+                {crownEnabled ? " Games with the Crown choose how the cards are shared out when they begin." : ""}
               </p>
             </label>
 

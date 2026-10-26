@@ -1,4 +1,4 @@
-import type { GameState } from "../engine";
+import { crownFavorOffers, humanPlayerIds, type GameState } from "../engine";
 
 // Names a save after whoever has to act next, e.g. "1710-t2-hiring-for-Yellow.joco",
 // so the file itself tells the group whose turn it is.
@@ -14,10 +14,15 @@ export function nextActorName(game: GameState): string {
   const actor = game.pendingDecision.actor;
   if (actor === "simultaneous") return "everyone";
   if (actor === "system") return "anyone";
-  // The Crown acts through whoever chooses for it; otherwise whoever holds the game lets it act.
+  // The Crown acts through whoever chooses for it. When it waits for favours, the save goes to the
+  // one player who could buy one; otherwise whoever holds the game lets it act.
   if (game.players[actor]?.isCrown) {
     const chooser = game.pendingDecision.crown?.chooser;
-    return chooser ? game.players[chooser]?.name ?? chooser : "anyone";
+    if (chooser) return game.players[chooser]?.name ?? chooser;
+    const buyers = game.crown
+      ? humanPlayerIds(game).filter((playerId) => crownFavorOffers(game, playerId).some((offer) => offer.pausesCrown))
+      : [];
+    return buyers.length === 1 ? (game.players[buyers[0]]?.name ?? buyers[0]) : "anyone";
   }
 
   return game.players[actor]?.name ?? actor;

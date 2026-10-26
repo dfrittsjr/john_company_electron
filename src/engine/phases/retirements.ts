@@ -375,12 +375,16 @@ function retirementOptions(
       // piece the player holds, including this one.
       const cashLeft = player.cash - cost;
       const upkeepOwed = heldPrizeUpkeep(player.familyMembers.prizes) + prize.upkeep;
+      // "Each player who retired at least one pensioner ... must take or discard one card" (p.12).
+      const firstThisSeason = progress.context === "londonSeason" && !progress.retired.includes(playerId);
       options.push({
         type: "retirement.retirePensioner",
         label: `Retire to the £${prize.cost} prize (${prize.victoryPoints} VP, upkeep £${prize.upkeep}) for £${cost}${discountText}`,
         ...(cashLeft < upkeepOwed
           ? { description: `Warning: you'd have £${cashLeft} left for £${upkeepOwed} upkeep at the next Upkeep.` }
-          : {}),
+          : firstThisSeason
+            ? { description: "Your first retirement this London Season also gives you a pick of a prestige card (p.12)." }
+            : {}),
         payload: { prizeId: prize.id, discounts: combo.map((discount) => discount.key) },
       });
     }

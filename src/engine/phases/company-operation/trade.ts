@@ -133,7 +133,11 @@ export function tradeUnavailableReason(state: GameState, presidency: PresidencyI
   if ((coState(state).tradedPresidencies ?? []).includes(presidency)) return "this Presidency has already traded this turn (p.20)";
   const port = homePort(state, presidency);
   if (!port || port.closed) {
-    return `its home port (the £${port?.value ?? "?"} order in ${presidency}) is closed; the Director of Trade can reopen it with a Special Envoy (p.18)`;
+    // The Governor General has no Special Envoy (p.26); a successful Deploy still opens a region's orders (p.23).
+    const reopen = state.company.governorGeneralInPlay
+      ? "with the Governor General in play there is no Special Envoy, but a successful Deploy there opens its orders (p.23)"
+      : "the Director of Trade can reopen it with a Special Envoy (p.18)";
+    return `its home port (the £${port?.value ?? "?"} order in ${presidency}) is closed; ${reopen}`;
   }
   if (!isOrderAvailable(port)) return `its home port (the £${port.value} order in ${presidency}) is already filled this turn`;
   if (shipsInPresidencyZone(state, presidency) === 0) {
@@ -221,7 +225,9 @@ export function tradeDecision(state: GameState, presidency: PresidencyId, activi
 
   if (activity.stage === "declare") {
     const penalty = activity.declared.length - 1;
-    prompt = `Trade from ${presidency}: declared ${activity.declared.join(", ")} (−${penalty} ${penalty === 1 ? "die" : "dice"}). Add regions or roll (treasury £${treasury}).`;
+    prompt =
+      `Trade from ${presidency}: declared ${activity.declared.join(", ")} (−${penalty} ${penalty === 1 ? "die" : "dice"}). Add regions or roll (treasury £${treasury}). ` +
+      "The lowest die decides: 1-2 succeeds, 3-4 fails (you may try again), 5-6 is a catastrophe (p.17).";
     for (let spend = penalty + 1; spend <= treasury; spend += 1) {
       commands.push({
         type: "companyOperation.trade",

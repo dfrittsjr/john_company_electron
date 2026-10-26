@@ -339,7 +339,7 @@ export class MockServer {
         mode: "hotseat",
         scenario: request.scenario,
         players,
-        setupDistribution: "random",
+        setupDistribution: request.setupDistribution === "draft" ? "draft" : "random",
         seed: `mock:${players.map((player) => player.name).join("|")}`,
       });
       const state = runAutomaticSteps(created, { now, idPrefix: "setup-auto" }).state;

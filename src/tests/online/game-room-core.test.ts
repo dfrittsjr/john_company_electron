@@ -139,7 +139,8 @@ describe("creating a game", () => {
     const core = new GameRoomCore(new MemoryRoomStorage());
     const attempt = (requestBody: unknown) => core.create({ gameId: "g", origin: ORIGIN, body: requestBody });
     for (const bad of [
-      { scenario: "1710", players: PLAYERS.slice(0, 2) },
+      { scenario: "1710", players: [] },
+      { scenario: "1710", players: [...PLAYERS, ...PLAYERS.map((player) => ({ ...player, name: `${player.name}2` })), { name: "Dee" }, { name: "Eve" }] },
       { scenario: "1999", players: PLAYERS },
       { scenario: "1710", players: [{ name: "Ann" }, { name: "ann" }, { name: "Cat" }] },
       { scenario: "1710", players: [{ name: "" }, { name: "Ben" }, { name: "Cat" }] },

@@ -71,6 +71,18 @@ describe("Crown board", () => {
   });
 });
 
+describe("Favours out of reach", () => {
+  test("a favour the player can't pay for is shown greyed out with the cubes it needs, without a button", () => {
+    const game = startedCrownGame();
+    // In the Firms-to-Revenue window the board favours are on offer; with no cubes, the paid ones are out of reach.
+    const broke = { ...game, phase: "revenue" as const, crown: { ...game.crown!, promiseCubes: { crownSupply: 12, byHumanPlayer: { "player-ann": 0 } } } };
+    render(<CrownFavors game={broke} waiting={false} onFavor={vi.fn()} onGive={vi.fn()} />);
+    const out = screen.getByLabelText("Favours you can't pay for yet");
+    expect(within(out).getAllByText(/needs \d+ cubes/).length).toBeGreaterThan(0);
+    expect(within(out).queryAllByRole("button")).toHaveLength(0);
+  });
+});
+
 describe("Favours", () => {
   test("two players can give cubes to each other", () => {
     const game = startedCrownGame({ players: 2 });

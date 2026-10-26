@@ -543,7 +543,11 @@ function resolveRestriction(state: GameState, command: GameCommand): ApplyComman
 
 function scandalDecision(state: GameState): PendingDecision {
   const scandal = state.londonSeason.scandal!;
-  const name = blackmailById.get(scandal.cardId)?.name ?? scandal.cardId;
+  // The Crown's blackmail stays face down and unseen (Crown Handbook p.2): players see its
+  // decisions, so they don't name the card.
+  const name = state.players[scandal.playerId]?.isCrown
+    ? "a face-down blackmail card"
+    : (blackmailById.get(scandal.cardId)?.name ?? scandal.cardId);
   const playableNow = blackmailById.get(scandal.cardId)?.timing === "whenTakenOrAnytimeAfterRevenuePhase";
   const options = playableNow ? blackmailOptionsForCard(state, scandal.playerId, scandal.cardId) : [];
   const legalCommands: LegalCommand[] = options.map((option) => ({

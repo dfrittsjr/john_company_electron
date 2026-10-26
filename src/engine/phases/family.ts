@@ -29,7 +29,7 @@ import type { CrownFamilyTurn, FamilyState, FamilyTurnStage, FamilyTurnState } f
 import { isDeregulated } from "../firms";
 import { startFirmsPhase } from "./firms";
 import { startHiringPhase } from "./hiring";
-import { registerDecisionRefresher } from "./negotiation";
+import { appendLog, registerDecisionRefresher } from "./negotiation";
 import { createCommandLogEntry } from "./shared";
 
 // The Family phase (rulebook pp.13-14). Starting with the Chairman and going clockwise, each
@@ -433,7 +433,7 @@ function finishFamilyTurn(state: GameState): GameState {
 }
 
 function endFamilyPhase(state: GameState): GameState {
-  const next = resolveNewCompanyShares(state);
+  const next = logNewCompanyShares(state, resolveNewCompanyShares(state));
   // Once deregulated, the Firms phase comes between Family and Hiring (p.38).
   return isDeregulated(next) ? startFirmsPhase(next) : startHiringPhase(next);
 }
@@ -1355,6 +1355,22 @@ function enterprisePurchaseCost(state: GameState, type: EnterpriseType, stage: A
  * For each Company Debt, the rightmost Stock Exchange family member enters the Court and Debt
  * drops by one. Then any remaining pieces slide rightward as far as possible, keeping their order.
  */
+/** Says which Stock Exchange pieces became Company shares and how far Debt fell, since nothing else shows it. */
+function logNewCompanyShares(before: GameState, after: GameState): GameState {
+  const created = after.company.court.filter((share) => !before.company.court.some((old) => old.id === share.id));
+  if (created.length === 0) return after;
+  const owners = created.map((share) => after.players[share.owner ?? ""]?.name ?? share.owner);
+  return appendLog(after, {
+    actor: "system",
+    type: "family.newCompanyShares",
+    summary:
+      `New Company shares (p.14): ${created.length} Stock Exchange piece${created.length === 1 ? "" : "s"} (${owners.join(", ")}) ` +
+      `became Company shares, and Debt fell from ${before.company.debt} to ${after.company.debt}.`,
+    details: { shares: created.map((share) => ({ id: share.id, owner: share.owner })) },
+    timestamp: after.updatedAt,
+  });
+}
+
 export function resolveNewCompanyShares(state: GameState): GameState {
   let debt = state.company.debt;
   let court = state.company.court;

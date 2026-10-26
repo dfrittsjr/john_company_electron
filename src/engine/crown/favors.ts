@@ -33,8 +33,20 @@ function favorCost(state: GameState, definition: CrownFavorDefinition, playerId:
 
 /** The favours this player may buy now, each with its cost. Payments they can't afford are left out (p.46). */
 export function crownFavorOffers(state: GameState, playerId: PlayerId): CrownFavorOffer[] {
+  return favorOffers(state, playerId).filter((offer) => !offer.unaffordable);
+}
+
+/**
+ * Favours on offer now that this player can't pay for (p.46: "you may never perform a favor you
+ * cannot fully pay"), so the UI can show them greyed out instead of not at all.
+ */
+export function crownFavorsOutOfReach(state: GameState, playerId: PlayerId): CrownFavorOffer[] {
+  return favorOffers(state, playerId).filter((offer) => offer.unaffordable);
+}
+
+function favorOffers(state: GameState, playerId: PlayerId): Array<CrownFavorOffer & { unaffordable?: boolean }> {
   if (!state.crown || state.players[playerId]?.isCrown || !state.players[playerId]) return [];
-  const offers: CrownFavorOffer[] = [];
+  const offers: Array<CrownFavorOffer & { unaffordable?: boolean }> = [];
   for (const definition of crownFavorDefinitions()) {
     let available = false;
     try {
@@ -43,17 +55,19 @@ export function crownFavorOffers(state: GameState, playerId: PlayerId): CrownFav
       available = false;
     }
     if (!available) continue;
-    const text = printedFavor(definition.printed).text;
+    // The Crown's family board favours stay on offer from Firms to Revenue; say where they come from.
+    const text = `${"board" in definition.printed ? "Crown board: " : ""}${printedFavor(definition.printed).text}`;
     const options = definition.options ? definition.options(state, playerId) : [{ label: "", option: undefined }];
     for (const { label, option } of options) {
       const cubes = favorCost(state, definition, playerId, option);
-      if (cubes === undefined || (cubes < 0 && playerCubes(state, playerId) < -cubes)) continue;
+      if (cubes === undefined) continue;
       offers.push({
         favorId: definition.id,
         ...(option !== undefined ? { option } : {}),
         label: label ? `${text} (${label})` : text,
         cubes,
         pausesCrown: definition.pausesCrown ?? true,
+        ...(cubes < 0 && playerCubes(state, playerId) < -cubes ? { unaffordable: true } : {}),
       });
     }
   }

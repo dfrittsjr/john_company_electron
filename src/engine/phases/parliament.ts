@@ -324,11 +324,16 @@ function choosePolicyDecision(state: GameState, icon: LawPolicyIcon): PendingDec
     actor: primeMinister(state),
     visibility: "public",
     prompt: `Rotate the policy arm to the first space matching ${lawCard(state.parliament.session!.lawId!).name}'s icon.`,
-    legalCommands: [...bySpace.entries()].map(([space, directions]) => ({
-      type: "parliament.choosePolicy",
-      label: `Rotate ${directions.join(" or ")} to ${describePolicySpace(space)}`,
-      payload: { space },
-    })),
+    legalCommands: [...bySpace.entries()].map(([space, directions]) => {
+      // The dial repeats some spaces (Power: shipping is printed twice), so name the space when two
+      // options would otherwise read the same.
+      const same = [...bySpace.keys()].some((other) => other !== space && describePolicySpace(other) === describePolicySpace(space));
+      return {
+        type: "parliament.choosePolicy",
+        label: `Rotate ${directions.join(" or ")} to ${describePolicySpace(space)}${same ? ` (dial space ${space + 1})` : ""}`,
+        payload: { space },
+      };
+    }),
     canSave: true,
   };
 }

@@ -90,7 +90,7 @@ export const scenarios: ScenarioDefinition[] = [
     finalTurn: 7,
     deregulationAvailable: true,
     startsDeregulated: false,
-    completeness: "placeholder",
+    completeness: "complete",
     source: "printnplay/Cards/John Company Cards (Bridge, Fronts).pdf",
     setup: {
       companyTracks: {
@@ -107,30 +107,48 @@ export const scenarios: ScenarioDefinition[] = [
         bengal: 1,
       },
       startingPassedLaws: ["Calico Acts"],
+      mapSetup: {
+        regions: {
+          punjab: { towerLevels: 1, closedOrderIds: ["punjab-7"] },
+          delhi: { towerLevels: 1, closedOrderIds: ["delhi-west-3", "delhi-east-5"] },
+          bombay: { towerLevels: 2, closedOrderIds: [] },
+          maratha: { towerLevels: 2, closedOrderIds: [] },
+          // Company-controlled: the red Governor overlay stands where the 1710 map has Bengal's dome.
+          bengal: { towerLevels: 0, closedOrderIds: [] },
+          hyderabad: { towerLevels: 1, closedOrderIds: ["hyderabad-7"] },
+          mysore: { towerLevels: 2, closedOrderIds: ["mysore-south-6"] },
+          madras: { towerLevels: 1, closedOrderIds: ["madras-home-5", "madras-south-4"] },
+        },
+        empires: [{ capital: "delhi", dominated: ["punjab"] }],
+        // "Place the Bengal control token in the Bengal Presidency" (scenario card): the region is
+        // Company-controlled and associated with Bengal, with its Governor office in play (p.23).
+        companyControlled: ["bengal"],
+        associatedPresidency: { bengal: "bengal" },
+        governorOffices: ["bengal"],
+        elephant: { region: "delhi", facing: "bengal" },
+      },
       notes: [
         "Standing starts on the space above £12 expectations; Debt 3; £4 in every Company treasury.",
         "One Company ship starts in the East Indian sea zone. The Bengal control token starts in the Bengal Presidency.",
-        "Situation in India and the 1758 setup cards are not transcribed yet.",
+        "Situation in India (Bridge Backs p.9): Delhi is the capital of an empire dominating Punjab; the Elephant starts in Delhi facing Bengal.",
+        "Bengal starts Company-controlled and associated with the Bengal Presidency, with no tower and the Governor of Bengal office in play (the setup cards fill it).",
+        "The London Season is skipped on turn 3, the first turn (p.11).",
       ],
-      encodedSections: ["companyTracks", "turnAndPolicyDial", "startingRegiments", "startingCompanyShips"],
-      missingSections: missingSections([
-        "companyTracks",
-        "turnAndPolicyDial",
-        "startingRegiments",
-        "startingCompanyShips",
-      ]),
+      encodedSections: fullScenarioSections,
+      missingSections: [],
     },
   },
   {
     id: "1813",
     name: "Post Monopoly",
     displayYear: "1813",
-    recommendedPlayerCounts: [5, 6],
+    // The rulebook recommends 5-6 players (p.4); fewer work, the setup cards are the same.
+    recommendedPlayerCounts: [3, 4, 5, 6],
     startTurn: 5,
     finalTurn: 8,
     deregulationAvailable: true,
     startsDeregulated: true,
-    completeness: "placeholder",
+    completeness: "complete",
     source: "printnplay/Cards/John Company Cards (Bridge, Fronts).pdf",
     setup: {
       companyTracks: {
@@ -149,20 +167,38 @@ export const scenarios: ScenarioDefinition[] = [
         bengal: 1,
       },
       startingPassedLaws: ["Military Oversight", "Deregulation (Debtor's Prison side)", "Calico Acts"],
+      mapSetup: {
+        regions: {
+          punjab: { towerLevels: 2, closedOrderIds: ["punjab-7"] },
+          delhi: { towerLevels: 1, closedOrderIds: ["delhi-west-3", "delhi-east-5"] },
+          bombay: { towerLevels: 0, closedOrderIds: [] },
+          maratha: { towerLevels: 2, closedOrderIds: ["maratha-west-3"] },
+          bengal: { towerLevels: 0, closedOrderIds: ["bengal-north-5", "bengal-home-6"] },
+          hyderabad: { towerLevels: 1, closedOrderIds: [] },
+          mysore: { towerLevels: 2, closedOrderIds: [] },
+          madras: { towerLevels: 0, closedOrderIds: ["madras-south-4"] },
+        },
+        empires: [],
+        // "Place the Bombay/Madras/Bengal control tokens in the matching Presidencies" (scenario card).
+        // The Governor General is in play, so no Governors or overlays exist (p.26).
+        companyControlled: ["bombay", "madras", "bengal"],
+        associatedPresidency: { bombay: "bombay", madras: "madras", bengal: "bengal" },
+        governorOffices: [],
+        elephant: { region: "mysore", facing: "madras" },
+      },
+      governorGeneral: true,
+      chinaOffice: true,
       notes: [
         "Standing starts on the space above £10 expectations; Debt 0; £3 in every Company treasury.",
         "Governor General law returns to the box and its overlay goes over the Director of Trade.",
         "Company share VP token starts in the Court on its +2/-2 side. China office is placed right of the board.",
-        "Bombay/Madras/Bengal control tokens start in the matching Presidencies.",
-        "Situation in India and the 1813 setup cards are not transcribed yet.",
+        "Bombay/Madras/Bengal control tokens start in the matching Presidencies: all three are Company-controlled with no towers. With the Governor General in play there are no Governors (p.26).",
+        "Situation in India (Bridge Backs p.9): no empires; the Elephant starts in Mysore facing Madras.",
+        "The rulebook recommends 5-6 players (p.4), but the setup cards work with 3-6.",
+        "The London Season is skipped on turn 5, the first turn (p.11).",
       ],
-      encodedSections: ["companyTracks", "turnAndPolicyDial", "startingRegiments", "startingCompanyShips"],
-      missingSections: missingSections([
-        "companyTracks",
-        "turnAndPolicyDial",
-        "startingRegiments",
-        "startingCompanyShips",
-      ]),
+      encodedSections: fullScenarioSections,
+      missingSections: [],
     },
   },
   {

@@ -1,11 +1,13 @@
 import { useState } from "react";
-import { crownFavorOffers, humanPlayerIds, playerCubes, type CrownFavorOffer, type GameState, type PlayerId } from "../engine";
+import { crownFavorOffers, crownFavorsOutOfReach, humanPlayerIds, playerCubes, type CrownFavorOffer, type GameState, type PlayerId } from "../engine";
 import { playerName } from "./view-model";
 
 type Props = {
   game: GameState;
   /** The Crown is waiting at a decision a favour could change: show the list open. */
   waiting: boolean;
+  /** Online: this seat's favours and gifts only (the server acts for the seat whose link sent the command). */
+  only?: PlayerId;
   onFavor: (playerId: PlayerId, offer: CrownFavorOffer) => void;
   onGive: (from: PlayerId, to: PlayerId, count: number) => void;
   /** Whether the Crown stops for favours that could change its move (a per-browser setting). */
@@ -51,10 +53,15 @@ function GiveCubes({ game, from, to, onGive }: { game: GameState; from: PlayerId
 }
 
 /** The favours on offer to each human now, and (two players) a way to pass promise cubes between them. */
-export function CrownFavors({ game, waiting, onFavor, onGive, waitForFavors }: Props) {
+export function CrownFavors({ game, waiting, only, onFavor, onGive, waitForFavors }: Props) {
   if (!game.crown || game.finalScoring.complete) return null;
   const humans = humanPlayerIds(game);
-  const offers = humans.map((playerId) => ({ playerId, offers: crownFavorOffers(game, playerId) }));
+  const shown = only ? humans.filter((playerId) => playerId === only) : humans;
+  const offers = shown.map((playerId) => ({
+    playerId,
+    offers: crownFavorOffers(game, playerId),
+    outOfReach: crownFavorsOutOfReach(game, playerId),
+  }));
   const total = offers.reduce((sum, entry) => sum + entry.offers.length, 0);
   const twoPlayer = humans.length === 2;
 
@@ -66,13 +73,13 @@ export function CrownFavors({ game, waiting, onFavor, onGive, waitForFavors }: P
           Wait for me when a favour could change the Crown's move
         </label>
       ) : null}
-      {offers.map(({ playerId, offers: list }) => (
+      {offers.map(({ playerId, offers: list, outOfReach }) => (
         <div key={playerId} className="favor-player">
           <h4>
             {playerName(game, playerId)} <small>{playerCubes(game, playerId)} cubes</small>
           </h4>
           {list.length === 0 ? (
-            <p className="status-note">No favours on offer.</p>
+            <p className="status-note">{outOfReach.length === 0 ? "No favours on offer." : "No favours you can pay for."}</p>
           ) : (
             <ul className="favor-list">
               {list.map((offer, index) => (
@@ -86,15 +93,29 @@ export function CrownFavors({ game, waiting, onFavor, onGive, waitForFavors }: P
               ))}
             </ul>
           )}
+          {outOfReach.length > 0 ? (
+            // "You may never perform a favor you cannot fully pay" (p.46): shown, but not offered.
+            <ul className="favor-list favor-list-out" aria-label="Favours you can't pay for yet">
+              {outOfReach.map((offer, index) => (
+                <li key={`${offer.favorId}:${JSON.stringify(offer.option ?? null)}:${index}`}>
+                  <CubeCost cubes={offer.cubes} />
+                  <span className="favor-text">{offer.label}</span>
+                  <small className="favor-need">needs {-offer.cubes} cubes</small>
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </div>
       ))}
       {twoPlayer ? (
         <div className="favor-player">
           <h4>Promise cubes between the players</h4>
-          {humans.map((from) => (
+          {shown.map((from) => (
             <GiveCubes key={from} game={game} from={from} to={humans.find((id) => id !== from)!} onGive={onGive} />
           ))}
-          {humans.every((id) => playerCubes(game, id) === 0) ? <p className="status-note">Neither player has a cube to give.</p> : null}
+          {shown.every((id) => playerCubes(game, id) === 0) ? (
+            <p className="status-note">{only ? "You have no cube to give." : "Neither player has a cube to give."}</p>
+          ) : null}
         </div>
       ) : null}
     </div>

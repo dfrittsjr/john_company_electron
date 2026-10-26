@@ -12,6 +12,7 @@ import {
   initialPowerTrack,
 } from "./phases/parliament.state";
 import { crownStartDecision } from "./crown/setup";
+import { createOffice, installGovernorGeneral } from "./offices";
 import { aiCard, climateFromCard, CROWN_PLAYER_ID } from "./crown/state";
 import { createRngState, shuffle } from "./rng";
 import { COMPANY_TREASURY_OFFICE_IDS, scenarioDefinition, toEnginePresidency } from "./selectors";
@@ -47,7 +48,7 @@ export type NewGameOptions = {
   scenario: ScenarioId;
   players: NewPlayerInput[];
   crownDifficulty?: CrownState["difficulty"];
-  setupDistribution?: "starter" | "random";
+  setupDistribution?: "starter" | "random" | "draft";
   seed?: string;
   gameId?: string;
   now?: string;
@@ -133,7 +134,7 @@ export function createNewGame(options: NewGameOptions): GameState {
     seatingOrder,
     options.setupDistribution ?? "random",
   );
-  const state: GameState = {
+  const startingState: GameState = {
     schemaVersion: GAME_SCHEMA_VERSION,
     gameId,
     createdAt,
@@ -164,6 +165,8 @@ export function createNewGame(options: NewGameOptions): GameState {
     log: [],
     hidden,
   };
+
+  const state = withScenarioOffices(startingState, scenario);
 
   // Until the setup cards are placed, show the climate the face-up card gives now (crown/setup.ts
   // sets it again once they are).
@@ -203,11 +206,6 @@ function validateNewGameOptions(options: NewGameOptions): void {
     throw new Error("Two-player Crown games require exactly two human players.");
   }
 
-  // Only the 1710 setup cards are transcribed (Long 1710 deals them too).
-  if (options.mode !== "hotseat" && options.scenario !== "1710" && options.scenario !== "long-1710") {
-    throw new Error("Crown games can be played in the 1710 and Long 1710 scenarios.");
-  }
-
   const ids = options.players.map((player, index) => player.id ?? `player-${index + 1}`);
   if (new Set(ids).size !== ids.length) {
     throw new Error("Player IDs must be unique.");
@@ -221,7 +219,7 @@ function validateNewGameOptions(options: NewGameOptions): void {
 function createInitialPendingDecision(
   mode: GameMode,
   seatingOrder: PlayerId[],
-  setupDistribution: "starter" | "random",
+  setupDistribution: "starter" | "random" | "draft",
 ): PendingDecision {
   const firstHuman = seatingOrder.find((playerId) => playerId !== CROWN_PLAYER_ID);
 
@@ -241,7 +239,7 @@ function createInitialPendingDecision(
     legalCommands: [
       {
         type: "setup.confirmStart",
-        label: "Begin setup",
+        label: setupDistribution === "draft" ? "Begin setup (draft the setup cards)" : "Begin setup",
         payload: { setupDistribution },
       },
     ],
@@ -417,6 +415,21 @@ function createInitialCompanyState(scenario: ScenarioDefinition): CompanyState {
   };
 }
 
+/**
+ * Scenario setup that needs the office helpers: the Governor General over the Director of Trade's
+ * place (1813; p.26), the Governor offices of regions that start Company-controlled (1758 Bengal;
+ * p.23) and the China office (1813; p.25). The setup cards then fill them (p.5).
+ */
+function withScenarioOffices(state: GameState, scenario: ScenarioDefinition): GameState {
+  let next = state;
+  if (scenario.setup.governorGeneral) next = installGovernorGeneral(next);
+  for (const regionId of scenario.setup.mapSetup?.governorOffices ?? []) {
+    next = createOffice(next, next.india.regions[regionId].governorOffice);
+  }
+  if (scenario.setup.chinaOffice) next = createOffice(next, "superintendent-of-trade-in-china");
+  return next;
+}
+
 function createArmy(id: ArmyId, regiments: number) {
   // Local alliances start unbought in the Army box where they are printed (setup step 3).
   const alliances = localAlliances.filter((alliance) => toEnginePresidency(alliance.army) === id);
@@ -443,6 +456,7 @@ function createInitialIndiaState(scenario: ScenarioDefinition): IndiaState {
       const closed = new Set(regionSetup?.closedOrderIds ?? []);
       const companyControlled = mapSetup?.companyControlled.includes(region.id) ?? false;
       const empire = empireFlagByRegion.get(region.id);
+      const associated = mapSetup?.associatedPresidency?.[region.id];
 
       return [
         region.id,
@@ -466,15 +480,17 @@ function createInitialIndiaState(scenario: ScenarioDefinition): IndiaState {
           empireFlag: empire?.flag,
           isCapital: empire?.capital ?? false,
           companyControlled,
-          // Association comes only from conquest (p.23). Scenarios that start with Company
-          // control (1758 Bengal, 1813) will set it when their map setup is transcribed.
-          associatedPresidency: undefined,
+          // Association comes from conquest (p.23), or from the scenario card's control tokens
+          // placed in a Presidency (1758 Bengal, 1813's three home regions).
+          associatedPresidency: associated ? toEnginePresidency(associated) : undefined,
           governorOffice: region.governorOfficeId,
           unrest: 0,
+          // A region that starts Company-controlled has its token on the control side above the
+          // President's box, as after Form Governorship (p.23).
           lootToken: {
-            available: true,
+            available: !companyControlled,
             value: lootTokens.find((token) => token.region === region.id)?.lootValue ?? null,
-            face: "loot",
+            face: companyControlled ? "control" : "loot",
           },
           exportIcons: region.exportIcons,
           partialCompanyShip: false,

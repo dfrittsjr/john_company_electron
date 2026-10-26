@@ -24,12 +24,14 @@ import { revenueCommandHandlers } from "./phases/revenue";
 import { setupCommandHandlers } from "./phases/setup";
 import { upkeepCommandHandlers } from "./phases/upkeep";
 import { crownSetupCommandHandlers } from "./crown/setup";
+import { setupDraftCommandHandlers } from "./phases/setup-draft";
 import { afterCrownCommand } from "./crown/hook";
 
 // Each phase module owns its own command map, so phases can be built independently.
 const COMMAND_HANDLERS: Record<string, CommandHandler> = {
   ...setupCommandHandlers,
   ...crownSetupCommandHandlers,
+  ...setupDraftCommandHandlers,
   ...londonSeasonCommandHandlers,
   ...familyCommandHandlers,
   ...firmsCommandHandlers,

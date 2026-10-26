@@ -1,5 +1,5 @@
 import { CROWN_PLAYER_ID, appendCrownLog, crownEffects, exchangeCubes, isCrownGame } from "../../crown/state";
-import { officeHolder, shipyardOwner } from "../../selectors";
+import { officeHolder, shipyardName, shipyardOwner } from "../../selectors";
 import type { GameCommand, GameState, LegalCommand, PendingDecision } from "../../types";
 import type { ShipDestination } from "../company-operation.state";
 import {
@@ -56,7 +56,7 @@ function shippingCommands(state: GameState): LegalCommand[] {
       for (const to of destinations) {
         commands.push({
           type: "companyOperation.shipping",
-          label: `Fit the ${ship.shipyardCardId} ship (${playerName(state, shipyardOwner(state, ship.shipyardCardId ?? ""))}) into ${SEA_ZONE_LABEL[to]} for £${fitCost(state)}`,
+          label: `Fit the ${shipyardName(ship.shipyardCardId)} ship (${playerName(state, shipyardOwner(state, ship.shipyardCardId ?? ""))}) into ${SEA_ZONE_LABEL[to]} for £${fitCost(state)}`,
           payload: { action: "fit", shipId: ship.id, to } satisfies ShippingPayload,
         });
       }
@@ -149,12 +149,10 @@ export const shippingStep: OperationStep = (state, command) => {
         ),
       },
     };
-    summary = `The Manager of Shipping fitted the ${ship.shipyardCardId} ship into ${SEA_ZONE_LABEL[payload.to]} (£${fitCost(state)}).`;
+    summary = `The Manager of Shipping fitted the ${shipyardName(ship.shipyardCardId)} ship into ${SEA_ZONE_LABEL[payload.to]} (£${fitCost(state)}).`;
+    // The cube the owner pays has its own log entry.
     const charge = crownFitsPlayerShip(next, command, ship.shipyardCardId);
-    if (charge) {
-      next = charge.state;
-      summary += ` ${charge.note}`;
-    }
+    if (charge) next = charge.state;
   } else {
     const cost = payload.action === "lease" ? LEASE_COST : COMPANY_SHIP_COST;
     next = addCompanyShip(changeOfficeTreasury(state, OFFICE_ID, -cost), payload.to, payload.action === "lease" ? "extra" : "company");

@@ -314,7 +314,7 @@ export function withFirm(state: GameState, firm: FirmState): GameState {
 }
 
 /** "firm-<log length + 1>", made unique among live firms (two can form within one command in tests). */
-function newFirmId(state: GameState): FirmId {
+export function newFirmId(state: GameState): FirmId {
   const base = `firm-${state.log.length + 1}`;
   const taken = new Set(allFirms(state).map((firm) => firm.id));
   if (!taken.has(base)) return base;
