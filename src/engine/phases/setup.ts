@@ -1,9 +1,11 @@
 import type { CommandHandler } from "../command-handler";
-import { enterpriseDecks, setupCardDecks } from "../../data";
-import type { EnterpriseType, SetupCardDefinition, SetupCardEffect } from "../../data";
+import { enterpriseDecks, firmCharter, prizes, setupCardDecks } from "../../data";
+import type { EnterpriseType, SetupCardDeckId, SetupCardDefinition, SetupCardEffect } from "../../data";
+import { newFirmId } from "../firms";
 import { shuffle } from "../rng";
 import type {
   ApplyCommandResult,
+  FirmState,
   GameCommand,
   GameState,
   PlayerId,
@@ -24,15 +26,15 @@ export function confirmStart(state: GameState, command: GameCommand): ApplyComma
     return startSetupDraft(state, command, deckId);
   }
   const setupResult =
-    setupDistribution === "random" && state.mode === "hotseat" && deckId === "1710"
-      ? applyRandomHotseat1710SetupCards(state)
+    setupDistribution === "random" && state.mode === "hotseat"
+      ? applyRandomHotseatSetupCards(state)
       : { state, details: undefined };
   return completeSetup(
     setupResult.state,
     command,
     setupResult.details === undefined
       ? `${state.players[command.actorId]?.name ?? command.actorId} confirmed setup start.`
-      : `${state.players[command.actorId]?.name ?? command.actorId} confirmed setup and dealt 1710 setup cards.`,
+      : `${state.players[command.actorId]?.name ?? command.actorId} confirmed setup and dealt ${deckId} setup cards.`,
     setupResult.details,
   );
 }
@@ -80,10 +82,14 @@ export function completeSetup(
   };
 }
 
-// Long 1710 "begins identically to the 1710 scenario" (p.4), so it deals the 1710 setup cards.
-export function setupDeckIdForScenario(state: GameState): string {
+// Long 1710 "begins identically to the 1710 scenario" (p.4), so it deals the 1710 setup cards;
+// 1758 and 1813 have decks of their own ("the matching set of setup cards", p.4).
+export function setupDeckIdForScenario(state: Pick<GameState, "scenario">): SetupCardDeckId {
   return state.scenario === "long-1710" ? "1710" : state.scenario;
 }
+
+/** The `decks` key for a scenario's setup cards (what was dealt, and what was left out). */
+export const setupDeckKey = (state: Pick<GameState, "scenario">): string => `setup-${setupDeckIdForScenario(state)}`;
 
 function parseSetupDistribution(state: GameState, payload: unknown): "starter" | "random" | "draft" {
   const explicit = setupDistributionFromPayload(payload);
@@ -108,7 +114,7 @@ function setupDistributionFromPayload(payload: unknown): "starter" | "random" | 
   return undefined;
 }
 
-function applyRandomHotseat1710SetupCards(state: GameState): {
+function applyRandomHotseatSetupCards(state: GameState): {
   state: GameState;
   details: {
     setupCardDistribution: Record<PlayerId, string[]>;
@@ -116,9 +122,10 @@ function applyRandomHotseat1710SetupCards(state: GameState): {
     note: string;
   };
 } {
-  const deck = setupCardDecks.find((candidate) => candidate.id === "1710");
+  const deckId = setupDeckIdForScenario(state);
+  const deck = setupCardDecks.find((candidate) => candidate.id === deckId);
   if (!deck) {
-    throw new Error("1710 setup card deck is not encoded.");
+    throw new Error(`${deckId} setup card deck is not encoded.`);
   }
 
   const humanPlayerIds = state.seatingOrder.filter((playerId) => !state.players[playerId].isCrown);
@@ -142,7 +149,7 @@ function applyRandomHotseat1710SetupCards(state: GameState): {
     rng: shuffledDeal.rng,
     decks: {
       ...state.decks,
-      "setup-1710": {
+      [setupDeckKey(state)]: {
         drawPile: [],
         discardPile: shuffledDeal.items.map((card) => card.id),
         removed: removedSetupCards,
@@ -164,7 +171,7 @@ function applyRandomHotseat1710SetupCards(state: GameState): {
       setupCardDistribution,
       removedSetupCards,
       note:
-        "Random hotseat 1710 setup is implemented. Draft setup and real blackmail deck draws remain TODO; blackmail setup effects create facedown placeholder cards until that deck is encoded.",
+        `Random hotseat ${deckId} setup is implemented. Draft setup and real blackmail deck draws remain TODO; blackmail setup effects create facedown placeholder cards until that deck is encoded.`,
     },
   };
 }
@@ -217,11 +224,75 @@ function applySetupCardEffect(
     case "workshop":
       return addEnterprises(state, playerId, "workshop", effect.count, card.id, effectIndex);
     case "trophy":
+      // "Trophy" / "Two Trophies" under a Commander (1758 p.30 r1, 1813 p.31 r1 c4): trophy tokens go
+      // to the family's play area, where each is worth +1 power in votes (Parliament, "Trophies").
       return updatePlayer(state, playerId, (player) => ({
         ...player,
         trophies: player.trophies + effect.count,
       }));
+    case "prize":
+      return addPrize(state, playerId, effect.prizeId);
+    case "privateFirm":
+      return addPrivateFirm(state, playerId, effect);
+    case "companyShip":
+      return {
+        ...state,
+        company: {
+          ...state.company,
+          ships: [
+            ...state.company.ships,
+            ...Array.from({ length: effect.count }, (_, index) => ({
+              id: `company-ship-setup-${effect.location}-${card.id}-${index + 1}`,
+              kind: "company" as const,
+              location: effect.location,
+              fatigued: false,
+            })),
+          ],
+        },
+      };
   }
+}
+
+/** A family member on a prize at no cost (1813 "Prize 2"; see the "prize" effect in data/types.ts). */
+function addPrize(state: GameState, playerId: PlayerId, prizeId: string): GameState {
+  const prize = prizes.find((candidate) => candidate.id === prizeId);
+  if (!prize) throw new Error(`Unknown prize "${prizeId}".`);
+
+  return updatePlayer(state, playerId, (player) => ({
+    ...player,
+    victoryPoints: player.victoryPoints + prize.victoryPoints,
+    familyMembers: {
+      ...player.familyMembers,
+      supply: player.familyMembers.supply - 1,
+      prizes: { ...player.familyMembers.prizes, [prizeId]: (player.familyMembers.prizes[prizeId] ?? 0) + 1 },
+    },
+  }));
+}
+
+/**
+ * 1813 "Private Firm": the holder's firm starts with its shares and London treasury (p.38). A Crown
+ * never creates a private firm (Handbook p.3), so the card gives it `crownCash` instead.
+ */
+function addPrivateFirm(
+  state: GameState,
+  playerId: PlayerId,
+  effect: Extract<SetupCardEffect, { type: "privateFirm" }>,
+): GameState {
+  if (state.players[playerId].isCrown) {
+    return updatePlayer(state, playerId, (player) => ({ ...player, cash: player.cash + effect.crownCash }));
+  }
+
+  const firm: FirmState = {
+    id: newFirmId(state),
+    manager: playerId,
+    londonTreasury: effect.treasury,
+    indiaTreasury: 0,
+    value: firmCharter.minValue,
+    shares: { [playerId]: effect.shares },
+    formedTurn: state.turn,
+  };
+
+  return takeFromSupply({ ...state, firms: [...(state.firms ?? []), firm] }, playerId, effect.shares);
 }
 
 function placeOffice(state: GameState, playerId: PlayerId, officeId: string): GameState {

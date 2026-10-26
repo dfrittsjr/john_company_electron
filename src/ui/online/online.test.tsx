@@ -109,7 +109,7 @@ describe("online landing", () => {
   test("Long 1710 can be chosen and the game starts as Long 1710", async () => {
     open("/online/");
     const scenario = screen.getByLabelText("Scenario") as HTMLSelectElement;
-    expect(Array.from(scenario.options).map((option) => option.value)).toEqual(["1710", "long-1710"]);
+    expect(Array.from(scenario.options).map((option) => option.value)).toEqual(["1710", "1758", "1813", "long-1710"]);
     fireEvent.change(scenario, { target: { value: "long-1710" } });
     expect(screen.getByText(/Deregulation/)).toBeTruthy();
     const create = screen.getByRole("button", { name: "Create game" }) as HTMLButtonElement;
@@ -121,6 +121,22 @@ describe("online landing", () => {
     open(link.pathname + link.search + link.hash);
     await screen.findByText("John Company · long-1710");
     expect(screen.getByText("Deregulation")).toBeTruthy();
+  });
+
+  test("1813 can be chosen online and the game starts as 1813 on turn 5", async () => {
+    open("/online/");
+    const scenario = screen.getByLabelText("Scenario") as HTMLSelectElement;
+    fireEvent.change(scenario, { target: { value: "1813" } });
+    expect(screen.getByText(/Best with 5 or 6 players/)).toBeTruthy();
+    const create = screen.getByRole("button", { name: "Create game" }) as HTMLButtonElement;
+    await waitFor(() => expect(create.disabled).toBe(false));
+    fireEvent.click(create);
+    await screen.findByRole("heading", { name: "Your game is ready" });
+    const link = new URL((screen.getByLabelText("Player 1 private link") as HTMLInputElement).value);
+    cleanup();
+    open(link.pathname + link.search + link.hash);
+    await screen.findByText("John Company · 1813");
+    expect(screen.getByText(/Turn 5 · /)).toBeTruthy();
   });
 
   test("importing a save shows the same links screen", async () => {

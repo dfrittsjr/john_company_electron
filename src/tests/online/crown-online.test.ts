@@ -146,6 +146,16 @@ describe("creating a Crown game", () => {
     expect(humanPlayerIds(duoState)).toEqual(["player-1", "player-2"]);
   });
 
+  it("plays the Crown in any scenario (p.43), with that scenario's own setup", async () => {
+    for (const scenario of ["1758", "1813"]) {
+      const table = await crownTable(["Ann"], { scenario });
+      const state = currentState(table);
+      expect(state.scenario).toBe(scenario);
+      expect(state.mode).toBe("soloCrown");
+      expect(state.turn).toBe(scenario === "1758" ? 3 : 5);
+    }
+  });
+
   it("refuses a bad difficulty and leaves 3+ player games alone", async () => {
     const core = new GameRoomCore(new MemoryRoomStorage());
     const bad = await core.create({ gameId: "g", origin: ORIGIN, body: { scenario: "1710", players: [{ name: "Ann" }], crownDifficulty: "impossible" } });

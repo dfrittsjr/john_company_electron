@@ -81,7 +81,7 @@ card in a deal. The server maps it to the real card (`resolveHiddenIds`).
 | Route | Auth | Body → response | Notes |
 | --- | --- | --- | --- |
 | `GET /api/config` | none | → `ConfigResponse` `{ turnstileSiteKey }` | For rendering the Turnstile widget. |
-| `POST /api/games` | Turnstile | `CreateGameRequest` → `CreateGameResponse` | 3-6 players: hotseat rules, random setup. 1-2 players: a solo or two-player game against the Crown (`crownDifficulty`; 1710 and Long 1710 only). See "Crown games". |
+| `POST /api/games` | Turnstile | `CreateGameRequest` → `CreateGameResponse` | 3-6 players: hotseat rules, random or drafted setup (`setupDistribution`). 1-2 players: a solo or two-player game against the Crown (`crownDifficulty`; any scenario). See "Crown games". |
 | `POST /api/games/import` | Turnstile | `ImportGameRequest` → `ImportGameResponse` | A hotseat `.joco`, verified by `deserializeSave`. |
 | `POST /api/games/:id/join` | Turnstile + token in body | `JoinRequest` → `JoinResponse` | Says which seat a link is; records the first join. |
 | `GET /api/games/:id/view` (also `GET /api/games/:id`) | Bearer | → `GameView` | Counts against the rate limit. |

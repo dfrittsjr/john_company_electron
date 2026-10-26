@@ -797,7 +797,8 @@ function India({ ctx }: { ctx: DrawContext }) {
               ) : null}
             </Target>
             {spot ? (
-              region.companyControlled ? (
+              region.companyControlled && game.company.governorGeneralInPlay ? null : region.companyControlled ? (
+                // With a Governor General there are no Governors or overlays (p.26): the "EIC" label shows control.
                 <Target ctx={ctx} target={`office:${region.governorOffice}`} ring={{ cx: spot.x, cy: spot.y, r: 70 }} label={officeLabel(region.governorOffice)}>
                   <circle cx={spot.x} cy={spot.y} r={58} className="governor-overlay" />
                   {governorHolder ? <Piece x={spot.x} y={spot.y} color={ctx.colors[governorHolder]} text={playerInitials(game, governorHolder)} r={36} /> : <Label x={spot.x} y={spot.y + 14} text="Gov" size={36} className="chip-text" />}

@@ -18,12 +18,23 @@ export const ONLINE_PAGE_PATH = "/online/";
 // HTTP: every response is JSON. Authenticated routes take `Authorization: Bearer <token>`.
 
 /**
- * Scenarios the app can play today, with the text the new-game screens show. 1758 and 1813 need
- * their own setups and stay unavailable. Both the hotseat screen, the online form and the server
- * read this list.
+ * Scenarios the app can play, with the text the new-game screens show. Both the hotseat screen, the
+ * online form and the server read this list.
  */
 export const PLAYABLE_SCENARIOS: ReadonlyArray<{ id: ScenarioId; name: string; description: string }> = [
   { id: "1710", name: "1710", description: "Early Company start with the broadest room for expansion. Five turns." },
+  {
+    id: "1758",
+    name: "1758",
+    description:
+      "Company Under Siege: the Company starts with its monopoly, deep in debt and with Bengal under its control, and the monopoly can be broken. Turns 3 to 7.",
+  },
+  {
+    id: "1813",
+    name: "1813",
+    description:
+      "Post Monopoly: the Company starts deregulated, and players may start private firms. Turns 5 to 8. Best with 5 or 6 players; 3 and 4 also work.",
+  },
   {
     id: "long-1710",
     name: "Long 1710",
@@ -52,8 +63,8 @@ export const CROWN_DIFFICULTIES: ReadonlyArray<{ id: CrownDifficulty; name: stri
   { id: "expert", name: "Expert", description: "As Hard, and the Crown also gets 3 extra setup cards." },
 ];
 
-/** Scenarios whose setup cards the Crown can use (Crown games are 1710 and Long 1710 only). */
-export const CROWN_SCENARIOS: ReadonlyArray<ScenarioId> = ["1710", "long-1710"];
+/** Scenarios a game against the Crown can use: all of them ("Set up a game in any scenario", p.43). */
+export const CROWN_SCENARIOS: ReadonlyArray<ScenarioId> = PLAYABLE_SCENARIOS.map((scenario) => scenario.id);
 
 export type SeatLink = {
   playerId: PlayerId;

@@ -260,10 +260,10 @@ function parseCreate(body: unknown): CreateInput | string {
   if (!Array.isArray(players) || players.length < ONLINE_LIMITS.minPlayers || players.length > ONLINE_LIMITS.maxPlayers) {
     return `An online game needs ${ONLINE_LIMITS.minPlayers}-${ONLINE_LIMITS.maxPlayers} players.`;
   }
-  // One or two players play against the Crown, which needs setup cards only 1710 and Long 1710 have.
+  // One or two players play against the Crown, in any playable scenario (p.43).
   const crown = players.length < ONLINE_LIMITS.minHotseatPlayers;
   if (crown && !CROWN_SCENARIOS.includes(body.scenario as ScenarioId)) {
-    return "Games against the Crown (one or two players) are available in 1710 and Long 1710.";
+    return "That scenario isn't available for games against the Crown (one or two players).";
   }
   if (body.crownDifficulty !== undefined && (typeof body.crownDifficulty !== "string" || !CROWN_DIFFICULTY_IDS.has(body.crownDifficulty))) {
     return "crownDifficulty must be easy, normal, hard or expert.";

@@ -1,9 +1,9 @@
-import { offices, setupCardDecks, type SetupCardDefinition, type SetupCardEffect } from "../../data";
+import { offices, prizes, setupCardDecks, type SetupCardDefinition, type SetupCardEffect } from "../../data";
 import type { CommandHandler } from "../command-handler";
 import { officeLabel } from "../offices";
 import { startFamilyPhase } from "../phases/family";
 import { buildLondonSeasonDisplay } from "../phases/london-season";
-import { applySetupCard } from "../phases/setup";
+import { applySetupCard, setupDeckIdForScenario, setupDeckKey } from "../phases/setup";
 import { createCommandLogEntry } from "../phases/shared";
 import { shuffle } from "../rng";
 import type { ApplyCommandResult, CrownSetupDraftState, GameState, PendingDecision, PlayerId } from "../types";
@@ -17,15 +17,15 @@ import {
   humanPlayerIds,
 } from "./state";
 
-// Setup with the Crown (rulebook pp.43-44). Only the 1710 setup cards are transcribed, so Crown
-// games run in 1710 and Long 1710 (which deals the 1710 cards).
+// Setup with the Crown (rulebook pp.43-44): "Set up a game in any scenario" (p.43), with that
+// scenario's setup cards (Long 1710 deals the 1710 cards). The 1813 Private Firm card gives the Crown
+// £3 instead of a firm ("the Crown never creates a private firm", Handbook p.3); see the "privateFirm"
+// setup effect.
 //
 // Solo: draw 3, keep 1, the Crown takes the other 2; four times (4 cards and 8). Two players: each
 // draws 3, keeps 2 and gives the third to the Crown; twice each (4 cards each, 4 for the Crown).
 // Random variant: deal 4 to each player and the rest to the Crown. Expert gives the Crown 3 extra
 // setup cards; we draw them from the 5-6 player extras.
-
-const SETUP_DECK_ID = "1710";
 
 export function crownStartDecision(firstHuman: PlayerId): PendingDecision {
   return {
@@ -53,14 +53,16 @@ export function crownStartDecision(firstHuman: PlayerId): PendingDecision {
   };
 }
 
-function setupDeck(): SetupCardDefinition[] {
-  const deck = setupCardDecks.find((candidate) => candidate.id === SETUP_DECK_ID);
-  if (!deck) throw new Error("The 1710 setup cards are not encoded.");
+function setupDeck(state: Pick<GameState, "scenario">): SetupCardDefinition[] {
+  const deckId = setupDeckIdForScenario(state);
+  const deck = setupCardDecks.find((candidate) => candidate.id === deckId);
+  if (!deck) throw new Error(`The ${deckId} setup cards are not encoded.`);
   return deck.cards;
 }
 
+// Card ids start with their deck's id, so they are unique across decks.
 function cardById(cardId: string): SetupCardDefinition {
-  const card = setupDeck().find((candidate) => candidate.id === cardId);
+  const card = setupCardDecks.flatMap((deck) => deck.cards).find((candidate) => candidate.id === cardId);
   if (!card) throw new Error(`Unknown setup card "${cardId}".`);
   return card;
 }
@@ -96,6 +98,12 @@ export function describeEffect(effect: SetupCardEffect): string {
       return `${effect.count} workshop${effect.count === 1 ? "" : "s"}`;
     case "trophy":
       return `${effect.count} troph${effect.count === 1 ? "y" : "ies"}`;
+    case "prize":
+      return `a place on the ${prizes.find((prize) => prize.id === effect.prizeId)?.victoryPoints ?? "?"} VP prize`;
+    case "privateFirm":
+      return `a private firm (or £${effect.crownCash} for the Crown)`;
+    case "companyShip":
+      return `${effect.count} Company ship${effect.count === 1 ? "" : "s"} in China`;
   }
 }
 
@@ -107,7 +115,7 @@ const startCommand: CommandHandler = (state, command) => {
   if (!state.crown || state.phase !== "setup") return rejected("WRONG_PHASE", "Setup has already finished.");
   const variant = (command.payload as { variant?: unknown } | undefined)?.variant === "random" ? "random" : "draft";
   const now = command.clientTimestamp;
-  const cards = setupDeck();
+  const cards = setupDeck(state);
   const base = shuffle(state.rng, cards.filter((card) => !card.extra).map((card) => card.id));
   let rng = base.rng;
   const humans = humanPlayerIds(state);
@@ -151,7 +159,7 @@ const startCommand: CommandHandler = (state, command) => {
     queue: rest,
     kept,
   };
-  next = { ...next, crown: { ...next.crown!, setupDraft: draft }, decks: { ...next.decks, "setup-1710": { drawPile: [], discardPile: [], removed } } };
+  next = { ...next, crown: { ...next.crown!, setupDraft: draft }, decks: { ...next.decks, [setupDeckKey(next)]: { drawPile: [], discardPile: [], removed } } };
   return { ok: true, logEntry, state: { ...next, pendingDecision: draftDecision(next) } };
 };
 
@@ -202,7 +210,7 @@ const draftPickCommand: CommandHandler = (state, command) => {
   let next: GameState = { ...state, updatedAt: now, log: [...state.log, logEntry] };
 
   if (draft.queue.length === 0) {
-    const removed = next.decks["setup-1710"]?.removed ?? [];
+    const removed = next.decks[setupDeckKey(next)]?.removed ?? [];
     next = { ...next, crown: { ...next.crown!, setupDraft: undefined } };
     return { ok: true, logEntry, state: finishCrownSetup(next, kept, removed, now) };
   }
@@ -231,7 +239,7 @@ export function finishCrownSetup(state: GameState, kept: Record<PlayerId, string
     ...next,
     decks: {
       ...next.decks,
-      "setup-1710": { drawPile: [], discardPile: Object.values(kept).flat(), removed },
+      [setupDeckKey(next)]: { drawPile: [], discardPile: Object.values(kept).flat(), removed },
     },
   };
   next = seatTheCrown(next);

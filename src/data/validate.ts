@@ -10,6 +10,7 @@ import { componentManifest } from "./components";
 import { enterpriseDecks } from "./enterprises";
 import { familyActions } from "./family-actions";
 import { mapData } from "./map";
+import { prizes } from "./board-components";
 import { offices } from "./offices";
 import { scenarios } from "./scenarios";
 import { setupCardDecks } from "./setup-cards";
@@ -1041,74 +1042,86 @@ export const validateEnterpriseData = (
   return resultFromIssues(issues);
 };
 
+/** The scenarios that deal setup cards; Long 1710 deals the 1710 deck (p.4). */
+const requiredSetupDeckIds = ["1710", "1758", "1813"] as const;
+
 export const validateSetupCardData = (
   decks: SetupCardDeckDefinition[] = staticData.setupCardDecks,
 ): ValidationResult => {
   const issues: ValidationIssue[] = [];
-  const deck1710 = decks.find((deck) => deck.id === "1710");
 
-  if (!deck1710) {
-    issues.push({
-      severity: "error",
-      code: "setup-card.deck-missing",
-      path: "setupCardDecks.1710",
-      message: "1710 setup card deck is missing.",
-      source: "printnplay/Cards/John Company Cards (MiniEuro, Fronts).pdf",
-    });
-
-    return resultFromIssues(issues);
+  for (const deckId of requiredSetupDeckIds) {
+    const deck = decks.find((candidate) => candidate.id === deckId);
+    if (!deck) {
+      issues.push({
+        severity: "error",
+        code: "setup-card.deck-missing",
+        path: `setupCardDecks.${deckId}`,
+        message: `${deckId} setup card deck is missing.`,
+        source: "printnplay/Cards/John Company Cards (MiniEuro, Fronts).pdf",
+      });
+      continue;
+    }
+    issues.push(...validateSetupCardDeck(deck));
   }
 
-  const baseCards = deck1710.cards.filter((card) => !card.extra);
-  const extraCards = deck1710.cards.filter((card) => card.extra);
-  if (baseCards.length !== deck1710.baseCardsForThreeOrFourPlayers) {
+  return resultFromIssues(issues);
+};
+
+const validateSetupCardDeck = (deck: SetupCardDeckDefinition): ValidationIssue[] => {
+  const issues: ValidationIssue[] = [];
+  const deckPath = `setupCardDecks.${deck.id}`;
+  const baseCards = deck.cards.filter((card) => !card.extra);
+  const extraCards = deck.cards.filter((card) => card.extra);
+
+  if (baseCards.length !== deck.baseCardsForThreeOrFourPlayers) {
     issues.push({
       severity: "error",
       code: "setup-card.base-count",
-      path: "setupCardDecks.1710.cards",
-      message: `1710 setup deck must have ${deck1710.baseCardsForThreeOrFourPlayers} base cards; found ${baseCards.length}.`,
-      source: deck1710.source,
+      path: `${deckPath}.cards`,
+      message: `${deck.id} setup deck must have ${deck.baseCardsForThreeOrFourPlayers} base cards; found ${baseCards.length}.`,
+      source: deck.source,
     });
   }
 
-  if (extraCards.length !== deck1710.extraCardsForSixPlayers) {
+  if (extraCards.length !== deck.extraCardsForSixPlayers) {
     issues.push({
       severity: "error",
       code: "setup-card.extra-count",
-      path: "setupCardDecks.1710.cards",
-      message: `1710 setup deck must have ${deck1710.extraCardsForSixPlayers} extra cards; found ${extraCards.length}.`,
-      source: deck1710.source,
+      path: `${deckPath}.cards`,
+      message: `${deck.id} setup deck must have ${deck.extraCardsForSixPlayers} extra cards; found ${extraCards.length}.`,
+      source: deck.source,
     });
   }
 
-  if (deck1710.extraCardsForFivePlayers !== 3 || deck1710.extraCardsForSixPlayers !== 6) {
+  if (deck.extraCardsForFivePlayers !== 3 || deck.extraCardsForSixPlayers !== 6) {
     issues.push({
       severity: "error",
       code: "setup-card.extra-distribution",
-      path: "setupCardDecks.1710",
-      message: "1710 setup deck must add 3 extra cards for 5 players and 6 extra cards for 6 players.",
+      path: deckPath,
+      message: `${deck.id} setup deck must add 3 extra cards for 5 players and 6 extra cards for 6 players.`,
       source: "John-Company-Rules.txt",
     });
   }
 
   const seenIds = new Set<string>();
-  for (const card of deck1710.cards) {
+  for (const card of deck.cards) {
     if (seenIds.has(card.id)) {
       issues.push({
         severity: "error",
         code: "setup-card.duplicate-id",
-        path: `setupCardDecks.1710.cards.${card.id}`,
+        path: `${deckPath}.cards.${card.id}`,
         message: `Setup card '${card.id}' is defined more than once.`,
         source: card.source,
       });
     }
     seenIds.add(card.id);
 
-    if (card.deckId !== deck1710.id || card.scenario !== deck1710.scenario) {
+    if (card.deckId !== deck.id || card.scenario !== deck.scenario) {
       issues.push({
         severity: "error",
         code: "setup-card.deck-mismatch",
-        path: `setupCardDecks.1710.cards.${card.id}`,
+        path: `${deckPath}.cards.${card.id}`,
         message: `Setup card '${card.id}' does not match its containing deck.`,
         source: card.source,
       });
@@ -1118,7 +1131,7 @@ export const validateSetupCardData = (
       issues.push({
         severity: "error",
         code: "setup-card.effects-missing",
-        path: `setupCardDecks.1710.cards.${card.id}.effects`,
+        path: `${deckPath}.cards.${card.id}.effects`,
         message: `Setup card '${card.id}' has no encoded effects.`,
         source: card.source,
       });
@@ -1129,7 +1142,7 @@ export const validateSetupCardData = (
         issues.push({
           severity: "error",
           code: "setup-card.invalid-count",
-          path: `setupCardDecks.1710.cards.${card.id}.effects`,
+          path: `${deckPath}.cards.${card.id}.effects`,
           message: `Setup card '${card.id}' has a non-positive effect count.`,
           source: card.source,
         });
@@ -1139,15 +1152,35 @@ export const validateSetupCardData = (
         issues.push({
           severity: "error",
           code: "setup-card.invalid-cash",
-          path: `setupCardDecks.1710.cards.${card.id}.effects.cash`,
+          path: `${deckPath}.cards.${card.id}.effects.cash`,
           message: `Setup card '${card.id}' has a non-positive cash amount.`,
+          source: card.source,
+        });
+      }
+
+      if (effect.type === "prize" && !prizes.some((prize) => prize.id === effect.prizeId)) {
+        issues.push({
+          severity: "error",
+          code: "setup-card.unknown-prize",
+          path: `${deckPath}.cards.${card.id}.effects.prize`,
+          message: `Setup card '${card.id}' names unknown prize '${effect.prizeId}'.`,
+          source: card.source,
+        });
+      }
+
+      if (effect.type === "office" && !offices.some((office) => office.id === effect.officeId)) {
+        issues.push({
+          severity: "error",
+          code: "setup-card.unknown-office",
+          path: `${deckPath}.cards.${card.id}.effects.office`,
+          message: `Setup card '${card.id}' names unknown office '${effect.officeId}'.`,
           source: card.source,
         });
       }
     }
   }
 
-  return resultFromIssues(issues);
+  return issues;
 };
 
 export const validateCrownData = (

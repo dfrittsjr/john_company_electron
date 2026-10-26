@@ -42,11 +42,7 @@ type SetupState = {
   players: PlayerSetup[];
 };
 
-const scenarioOptions = [
-  ...PLAYABLE_SCENARIOS,
-  { id: "1758" as ScenarioId, name: "1758", description: "Not available yet: this scenario's setup is not built." },
-  { id: "1813" as ScenarioId, name: "1813", description: "Not available yet: this scenario's setup is not built." },
-];
+const scenarioOptions = PLAYABLE_SCENARIOS;
 
 const playableIds = new Set<ScenarioId>(PLAYABLE_SCENARIOS.map((scenario) => scenario.id));
 
@@ -516,7 +512,7 @@ export function App() {
                   ))}
                 </fieldset>
                 <p className="status-note">
-                  The Crown plays itself from the Crown Handbook, in 1710 or Long 1710. You can also play it online.
+                  The Crown plays itself from the Crown Handbook, in any scenario. You can also play it online.
                 </p>
               </div>
             ) : null}

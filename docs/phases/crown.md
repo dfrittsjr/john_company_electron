@@ -165,7 +165,10 @@ reason): `src/tests/engine/crown-core.test.ts` checks this.
 
 ### Setup (`crown/setup.ts`, done)
 
-Only the 1710 setup cards are transcribed, so Crown games run in 1710 and Long 1710. Draft or random
+Crown games run in any scenario ("Set up a game in any scenario", p.43), with that scenario's setup
+cards (Long 1710 deals the 1710 cards; `setupDeckIdForScenario`). The 1813 Private Firm card says "OR £3
+if dealt to the Crown": the Crown gets £3 and no firm exists, matching the Handbook (p.3, Firms Phase:
+"The Crown never creates a private firm"), so no Crown-managed firm ever exists. Draft or random
 deal (pp.43-44), Expert's three extra cards (drawn from the 5-6 player extras), Hard's extra cubes,
 the Crown seated last relative to the Chairman, the climate from the face-up card, and the Player
 Button to the side the finger points. The London Season is skipped on the first turn, as usual.
