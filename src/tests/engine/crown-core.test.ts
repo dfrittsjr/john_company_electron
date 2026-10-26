@@ -127,12 +127,6 @@ describe("setup with the Crown (rulebook pp.43-44)", () => {
     const hard2p = startedCrownGame({ difficulty: "hard", players: 2 });
     expect(hard2p.crown!.promiseCubes).toEqual({ crownSupply: 8, byHumanPlayer: { "player-ann": 2, "player-ben": 2 } });
   });
-
-  it("refuses scenarios without transcribed setup cards", () => {
-    expect(() =>
-      newCrownGame({ scenario: "1758" as "1710" }),
-    ).toThrow(/1710 and Long 1710/);
-  });
 });
 
 describe("promise cubes (rulebook pp.44, 46)", () => {

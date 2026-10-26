@@ -42,11 +42,7 @@ type SetupState = {
   players: PlayerSetup[];
 };
 
-const scenarioOptions = [
-  ...PLAYABLE_SCENARIOS,
-  { id: "1758" as ScenarioId, name: "1758", description: "Not available yet: this scenario's setup is not built." },
-  { id: "1813" as ScenarioId, name: "1813", description: "Not available yet: this scenario's setup is not built." },
-];
+const scenarioOptions = PLAYABLE_SCENARIOS;
 
 const playableIds = new Set<ScenarioId>(PLAYABLE_SCENARIOS.map((scenario) => scenario.id));
 
@@ -521,8 +517,7 @@ export function App() {
                   ))}
                 </fieldset>
                 <p className="status-note">
-                  The Crown plays itself from the Crown Handbook. Crown games are played from a save file (no online play), in 1710 or
-                  Long 1710.
+                  The Crown plays itself from the Crown Handbook. Crown games are played from a save file (no online play), in any scenario.
                 </p>
               </div>
             ) : null}
@@ -544,7 +539,7 @@ export function App() {
                 <option value="random">Random</option>
               </select>
               <p className="status-note">
-                Random setup is implemented for 1710 and Long 1710. Draft setup remains on the rules
+                Random setup is implemented for every scenario. Draft setup remains on the rules
                 backlog.
               </p>
             </label>

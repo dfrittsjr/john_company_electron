@@ -1,6 +1,6 @@
 # Status
 
-Current state of the build: 1710 and Long 1710 with Deregulation. Details live in the phase notes:
+Current state of the build: 1710, 1758, 1813 and Long 1710 with Deregulation. Details live in the phase notes:
 
 - `docs/phase-build-guide.md`: scope, decision design, rulings, ownership.
 - `docs/phases/*.md`: each phase's rules coverage and assumptions. Their "for other areas" lists
@@ -40,10 +40,9 @@ Current state of the build: 1710 and Long 1710 with Deregulation. Details live i
 - **Human playtest:** play a full 1710 game with the group and fix what comes up.
 - **Rules questions:** confirm the assumptions recorded in the phase notes with the group.
 - **Online polish:** a fork warning for file mode, and the remaining gaps in `online/server.md`.
-- **Plans:** `plans/remaining-game.md` (1758, 1813, draft variant, the Crown) and
+- **Plans:** `plans/remaining-game.md` (the draft variant, the Crown online) and
   `plans/online-multiplayer.md` (Cloudflare Worker and Durable Objects).
 
 ## Later
 
-- 1758 and 1813 setup and maps.
 - The Crown (solo and two-player AI).

@@ -1,7 +1,7 @@
 # Deregulation UI notes
 
 - Scenarios: `PLAYABLE_SCENARIOS` in `src/online/protocol.ts` (1710, Long 1710) drives the hotseat
-  screen (1758/1813 shown disabled), the online form and the worker's create validation.
+  screen (1758/1813 were shown disabled before they were built), the online form and the worker's create validation.
 - Firm charter: `src/ui/FirmCharter.tsx`, shown on its manager's dashboard. Other dashboards list firm
   shares held (with VP now), Debtor's Prison and "invested in a firm" workshops.
 - Secrecy: a strategy and bid show only when `revealedPlayer` is the manager, or once `revealed` /

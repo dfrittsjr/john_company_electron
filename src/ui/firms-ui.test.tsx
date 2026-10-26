@@ -237,12 +237,12 @@ describe("Firms phase decisions", () => {
 });
 
 describe("scenario choice (hotseat)", () => {
-  test("Long 1710 can be picked and started; 1758 and 1813 stay unavailable", () => {
+  test("Long 1710, 1758 and 1813 can be picked and started", () => {
     render(<App />);
     fireEvent.click(screen.getByRole("button", { name: "New Game" }));
     const radio = (name: string) => screen.getByRole("radio", { name: new RegExp(`^${name}`) }) as HTMLInputElement;
-    expect(radio("1758").disabled).toBe(true);
-    expect(radio("1813").disabled).toBe(true);
+    expect(radio("1758").disabled).toBe(false);
+    expect(radio("1813").disabled).toBe(false);
     expect(radio("1710").disabled).toBe(false);
     fireEvent.click(radio("Long 1710"));
     expect(radio("Long 1710").checked).toBe(true);
@@ -250,5 +250,16 @@ describe("scenario choice (hotseat)", () => {
     expect(screen.getByText("John Company · long-1710")).toBeTruthy();
     expect(screen.getByText(/Turn 1 · /)).toBeTruthy();
     expect(screen.getByText("Deregulation")).toBeTruthy();
+  });
+
+  test("1813 says it is best with 5 or 6 players and starts with 4", () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "New Game" }));
+    const radio = screen.getByRole("radio", { name: /^1813/ }) as HTMLInputElement;
+    expect(screen.getByText(/Best with 5 or 6 players/)).toBeTruthy();
+    fireEvent.click(radio);
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+    expect(screen.getByText("John Company · 1813")).toBeTruthy();
+    expect(screen.getByText(/Turn 5 · /)).toBeTruthy();
   });
 });

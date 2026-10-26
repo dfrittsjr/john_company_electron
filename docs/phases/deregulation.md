@@ -6,7 +6,7 @@ Revenue), `deregulation-fp.md` (Firms phase), `deregulation-tr.md` (trading and 
 notes are at the end of this file.
 
 The shared spec for building Deregulation. Scope: everything in pp.36-42, plus making **Long 1710**
-(8 turns, Vote to Deregulate available) playable. 1758 and 1813 setup are out of scope.
+(8 turns, Vote to Deregulate available) playable. 1758 and 1813 setup followed (`scenarios.md`).
 
 Read first: `docs/phase-build-guide.md` (conventions), this file, the rulebook text pp.36-42
 (`/tmp/claude-1000/-home-hamferd-projects-john-company-electron/77a9d9ab-c10b-43fc-85c4-4eb346f8f37b/scratchpad/txt/rules_raw.txt`,

@@ -8,6 +8,7 @@ import {
   type GameState,
   type LegalCommand,
 } from "../../engine";
+import type { ScenarioId } from "../../data/types";
 import { TEST_NOW } from "./game";
 
 export const SOLO_PLAYERS = [{ id: "player-ann", name: "Ann", color: "red" }] as const;
@@ -18,7 +19,7 @@ export const TWO_PLAYERS = [
 
 /** A new Crown game at its first decision (the setup card choice). */
 export function newCrownGame(
-  options: { players?: 1 | 2; seed?: string; difficulty?: CrownDifficulty; scenario?: "1710" | "long-1710" } = {},
+  options: { players?: 1 | 2; seed?: string; difficulty?: CrownDifficulty; scenario?: ScenarioId } = {},
 ): GameState {
   const players = options.players === 2 ? TWO_PLAYERS : SOLO_PLAYERS;
   return createNewGame({

@@ -8,8 +8,8 @@ UI, undo and the rules reference. **Deregulation and firms (1) and Long 1710 (2)
 |---|---|---|---|---|
 | 1 | Deregulation and firms | Long 1710, 1758, 1813 | XL | — |
 | 2 | Long 1710 | the 8-turn game | S | 1 |
-| 3 | 1758 "Company Under Siege" | scenario | M | 1 |
-| 4 | 1813 "Post Monopoly" | scenario | M | 1 |
+| 3 | 1758 "Company Under Siege" (built) | scenario | M | 1 |
+| 4 | 1813 "Post Monopoly" (built) | scenario | M | 1 |
 | 5 | Setup-card draft variant | rulebook p.5 option | S | — |
 | 6 | The Crown (solo and two-player) | 1-2 player games | XL | built on `crown` |
 | 7 | Polish backlog | quality | S each | — |
@@ -123,40 +123,36 @@ integration pass and a playtest.
 - **Work:** enable the vote for this scenario, check final scoring at turn 8, and run a full 8-turn
   harness game and one UI game.
 
-## 3. 1758 "Company Under Siege"
+## 3. 1758 "Company Under Siege" (built)
 
-**Data to transcribe** (second-transcribe the map):
-- **Setup cards:** 12 base and 6 extra, on MiniEuro Fronts printed pp.29-30. Some include Commanders
-  with a £4 trophy, the Governor of Bengal, and ship placements.
-- **Situation in India:** the blue card on the Bridge Backs.
-- **Already encoded:**
-  - Standing above £12, Debt 3, £4 in every treasury.
-  - Calico Acts passed.
-  - One Company ship in the East Indian sea zone, one regiment per Army.
+Data, setup, tests and notes: `docs/phases/scenarios.md`. The setup cards, Situation in India and
+scenario card were transcribed twice and compared (`src/data/setup-cards.ts`, `src/data/scenarios.ts`).
 
-**Rules to check:** the scenario starts on turn 3, so the London Season is skipped on turn 3, not
-turn 1.
+**Settled: how Bengal's Governor office is created and filled at setup.** The scenario card puts the
+Bengal control token in the Bengal Presidency, so Bengal starts Company-controlled, as after "Form
+Governorship" (p.23): the control token on its control side above the President's box, the region
+associated with the Bengal Presidency, no dome or tower, and its Governor overlay. The Governor of Bengal
+office is therefore *created* at scenario setup (in play, in the Vacant Offices box; `createOffice`), and
+a setup card *fills* it: the 1758 deck's base card "GOVERNOR OF BENGAL" (one of the 12 base cards, which
+every game deals, whatever the player count) seats its holder like any other office (p.5, "for each office
+listed, place a family member on the listed office space and take the matching office card"). So no
+special rule is needed, and with the setup cards dealt the office is never left vacant.
 
-**Rules question to settle:** the scenario card puts the Bengal control token in the Bengal
-Presidency, so Bengal starts Company-controlled. Decide how its Governor office is created and
-filled at setup.
+**Rules checked:** the London Season is skipped on the scenario's first turn (turn 3), not turn 1: the
+engine keys it off `startTurn`.
 
-## 4. 1813 "Post Monopoly"
+## 4. 1813 "Post Monopoly" (built)
 
-**Data to transcribe:**
-- **Setup cards:** MiniEuro Fronts printed pp.30-31.
-- **Situation in India:** the teal card.
+Setup (scenario card): deregulated with the Deregulation card on its Debtor's Prison side, Military
+Oversight and Calico Acts passed, the Governor General in play over the Director of Trade (the law back in
+the box), the China office open, two regiments per Army, one Company ship per sea zone, the Company share
+VP token on +2/-2, and turns 5-8. The rulebook recommends 5-6 players (p.4); the game allows 3-6 and the
+new-game screen says so.
 
-**Setup** (the card text is already in `src/data/scenarios.ts`):
-- **Laws:** starts deregulated, with the card on its Debtor's Prison side. Military Oversight and
-  Calico Acts are passed.
-- **Offices:** the Governor General is in play over the Director of Trade, and the China office is
-  open.
-- **Armies and ships:** two regiments per Army, and one Company ship in each sea zone.
-- **Court:** the Company share VP token goes in the Court on its +2/-2 side.
-- **Map:** all three home regions start Company-controlled.
-
-**Length:** turns 5-8. Recommended for 5-6 players.
+**Correction to the earlier plan:** "all three home regions Company-controlled" does not mean they have
+Governors. With the Governor General in play "no new Governors are created (or overlays placed)" (p.26), and
+the 1813 setup cards deal no Governor. Bombay, Madras and Bengal start Company-controlled and associated
+with their Presidencies (control tokens above the Presidents' boxes), with no towers and no Governors.
 
 ## 5. Setup-card draft variant (p.5)
 
@@ -190,8 +186,7 @@ Crown board's favours and the rulebook's pp.43-46 are in `src/data/crown.ts` and
 positions checked on the card images). The Crown is built on branch `crown`: the core in
 `src/engine/crown/`, the behaviour of every phase and all the Handbook's favours in its four area
 modules, and the UI (Crown board, favours, decisions, the Handbook in the rules). See
-docs/phases/crown.md. Crown games are file-only, in 1710 and Long 1710 (the only transcribed setup
-cards).
+docs/phases/crown.md. Crown games are file-only, in any scenario (1710, Long 1710, 1758 and 1813).
 
 **Size.** XL, comparable to Deregulation. It's only worth it if you'll play with one or two people.
 

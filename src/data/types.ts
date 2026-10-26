@@ -108,6 +108,15 @@ export type ScenarioMapSetup = {
   regions: Record<RegionId, ScenarioRegionSetup>;
   empires: Array<{ capital: RegionId; dominated: RegionId[] }>;
   companyControlled: RegionId[];
+  /**
+   * Company-controlled regions that start associated with a Presidency: the control token sits above
+   * that President's box (p.23 "Form Governorship"). Regions here are also in `companyControlled`.
+   */
+  associatedPresidency?: Partial<Record<RegionId, PresidencyId>>;
+  /**
+   * Governor offices that exist at setup. With a Governor General in play none are created (p.26).
+   */
+  governorOffices?: RegionId[];
   /** The Elephant stands in `region`; with `facing` it is on that border, otherwise in the centre. */
   elephant: { region: RegionId; facing?: RegionId };
 };
@@ -119,6 +128,10 @@ export type ScenarioSetup = {
   /** Law names placed near the board at setup; law cards are not encoded yet. */
   startingPassedLaws?: string[];
   mapSetup?: ScenarioMapSetup;
+  /** 1813: the Governor General is in play over the Director of Trade's place (p.26). */
+  governorGeneral?: boolean;
+  /** 1813: the Superintendent of Trade in China office is open (p.25). */
+  chinaOffice?: boolean;
   notes: string[];
   encodedSections: ScenarioSetupSection[];
   missingSections: ScenarioSetupSection[];
@@ -346,7 +359,7 @@ export type MapDefinition = {
   regions: RegionDefinition[];
 };
 
-export type SetupCardDeckId = "1710";
+export type SetupCardDeckId = "1710" | "1758" | "1813";
 
 export type SetupCardEffect =
   | { type: "cash"; amount: number }
@@ -367,7 +380,29 @@ export type SetupCardEffect =
     }
   | { type: "luxury"; count: number }
   | { type: "workshop"; count: number }
-  | { type: "trophy"; count: number };
+  | { type: "trophy"; count: number }
+  /**
+   * 1813 "(diamond) 2 Prize" (Chairman p.30 r4 c1, President of Bombay p.31 r1 c1): a family member
+   * placed on a prize without paying for it. The diamond with a 2 is the victory-point diamond the
+   * board prints on a prize box (the £4 box shows a diamond 2; the £2 box prints none), so it is the
+   * 2 VP prize ("prize-4"), not the £2 box. The piece comes from the family's supply, the family
+   * scores the prize's VP, and the prize's upkeep applies as for any piece on it (rulebook p.12
+   * Retirement, Upkeep and Refresh).
+   */
+  | { type: "prize"; prizeId: string }
+  /**
+   * 1813 "PRIVATE FIRM (1 share, £8 in treasury) OR £3 if dealt to the Crown" (p.31 r2 c1): the holder
+   * manages a firm with `shares` of their pieces on its Shares box and `treasury` pounds in its London
+   * treasury, at Value 1 like any firm (rulebook p.38; the scenario starts deregulated, so firms
+   * exist). Dealt to the Crown it gives `crownCash` pounds instead: "the Crown never creates a
+   * private firm" (Handbook p.3, Firms Phase), so no Crown-managed firm ever exists.
+   */
+  | { type: "privateFirm"; shares: number; treasury: number; crownCash: number }
+  /**
+   * 1813 "S. OF TRADE IN CHINA / 1 Company Ship" (p.31 r2 c4): the office's treasury holds only ships
+   * (rulebook p.25), so the Company ship goes onto the Superintendent's overlay, location "china".
+   */
+  | { type: "companyShip"; count: number; location: "china" };
 
 export type SetupCardDefinition = {
   id: string;
