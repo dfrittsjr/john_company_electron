@@ -6,6 +6,8 @@ type Props = {
   game: GameState;
   /** The Crown is waiting at a decision a favour could change: show the list open. */
   waiting: boolean;
+  /** Online: this seat's favours and gifts only (the server acts for the seat whose link sent the command). */
+  only?: PlayerId;
   onFavor: (playerId: PlayerId, offer: CrownFavorOffer) => void;
   onGive: (from: PlayerId, to: PlayerId, count: number) => void;
   /** Whether the Crown stops for favours that could change its move (a per-browser setting). */
@@ -51,10 +53,11 @@ function GiveCubes({ game, from, to, onGive }: { game: GameState; from: PlayerId
 }
 
 /** The favours on offer to each human now, and (two players) a way to pass promise cubes between them. */
-export function CrownFavors({ game, waiting, onFavor, onGive, waitForFavors }: Props) {
+export function CrownFavors({ game, waiting, only, onFavor, onGive, waitForFavors }: Props) {
   if (!game.crown || game.finalScoring.complete) return null;
   const humans = humanPlayerIds(game);
-  const offers = humans.map((playerId) => ({ playerId, offers: crownFavorOffers(game, playerId) }));
+  const shown = only ? humans.filter((playerId) => playerId === only) : humans;
+  const offers = shown.map((playerId) => ({ playerId, offers: crownFavorOffers(game, playerId) }));
   const total = offers.reduce((sum, entry) => sum + entry.offers.length, 0);
   const twoPlayer = humans.length === 2;
 
@@ -91,10 +94,12 @@ export function CrownFavors({ game, waiting, onFavor, onGive, waitForFavors }: P
       {twoPlayer ? (
         <div className="favor-player">
           <h4>Promise cubes between the players</h4>
-          {humans.map((from) => (
+          {shown.map((from) => (
             <GiveCubes key={from} game={game} from={from} to={humans.find((id) => id !== from)!} onGive={onGive} />
           ))}
-          {humans.every((id) => playerCubes(game, id) === 0) ? <p className="status-note">Neither player has a cube to give.</p> : null}
+          {shown.every((id) => playerCubes(game, id) === 0) ? (
+            <p className="status-note">{only ? "You have no cube to give." : "Neither player has a cube to give."}</p>
+          ) : null}
         </div>
       ) : null}
     </div>

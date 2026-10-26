@@ -2,7 +2,7 @@
 // See docs/plans/online-multiplayer.md. Both sides import these types; change them in one place.
 
 import type { GameCommand, GameState, PlayerId } from "../engine";
-import type { ScenarioId } from "../data/types";
+import type { CrownDifficulty, ScenarioId } from "../data/types";
 
 /** Who is looking at a game. Seat and spectator links carry a secret token in the URL fragment. */
 export type Viewer = { kind: "seat"; playerId: PlayerId } | { kind: "spectator" };
@@ -38,7 +38,20 @@ export type CreateGameRequest = {
   turnstileToken: string;
   /** Added: which player is the creator's own seat (may export mid-game). Default 0, the first. */
   creatorIndex?: number;
+  /** Added: with one or two players the game is against the Crown at this difficulty (default normal). */
+  crownDifficulty?: CrownDifficulty;
 };
+
+/** The Crown's difficulty levels, with the text the new-game screens show (hotseat screen, online form). */
+export const CROWN_DIFFICULTIES: ReadonlyArray<{ id: CrownDifficulty; name: string; description: string }> = [
+  { id: "easy", name: "Easy", description: "Each player also holds 5 promise cards, which can be traded to the Crown for promise cubes." },
+  { id: "normal", name: "Normal", description: "The standard game: the cubes are split evenly between the Crown and the players." },
+  { id: "hard", name: "Hard", description: "As Normal, but the Crown starts with 4 more promise cubes, taken from the players." },
+  { id: "expert", name: "Expert", description: "As Hard, and the Crown also gets 3 extra setup cards." },
+];
+
+/** Scenarios whose setup cards the Crown can use (Crown games are 1710 and Long 1710 only). */
+export const CROWN_SCENARIOS: ReadonlyArray<ScenarioId> = ["1710", "long-1710"];
 
 export type SeatLink = {
   playerId: PlayerId;
@@ -167,8 +180,10 @@ export const ONLINE_LIMITS = {
   maxRequestBytes: 32 * 1024,
   /** Largest create or import body (the import's .joco text included), in bytes. */
   maxImportBytes: 8 * 1024 * 1024,
-  /** Players per online game (hotseat rules only; Crown modes are file-only for now). */
-  minPlayers: 3,
+  /** Human players per online game: 1-2 play the Crown (solo, two-player), 3-6 are hotseat games. */
+  minPlayers: 1,
+  /** Fewest players in a game without the Crown (imported saves; a new game with 1-2 players has it). */
+  minHotseatPlayers: 3,
   maxPlayers: 6,
   maxNameLength: 40,
   /** Per-seat token bucket: this many requests in a burst, refilled at `ratePerSecond`. */

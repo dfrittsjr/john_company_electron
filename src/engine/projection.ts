@@ -1,5 +1,5 @@
 import { blackmailCards, indiaEventTiles } from "../data";
-import { effectiveDecisionActor, systemDecisionDelegate } from "./automatic";
+import { effectiveDecisionActor, playerMayAnswer, systemDecisionDelegate } from "./automatic";
 import {
   HIDDEN_BLACKMAIL_CARD_ID,
   HIDDEN_CARD_ID,
@@ -77,13 +77,13 @@ export function projectForViewer(state: GameState, viewer: ProjectionViewer): Ga
   const me = viewerPlayerId(state, viewer);
   const view = structuredClone(state) as GameState;
   const actor = effectiveDecisionActor(state);
-  const iMayAct = me !== undefined && (actor === me || actor === "simultaneous");
+  const iMayAct = me !== undefined && (actor === me || actor === "simultaneous" || playerMayAnswer(state, me));
 
   // Randomness: nobody may predict dice or reconstruct a shuffle.
   view.rng = { algorithm: view.rng.algorithm, seed: "", counter: view.rng.counter, internalState: [0, 0, 0, 0] };
   view.log = hidePrivateLogEntries(view.log.map(scrubLogEntry), me);
 
-  hideDrawPiles(view);
+  hideDrawPiles(view, me);
   hidePrivateRecords(view, me);
   hideHolderHints(view, me);
 
@@ -96,7 +96,9 @@ export function projectForViewer(state: GameState, viewer: ProjectionViewer): Ga
   }
 
   // Face-down identities, last: every remaining mention of a hidden card becomes its placeholder.
-  const secrets = secretIdMap(state, me, iMayAct && state.pendingDecision.step === PRESTIGE_PICK_STEP);
+  // (Choosing for the Crown doesn't let you look at the display: the Crown picks by its splay slot.)
+  const choosingFromDisplay = iMayAct && state.pendingDecision.actor !== "crown" && state.pendingDecision.step === PRESTIGE_PICK_STEP;
+  const secrets = secretIdMap(state, me, choosingFromDisplay);
   for (const player of Object.values(view.players)) {
     player.blackmailCards = player.blackmailCards.map((card) => ({
       ...card,
@@ -132,7 +134,7 @@ function placeholders(count: number, id: string): string[] {
   return Array.from({ length: count }, () => id);
 }
 
-function hideDrawPiles(view: GameState): void {
+function hideDrawPiles(view: GameState, me: PlayerId | undefined): void {
   view.parliament.lawDeck.drawPile = placeholders(view.parliament.lawDeck.drawPile.length, HIDDEN_LAW_ID);
   view.londonSeason.deck = placeholders(view.londonSeason.deck.length, HIDDEN_LONDON_SEASON_CARD_ID);
 
@@ -146,6 +148,20 @@ function hideDrawPiles(view: GameState): void {
     // The top card's back is face up on the table (it breaks ties, p.45); the rest are hidden.
     const [top, ...rest] = view.crown.aiDeck.drawPile;
     view.crown.aiDeck.drawPile = top ? [top, ...placeholders(rest.length, HIDDEN_CARD_ID)] : [];
+    // The setup-card draft (p.43): the undrawn cards, what the picker has drawn, and what the other
+    // human has kept so far.
+    const draft = view.crown.setupDraft;
+    if (draft) {
+      draft.deck = placeholders(draft.deck.length, HIDDEN_CARD_ID);
+      if (draft.picker !== me) draft.hand = placeholders(draft.hand.length, HIDDEN_CARD_ID);
+      for (const [owner, cards] of Object.entries(draft.kept)) {
+        if (owner !== me && !view.players[owner]?.isCrown) draft.kept[owner] = placeholders(cards.length, HIDDEN_CARD_ID);
+      }
+    }
+  }
+  // Setup cards set aside unseen.
+  for (const [deckId, deck] of Object.entries(view.decks)) {
+    if (deckId.startsWith("setup-")) deck.removed = placeholders(deck.removed.length, HIDDEN_CARD_ID);
   }
 }
 
@@ -200,6 +216,7 @@ function projectDecision(
 
   return {
     ...projected,
+    crown: undefined,
     id: `${HIDDEN_ID_PREFIX}decision@${view.log.length}`,
     step: HIDDEN_DECISION_STEP,
     actor: HIDDEN_PLAYER_ID,
@@ -248,7 +265,7 @@ export function identifiableFaceDownCards(state: GameState, viewer: ProjectionVi
   if (!me) return known;
   for (const card of state.players[me].blackmailCards.filter(isFaceDown)) known.add(card.cardId);
   const actor = effectiveDecisionActor(state);
-  if ((actor === me || actor === "simultaneous") && state.pendingDecision.step === PRESTIGE_PICK_STEP) {
+  if ((actor === me || actor === "simultaneous") && state.pendingDecision.actor !== "crown" && state.pendingDecision.step === PRESTIGE_PICK_STEP) {
     for (const cardId of state.londonSeason.display) if (BLACKMAIL_CARD_IDS.has(cardId)) known.add(cardId);
   }
   return known;
@@ -302,4 +319,18 @@ export function resolveHiddenIds(state: GameState, viewer: ProjectionViewer, pay
     return node;
   };
   return visit(payload);
+}
+
+/**
+ * The payload to apply for an option a viewer picked from their projected decision. Options of the
+ * Crown's decisions can mention cards the viewer may not identify (a face-down blackmail card the
+ * Crown takes from the London Season Display, p.45); the viewer sends the placeholder back, and
+ * this finds the real option at the same place in the list. Falls back to resolveHiddenIds.
+ */
+export function resolveDecisionOption(state: GameState, viewer: ProjectionViewer, type: string, payload: unknown): unknown {
+  const shown = projectForViewer(state, viewer).pendingDecision.legalCommands;
+  const wanted = JSON.stringify(payload ?? {});
+  const index = shown.findIndex((legal) => legal.type === type && JSON.stringify(legal.payload ?? {}) === wanted);
+  const real = index >= 0 ? state.pendingDecision.legalCommands[index] : undefined;
+  return real ? (real.payload ?? {}) : resolveHiddenIds(state, viewer, payload);
 }

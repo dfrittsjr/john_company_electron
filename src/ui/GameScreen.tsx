@@ -151,7 +151,8 @@ export function GameScreen({
     decisionActor !== "simultaneous" &&
     game.players[decisionActor]?.isCrown === true &&
     (crownPauses?.waitForFavors ?? true) &&
-    crownFavorsPausing(game, crownPauses?.seenFavors);
+    // Online, the server keeps the passed-on favours in the game (the Crown waits the same for everyone).
+    crownFavorsPausing(game, crownPauses?.seenFavors ?? new Set(game.crown?.passedFavors));
 
   function runLegal(legalCommand: LegalCommand) {
     // The acting player is whoever the decision names. Online, the server ignores this and uses
@@ -270,6 +271,7 @@ export function GameScreen({
           {game.crown && !readOnly ? <CrownFavors
               game={game}
               waiting={crownWaiting}
+              only={mode === "online" ? fixedPlayer : undefined}
               onFavor={buyFavor}
               onGive={giveCubes}
               waitForFavors={crownPauses ? { on: crownPauses.waitForFavors, set: crownPauses.setWaitForFavors } : undefined}

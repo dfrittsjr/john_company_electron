@@ -437,6 +437,11 @@ export type CrownState = {
   colors: [string, string];
   favorEffects: CrownFavorEffect[];
   setupDraft?: CrownSetupDraftState;
+  /**
+   * Online games: the favours the players have passed on this turn (crownPausingFavorKeys), so the
+   * server's Crown does not wait for them again. Local games keep their own set in the browser.
+   */
+  passedFavors?: string[];
   // Per-area Crown memory (src/engine/crown/areas/*). Each area adds its own optional fields here.
   // --- early phases (London Season, Family, Firms, Hiring) ---
   // --- offices (Chairman, Director of Trade / Governor General, Shipping, Military Affairs) ---
