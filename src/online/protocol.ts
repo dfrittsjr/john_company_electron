@@ -38,6 +38,8 @@ export type CreateGameRequest = {
   turnstileToken: string;
   /** Added: which player is the creator's own seat (may export mid-game). Default 0, the first. */
   creatorIndex?: number;
+  /** Added: "draft" drafts the setup cards (p.5) instead of dealing them at random. Default "random". */
+  setupDistribution?: "random" | "draft";
 };
 
 export type SeatLink = {

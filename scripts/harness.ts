@@ -326,7 +326,7 @@ function main(): void {
       scenario: (flags.scenario ?? (deregulated ? "long-1710" : "1710")) as ScenarioId,
       seed: flags.seed ?? `harness-${now}`,
       now,
-      setupDistribution: (flags.setup ?? "random") as "random" | "starter",
+      setupDistribution: (flags.setup ?? "random") as "random" | "starter" | "draft",
       players: names.map((name, index) => ({ id: `player-${index + 1}`, name, color: name.toLowerCase() })),
     });
     const state = deregulated

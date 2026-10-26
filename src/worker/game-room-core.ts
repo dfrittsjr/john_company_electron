@@ -232,7 +232,12 @@ const HEX_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
 /** The family palette the hotseat setup uses (src/ui/view-model.ts FAMILY_PALETTE). */
 const DEFAULT_COLORS = ["#2563a8", "#c9971a", "#c2417d", "#2e7d4f", "#7a4fa0", "#3b3b3b"];
 
-type CreateInput = { scenario: ScenarioId; players: Array<{ name: string; color: string }>; creatorIndex: number };
+type CreateInput = {
+  scenario: ScenarioId;
+  players: Array<{ name: string; color: string }>;
+  creatorIndex: number;
+  setupDistribution: "random" | "draft";
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -269,7 +274,10 @@ function parseCreate(body: unknown): CreateInput | string {
   if (typeof creatorIndex !== "number" || !Number.isInteger(creatorIndex) || creatorIndex < 0 || creatorIndex >= parsed.length) {
     return "creatorIndex must be the index of one of the players.";
   }
-  return { scenario: body.scenario as ScenarioId, players: parsed, creatorIndex };
+  if (body.setupDistribution !== undefined && body.setupDistribution !== "random" && body.setupDistribution !== "draft") {
+    return 'setupDistribution must be "random" or "draft".';
+  }
+  return { scenario: body.scenario as ScenarioId, players: parsed, creatorIndex, setupDistribution: body.setupDistribution ?? "random" };
 }
 
 type CommandInput = CommandRequest["command"];
@@ -339,7 +347,7 @@ export class GameRoomCore {
       gameId: input.gameId,
       seed: this.newSeed(),
       now: at,
-      setupDistribution: "random",
+      setupDistribution: parsed.setupDistribution,
       players: parsed.players.map((player, index) => ({ id: `player-${index + 1}`, name: player.name, color: player.color })),
     });
     const automatic = runAutomaticSteps(state, { now: at, idPrefix: "setup-auto" });

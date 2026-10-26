@@ -13,16 +13,40 @@ import type {
 import { availableEnterpriseCard, startFamilyPhase } from "./family";
 import { buildLondonSeasonDisplay, drawSetupBlackmail } from "./london-season";
 import { createCommandLogEntry } from "./shared";
+import { startSetupDraft } from "./setup-draft";
 
 export function confirmStart(state: GameState, command: GameCommand): ApplyCommandResult {
   const now = command.clientTimestamp;
   const setupDistribution = parseSetupDistribution(state, command.payload);
+  const deckId = setupDeckIdForScenario(state);
+  // Draft variant (p.5): hands are dealt, then picked from and passed left before anything is applied.
+  if (setupDistribution === "draft" && state.mode === "hotseat" && setupCardDecks.some((deck) => deck.id === deckId)) {
+    return startSetupDraft(state, command, deckId);
+  }
   const setupResult =
-    setupDistribution === "random" && state.mode === "hotseat" && setupDeckIdForScenario(state) === "1710"
+    setupDistribution === "random" && state.mode === "hotseat" && deckId === "1710"
       ? applyRandomHotseat1710SetupCards(state)
       : { state, details: undefined };
+  return completeSetup(
+    setupResult.state,
+    command,
+    setupResult.details === undefined
+      ? `${state.players[command.actorId]?.name ?? command.actorId} confirmed setup start.`
+      : `${state.players[command.actorId]?.name ?? command.actorId} confirmed setup and dealt 1710 setup cards.`,
+    setupResult.details,
+  );
+}
+
+/** Setup step 12 and on: the London Season Display, then play starts with Family. */
+export function completeSetup(
+  state: GameState,
+  command: GameCommand,
+  summary: string,
+  details: unknown,
+): ApplyCommandResult {
+  const now = command.clientTimestamp;
   // Setup step 12: build the London Season Display after setup cards have taken their blackmail.
-  const setupState = buildLondonSeasonDisplay(setupResult.state);
+  const setupState = buildLondonSeasonDisplay(state);
   if (!setupState.seatingOrder.some((playerId) => !setupState.players[playerId].isCrown)) {
     return {
       ok: false,
@@ -40,11 +64,8 @@ export function confirmStart(state: GameState, command: GameCommand): ApplyComma
     command,
     now,
     type: "setup.confirmed",
-    summary:
-      setupResult.details === undefined
-        ? `${setupState.players[command.actorId]?.name ?? command.actorId} confirmed setup start.`
-        : `${setupState.players[command.actorId]?.name ?? command.actorId} confirmed setup and dealt 1710 setup cards.`,
-    details: setupResult.details,
+    summary,
+    details,
   });
 
   // The London Season is skipped on the first turn (p.11), so play starts with Family.
@@ -60,11 +81,11 @@ export function confirmStart(state: GameState, command: GameCommand): ApplyComma
 }
 
 // Long 1710 "begins identically to the 1710 scenario" (p.4), so it deals the 1710 setup cards.
-function setupDeckIdForScenario(state: GameState): string {
+export function setupDeckIdForScenario(state: GameState): string {
   return state.scenario === "long-1710" ? "1710" : state.scenario;
 }
 
-function parseSetupDistribution(state: GameState, payload: unknown): "starter" | "random" {
+function parseSetupDistribution(state: GameState, payload: unknown): "starter" | "random" | "draft" {
   const explicit = setupDistributionFromPayload(payload);
   if (explicit) return explicit;
 
@@ -76,12 +97,13 @@ function parseSetupDistribution(state: GameState, payload: unknown): "starter" |
   return legal ?? "random";
 }
 
-function setupDistributionFromPayload(payload: unknown): "starter" | "random" | undefined {
+function setupDistributionFromPayload(payload: unknown): "starter" | "random" | "draft" | undefined {
   if (!payload || typeof payload !== "object") return undefined;
   const raw = payload as { setupDistribution?: unknown };
 
   if (raw.setupDistribution === "starter") return "starter";
   if (raw.setupDistribution === "random") return "random";
+  if (raw.setupDistribution === "draft") return "draft";
 
   return undefined;
 }

@@ -89,6 +89,7 @@ export function LinksScreen({ result, onDone }: { result: CreateGameResponse; on
 function StartOnline({ onCreated }: { onCreated: (result: CreateGameResponse) => void }) {
   const [scenario, setScenario] = useState<ScenarioId>("1710");
   const [count, setCount] = useState(4);
+  const [draft, setDraft] = useState(false);
   const [names, setNames] = useState<string[]>(["", "", "", "", "", ""]);
   const [token, setToken] = useState<string | null>(null);
   const [resetSignal, setResetSignal] = useState(0);
@@ -107,6 +108,7 @@ function StartOnline({ onCreated }: { onCreated: (result: CreateGameResponse) =>
           color: FAMILY_PALETTE[index],
         })),
         turnstileToken: token,
+        ...(draft ? { setupDistribution: "draft" as const } : {}),
       });
       onCreated(result);
     } catch (reason) {
@@ -140,6 +142,16 @@ function StartOnline({ onCreated }: { onCreated: (result: CreateGameResponse) =>
             </option>
           ))}
         </select>
+      </label>
+      <label className="field">
+        <span>Setup cards</span>
+        <select value={draft ? "draft" : "random"} onChange={(event) => setDraft(event.target.value === "draft")} aria-label="Setup cards">
+          <option value="random">Dealt at random</option>
+          <option value="draft">Drafted (pick one, pass the rest left)</option>
+        </select>
+        {draft ? (
+          <small className="status-note">Each player picks their setup cards in turn from their own seat; nobody sees another player&apos;s hand.</small>
+        ) : null}
       </label>
       <div className="player-list">
         {Array.from({ length: count }, (_, index) => (

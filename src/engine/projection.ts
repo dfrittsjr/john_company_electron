@@ -64,7 +64,8 @@ function isFaceDown(card: CardInstance): boolean {
  *   transfers, deals); face-down blackmail in the London Season Display likewise, except for the
  *   player choosing from the display, who may look (p.11); blackmail in the London Season
  *   discards likewise, since it goes there unseen;
- * - only the viewer's own `hidden.privateCards` and no unrevealed firm strategies;
+ * - only the viewer's own `hidden.privateCards` and no unrevealed firm strategies; during the setup
+ *   card draft only the viewer's own hand and picks (`hidden.setupDraft`);
  * - lists that would show who holds a face-down card (Company Fraud and Scandal candidates, Envoy
  *   and Hiring Preference offers) cut down to the viewer;
  * - legal commands only for the player who must decide (spectators get none); decisions offered
@@ -152,6 +153,15 @@ function hideDrawPiles(view: GameState): void {
 function hidePrivateRecords(view: GameState, me: PlayerId | undefined): void {
   const hidden = view.hidden;
   hidden.privateCards = me && hidden.privateCards[me] ? { [me]: hidden.privateCards[me] } : {};
+  // The setup card draft (p.5): only your own hand and picks; everyone else's show as placeholders.
+  const draft = hidden.setupDraft;
+  if (draft) {
+    const cut = (cards: Record<PlayerId, string[]>) =>
+      Object.fromEntries(Object.entries(cards).map(([id, list]) => [id, id === me ? list : placeholders(list.length, HIDDEN_CARD_ID)]));
+    draft.hands = cut(draft.hands);
+    draft.picks = cut(draft.picks);
+    draft.removed = placeholders(draft.removed.length, HIDDEN_CARD_ID);
+  }
   hidden.firmStrategySecrets = Object.fromEntries(
     Object.entries(hidden.firmStrategySecrets).map(([firmId, secret]) => [
       firmId,

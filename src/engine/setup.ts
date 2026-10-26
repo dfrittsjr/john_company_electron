@@ -47,7 +47,7 @@ export type NewGameOptions = {
   scenario: ScenarioId;
   players: NewPlayerInput[];
   crownDifficulty?: CrownState["difficulty"];
-  setupDistribution?: "starter" | "random";
+  setupDistribution?: "starter" | "random" | "draft";
   seed?: string;
   gameId?: string;
   now?: string;
@@ -221,7 +221,7 @@ function validateNewGameOptions(options: NewGameOptions): void {
 function createInitialPendingDecision(
   mode: GameMode,
   seatingOrder: PlayerId[],
-  setupDistribution: "starter" | "random",
+  setupDistribution: "starter" | "random" | "draft",
 ): PendingDecision {
   const firstHuman = seatingOrder.find((playerId) => playerId !== CROWN_PLAYER_ID);
 
@@ -241,7 +241,7 @@ function createInitialPendingDecision(
     legalCommands: [
       {
         type: "setup.confirmStart",
-        label: "Begin setup",
+        label: setupDistribution === "draft" ? "Begin setup (draft the setup cards)" : "Begin setup",
         payload: { setupDistribution },
       },
     ],
